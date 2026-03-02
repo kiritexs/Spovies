@@ -25,28 +25,23 @@ class GlassBottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      bottom: AppSpacing.navBarBottom,
-      left: AppSpacing.navBarHorizontal,
-      right: AppSpacing.navBarHorizontal,
-      child: ClipRRect(
-        borderRadius: AppSpacing.borderRadius2Xl,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: AppColors.glassGradient,
-              borderRadius: AppSpacing.borderRadius2Xl,
-              border: Border.all(color: AppColors.glassBorder),
-              boxShadow: AppColors.navBarShadow,
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: List.generate(
-                _items.length,
-                (index) => _buildTab(index),
-              ),
+    return ClipRRect(
+      borderRadius: AppSpacing.borderRadius2Xl,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: AppColors.glassGradient,
+            borderRadius: AppSpacing.borderRadius2Xl,
+            border: Border.all(color: AppColors.glassBorder),
+            boxShadow: AppColors.navBarShadow,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: List.generate(
+              _items.length,
+              (index) => _buildTab(index),
             ),
           ),
         ),

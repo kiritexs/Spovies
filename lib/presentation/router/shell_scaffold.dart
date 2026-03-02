@@ -3,14 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_spacing.dart';
 import '../providers/search_providers.dart';
 import '../widgets/glass_bottom_nav.dart';
 
 /// Shell scaffold rendered by [StatefulShellRoute].
 ///
-/// Wraps the current branch's content in a [Stack] and overlays the
-/// [GlassBottomNav] at the bottom. The nav bar slides away when the user is
-/// actively typing in the search field (watches [isSearchActiveProvider]).
+/// Owns the [Positioned] for the nav bar so that the animation wrappers
+/// ([AnimatedSlide], [AnimatedOpacity], [IgnorePointer]) live *inside* the
+/// Positioned rather than outside it — `Positioned` must always be a direct
+/// child of a [Stack].
 class ShellScaffold extends ConsumerWidget {
   final StatefulNavigationShell shell;
 
@@ -29,24 +31,28 @@ class ShellScaffold extends ConsumerWidget {
           // Current tab's full-screen content
           shell,
 
-          // Floating glass nav bar — slides down when search is active
-          AnimatedSlide(
-            duration: const Duration(milliseconds: 280),
-            curve: Curves.easeInOutCubic,
-            offset: isSearching ? const Offset(0, 1.5) : Offset.zero,
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 220),
-              opacity: isSearching ? 0.0 : 1.0,
-              child: IgnorePointer(
-                ignoring: isSearching,
-                child: GlassBottomNav(
-                  currentIndex: shell.currentIndex,
-                  onTap: (index) {
-                    shell.goBranch(
+          // Nav bar: Positioned must be a direct Stack child.
+          // All animation widgets live INSIDE the Positioned.
+          Positioned(
+            bottom: AppSpacing.navBarBottom,
+            left: AppSpacing.navBarHorizontal,
+            right: AppSpacing.navBarHorizontal,
+            child: AnimatedSlide(
+              duration: const Duration(milliseconds: 280),
+              curve: Curves.easeInOutCubic,
+              offset: isSearching ? const Offset(0, 2.0) : Offset.zero,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 220),
+                opacity: isSearching ? 0.0 : 1.0,
+                child: IgnorePointer(
+                  ignoring: isSearching,
+                  child: GlassBottomNav(
+                    currentIndex: shell.currentIndex,
+                    onTap: (index) => shell.goBranch(
                       index,
                       initialLocation: index == shell.currentIndex,
-                    );
-                  },
+                    ),
+                  ),
                 ),
               ),
             ),
