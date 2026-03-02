@@ -11,7 +11,9 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/tmdb_image_url.dart';
 import '../../../domain/entities/cast_member.dart';
+import '../../../domain/entities/episode.dart';
 import '../../../domain/entities/media_item.dart';
+import '../../../domain/entities/media_type.dart';
 import '../../../domain/entities/plugin_manifest.dart';
 import '../../../plugins/protocol/action_type.dart';
 import '../../../plugins/protocol/plugin_url_resolver.dart';
@@ -25,15 +27,28 @@ import '../player/webview_player_screen.dart';
 /// Cinematic full-screen movie/TV details page.
 ///
 /// Includes backdrop parallax, poster, cast row, trailer chip,
-/// plugin "Watch" button, genre chips, and expandable overview.
-class DetailsScreen extends ConsumerWidget {
+/// plugin "Watch" button, genre chips, expandable overview,
+/// and episode list for TV shows (episode_item hook).
+class DetailsScreen extends ConsumerStatefulWidget {
   final MediaItem media;
 
   const DetailsScreen({super.key, required this.media});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final detailsAsync = ref.watch(movieDetailsProvider(media.tmdbId));
+  ConsumerState<DetailsScreen> createState() => _DetailsScreenState();
+}
+
+class _DetailsScreenState extends ConsumerState<DetailsScreen> {
+  int _selectedSeason = 1;
+
+  MediaItem get media => widget.media;
+
+  @override
+  Widget build(BuildContext context) {
+    final isTV = media.type == MediaType.tv;
+    final detailsAsync = isTV
+        ? ref.watch(tvDetailsProvider(media.tmdbId))
+        : ref.watch(movieDetailsProvider(media.tmdbId));
     final pluginsAsync = ref.watch(
       pluginsForHookProvider(TriggerHook.mediaHeader),
     );
@@ -44,7 +59,7 @@ class DetailsScreen extends ConsumerWidget {
         loading: () => _buildLoading(context),
         error: (e, _) => _buildError(context, e.toString()),
         data: (details) =>
-            _buildContent(context, ref, details, pluginsAsync.value ?? []),
+            _buildContent(context, details, pluginsAsync.value ?? []),
       ),
     );
   }
@@ -92,10 +107,11 @@ class DetailsScreen extends ConsumerWidget {
 
   Widget _buildContent(
     BuildContext context,
-    WidgetRef ref,
     MediaItem details,
     List<PluginManifest> plugins,
   ) {
+    final isTV = details.type == MediaType.tv;
+
     return CustomScrollView(
       slivers: [
         // ── Backdrop Hero ─────────────────────────────────────────
@@ -117,7 +133,7 @@ class DetailsScreen extends ConsumerWidget {
               Text(details.title, style: AppTextStyles.heroTitle),
               const SizedBox(height: 8),
 
-              // Metadata row: year • runtime • certification • rating
+              // Metadata row: year • runtime/seasons • certification • rating
               _buildMetadataRow(details),
               const SizedBox(height: 16),
 
@@ -126,7 +142,7 @@ class DetailsScreen extends ConsumerWidget {
               const SizedBox(height: 20),
 
               // Action buttons row
-              _buildActionRow(context, ref, details, plugins),
+              _buildActionRow(context, details, plugins),
               const SizedBox(height: 8),
 
               // Trailer chip
@@ -143,6 +159,12 @@ class DetailsScreen extends ConsumerWidget {
                 Text('Cast', style: AppTextStyles.sectionTitle),
                 const SizedBox(height: 12),
                 _buildCastRow(details.metadata.cast),
+                const SizedBox(height: 24),
+              ],
+
+              // Episode list — TV only
+              if (isTV && details.metadata.seasons.isNotEmpty) ...[
+                _buildEpisodeSection(context, details, plugins),
               ],
             ],
           ),
@@ -234,8 +256,19 @@ class DetailsScreen extends ConsumerWidget {
       items.add(Text(details.year!, style: AppTextStyles.metadata));
     }
 
-    // Runtime
-    if (details.metadata.formattedRuntime.isNotEmpty) {
+    // Runtime (movies) or season count (TV)
+    if (details.type == MediaType.tv) {
+      final count = details.metadata.numberOfSeasons;
+      if (count != null && count > 0) {
+        items.add(_dot());
+        items.add(
+          Text(
+            '$count ${count == 1 ? 'Season' : 'Seasons'}',
+            style: AppTextStyles.metadata,
+          ),
+        );
+      }
+    } else if (details.metadata.formattedRuntime.isNotEmpty) {
       items.add(_dot());
       items.add(
         Text(details.metadata.formattedRuntime, style: AppTextStyles.metadata),
@@ -334,7 +367,6 @@ class DetailsScreen extends ConsumerWidget {
 
   Widget _buildActionRow(
     BuildContext context,
-    WidgetRef ref,
     MediaItem details,
     List<PluginManifest> plugins,
   ) {
@@ -405,9 +437,8 @@ class DetailsScreen extends ConsumerWidget {
                   color: isInWatchlist ? AppColors.primary : Colors.white,
                   size: 20,
                 ),
-                onPressed: () {
-                  ref.read(watchlistProvider.notifier).toggle(details);
-                },
+                onPressed: () =>
+                    ref.read(watchlistProvider.notifier).toggle(details),
                 tooltip: isInWatchlist
                     ? 'Remove from Watchlist'
                     : 'Add to Watchlist',
@@ -419,12 +450,111 @@ class DetailsScreen extends ConsumerWidget {
     );
   }
 
+  // ─── Episode Section (TV) ──────────────────────────────────────────────
+
+  Widget _buildEpisodeSection(
+    BuildContext context,
+    MediaItem details,
+    List<PluginManifest> plugins,
+  ) {
+    final seasons = details.metadata.seasons;
+    // Ensure selected season is valid
+    final season = seasons.any((s) => s.seasonNumber == _selectedSeason)
+        ? _selectedSeason
+        : seasons.first.seasonNumber;
+
+    final episodesAsync = ref.watch(
+      tvSeasonEpisodesProvider((tvId: details.tmdbId, season: season)),
+    );
+
+    // Episode-item hook plugins
+    final episodePluginsAsync = ref.watch(
+      pluginsForHookProvider(TriggerHook.episodeItem),
+    );
+    final episodePlugins = episodePluginsAsync.value ?? [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section title + season selector
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Episodes', style: AppTextStyles.sectionTitle),
+            if (seasons.length > 1)
+              DropdownButton<int>(
+                value: season,
+                dropdownColor: AppColors.surfaceDark,
+                underline: const SizedBox.shrink(),
+                style: AppTextStyles.labelSmall,
+                onChanged: (v) {
+                  if (v != null) setState(() => _selectedSeason = v);
+                },
+                items: seasons.map((s) {
+                  return DropdownMenuItem(
+                    value: s.seasonNumber,
+                    child: Text(
+                      s.name ?? 'Season ${s.seasonNumber}',
+                      style: AppTextStyles.labelSmall,
+                    ),
+                  );
+                }).toList(),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Episode list
+        episodesAsync.when(
+          loading: () => const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(
+                color: AppColors.primary,
+                strokeWidth: 2,
+              ),
+            ),
+          ),
+          error: (e, _) => Text(
+            'Could not load episodes',
+            style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
+          ),
+          data: (episodes) => Column(
+            children: episodes.map((ep) {
+              return _EpisodeRow(
+                episode: ep,
+                plugins: episodePlugins,
+                onPlay: episodePlugins.isEmpty
+                    ? null
+                    : () => _executePlugin(
+                          context,
+                          episodePlugins.first,
+                          details,
+                          season: ep.seasonNumber,
+                          episode: ep.episodeNumber,
+                        ),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
   void _executePlugin(
     BuildContext context,
     PluginManifest plugin,
-    MediaItem media,
-  ) {
-    final url = PluginUrlResolver.resolve(plugin, media);
+    MediaItem media, {
+    int? season,
+    int? episode,
+  }) {
+    final url = PluginUrlResolver.resolve(
+      plugin,
+      media,
+      season: season,
+      episode: episode,
+    );
 
     switch (plugin.actionType) {
       case ActionType.externalLink:
@@ -443,7 +573,6 @@ class DetailsScreen extends ConsumerWidget {
         );
         break;
       case ActionType.metadataFetch:
-        // Future: Metadata enrichment
         break;
     }
   }
@@ -595,6 +724,112 @@ class _ExpandableOverviewState extends State<_ExpandableOverview> {
             ? CrossFadeState.showSecond
             : CrossFadeState.showFirst,
         duration: const Duration(milliseconds: 300),
+      ),
+    );
+  }
+}
+
+// ─── Episode Row ──────────────────────────────────────────────────────────────
+
+class _EpisodeRow extends StatelessWidget {
+  final Episode episode;
+  final List<PluginManifest> plugins;
+  final VoidCallback? onPlay;
+
+  const _EpisodeRow({
+    required this.episode,
+    required this.plugins,
+    this.onPlay,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final stillUrl = buildImageUrl(episode.stillPath, AppConfig.backdropSmall);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Episode thumbnail
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+            child: SizedBox(
+              width: 120,
+              height: 68,
+              child: stillUrl.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: stillUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(
+                        color: AppColors.surfaceDark,
+                      ),
+                      errorWidget: (_, __, ___) =>
+                          Container(color: AppColors.surfaceDark),
+                    )
+                  : Container(
+                      color: AppColors.surfaceDark,
+                      child: const Icon(
+                        Icons.tv_rounded,
+                        color: AppColors.textMuted,
+                        size: 24,
+                      ),
+                    ),
+            ),
+          ),
+
+          const SizedBox(width: 12),
+
+          // Episode info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  episode.label,
+                  style: AppTextStyles.tag.copyWith(
+                    color: AppColors.primary,
+                    fontSize: 11,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  episode.name,
+                  style: AppTextStyles.cardTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (episode.formattedRuntime.isNotEmpty)
+                  Text(
+                    episode.formattedRuntime,
+                    style: AppTextStyles.cardSubtitle,
+                  ),
+                if (episode.overview != null &&
+                    episode.overview!.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    episode.overview!,
+                    style: AppTextStyles.cardSubtitle.copyWith(fontSize: 11),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // Play button
+          if (onPlay != null)
+            IconButton(
+              onPressed: onPlay,
+              icon: const Icon(
+                Icons.play_circle_outline_rounded,
+                color: AppColors.primary,
+                size: 28,
+              ),
+              tooltip: 'Play ${episode.label}',
+            ),
+        ],
       ),
     );
   }

@@ -54,6 +54,12 @@ class WatchlistNotifier extends Notifier<List<MediaItem>> {
     }
   }
 
+  /// Clear all watchlist items.
+  void clearAll() {
+    _box.clear();
+    state = [];
+  }
+
   Map<String, dynamic> _toMap(MediaItem item) => {
     'tmdbId': item.tmdbId,
     'type': item.type.name,

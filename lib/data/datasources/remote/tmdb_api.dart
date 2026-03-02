@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 
+import '../../../domain/entities/episode.dart';
 import '../../models/media_item_model.dart';
 import '../../models/genre_model.dart';
 
@@ -60,6 +61,36 @@ class TmdbApi {
       },
     );
     return MediaItemModel.fromTmdbDetailJson(response.data);
+  }
+
+  // ─── TV Details ───────────────────────────────────────────────────────
+
+  /// TV show details with seasons list + credits + videos.
+  Future<MediaItemModel> getTvDetails(int id) async {
+    final response = await _dio.get(
+      '/tv/$id',
+      queryParameters: {
+        'append_to_response': 'credits,videos,aggregate_credits',
+      },
+    );
+    return MediaItemModel.fromTmdbTvDetailJson(response.data);
+  }
+
+  /// All episodes in a specific season.
+  Future<List<Episode>> getTvSeasonEpisodes(int tvId, int season) async {
+    final response = await _dio.get('/tv/$tvId/season/$season');
+    final episodes = response.data['episodes'] as List;
+    return episodes.map((e) {
+      return Episode(
+        seasonNumber: e['season_number'] as int? ?? season,
+        episodeNumber: e['episode_number'] as int? ?? 0,
+        name: e['name'] as String? ?? 'Episode ${e['episode_number']}',
+        overview: e['overview'] as String?,
+        stillPath: e['still_path'] as String?,
+        runtime: e['runtime'] as int?,
+        airDate: e['air_date'] as String?,
+      );
+    }).toList();
   }
 
   // ─── Search ───────────────────────────────────────────────────────────

@@ -41,6 +41,12 @@ class MediaRepositoryImpl implements MediaRepository {
   }
 
   @override
+  Future<MediaItem> getTvDetails(int id) async {
+    final model = await _api.getTvDetails(id);
+    return model.toEntity();
+  }
+
+  @override
   Future<List<MediaItem>> search(String query) async {
     final models = await _api.search(query);
     return models.map((m) => m.toEntity()).toList();

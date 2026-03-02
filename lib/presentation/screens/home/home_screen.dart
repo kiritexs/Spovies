@@ -12,9 +12,13 @@ import 'package:spovies/presentation/widgets/shimmer_placeholder.dart';
 import 'package:spovies/presentation/screens/settings/settings_screen.dart';
 import 'package:spovies/presentation/screens/details/details_screen.dart';
 import 'package:spovies/presentation/screens/search/search_screen.dart';
+import 'package:spovies/presentation/screens/watchlist/watchlist_screen.dart';
 import 'package:spovies/presentation/providers/watch_history_providers.dart';
 import 'package:spovies/core/utils/tmdb_image_url.dart';
 import 'package:spovies/core/config/app_config.dart';
+import 'package:spovies/core/theme/app_spacing.dart';
+import 'package:spovies/core/theme/app_text_styles.dart';
+import 'package:spovies/core/theme/app_colors.dart';
 import 'package:spovies/domain/entities/media_type.dart';
 
 /// Main home screen — cinematic layout matching stitch/code.html.
@@ -56,23 +60,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // ─── Glass Bottom Nav ──────────────────
           GlassBottomNav(
             currentIndex: _navIndex,
-            onTap: (index) {
-              if (index == 3) {
-                // Navigate to Settings screen
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                );
-              } else if (index == 1) {
-                // Explore → open search
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const SearchScreen()),
-                );
-              } else {
-                setState(() => _navIndex = index);
-              }
-            },
+          onTap: (index) {
+            if (index == 3) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+            } else if (index == 1) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SearchScreen()),
+              );
+            } else if (index == 2) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const WatchlistScreen()),
+              );
+            } else {
+              setState(() => _navIndex = index);
+            }
+          },
           ),
         ],
       ),
@@ -181,39 +188,63 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       loading: () => const SizedBox.shrink(),
       error: (_, __) => const SizedBox.shrink(),
       data: (items) {
-        if (items.isEmpty) {
-          return const ContinueWatchingCard(
-            title: 'Nothing yet...',
-            remainingTime: 'Start watching to see progress here',
-            progress: 0.0,
-          );
-        }
+        if (items.isEmpty) return const SizedBox.shrink();
 
-        final item = items.first;
-        final thumbUrl = buildImageUrl(item.posterPath, AppConfig.posterSmall);
-
-        return ContinueWatchingCard(
-          title: item.title,
-          remainingTime: item.remainingTime,
-          progress: (item.percentage / 100).clamp(0.0, 1.0),
-          thumbnailUrl: thumbUrl,
-          onTap: () {
-            // Navigate to details for the watched item
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => DetailsScreen(
-                  media: MediaItem(
-                    id: item.mediaId,
-                    tmdbId: int.tryParse(item.mediaId) ?? 0,
-                    type: MediaType.fromString(item.mediaType),
-                    title: item.title,
-                    posterPath: item.posterPath,
-                  ),
-                ),
+        return Padding(
+          padding: AppSpacing.sectionPadding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Section title
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Continue Watching', style: AppTextStyles.sectionTitle),
+                  if (items.length > 1)
+                    Text(
+                      '${items.length} items',
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: AppColors.primary,
+                      ),
+                    ),
+                ],
               ),
-            );
-          },
+              const SizedBox(height: 16),
+
+              // Horizontal list of cards
+              ...items.map((item) {
+                final thumbUrl = buildImageUrl(
+                  item.posterPath,
+                  AppConfig.posterSmall,
+                );
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: ContinueWatchingCard(
+                    title: item.title,
+                    remainingTime: item.remainingTime,
+                    progress: (item.percentage / 100).clamp(0.0, 1.0),
+                    thumbnailUrl: thumbUrl,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => DetailsScreen(
+                            media: MediaItem(
+                              id: item.mediaId,
+                              tmdbId: int.tryParse(item.mediaId) ?? 0,
+                              type: MediaType.fromString(item.mediaType),
+                              title: item.title,
+                              posterPath: item.posterPath,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              }),
+            ],
+          ),
         );
       },
     );

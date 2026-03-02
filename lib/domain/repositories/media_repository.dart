@@ -14,6 +14,9 @@ abstract class MediaRepository {
   /// Movie details with appended data (credits, videos, etc.).
   Future<MediaItem> getMovieDetails(int id);
 
+  /// TV show details with seasons + cast.
+  Future<MediaItem> getTvDetails(int id);
+
   /// Multi-search across movies + TV.
   Future<List<MediaItem>> search(String query);
 }

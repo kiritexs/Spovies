@@ -1,4 +1,5 @@
 import 'cast_member.dart';
+import 'episode.dart';
 
 /// Nested metadata for a media item — ratings, genres, runtime, etc.
 class MediaMetadata {
@@ -11,6 +12,8 @@ class MediaMetadata {
   final String? trailerKey;
   final String? certification;
   final List<CastMember> cast;
+  final List<TvSeason> seasons;
+  final int? numberOfSeasons;
 
   const MediaMetadata({
     this.imdbId,
@@ -22,6 +25,8 @@ class MediaMetadata {
     this.trailerKey,
     this.certification,
     this.cast = const [],
+    this.seasons = const [],
+    this.numberOfSeasons,
   });
 
   MediaMetadata copyWith({
@@ -34,6 +39,8 @@ class MediaMetadata {
     String? trailerKey,
     String? certification,
     List<CastMember>? cast,
+    List<TvSeason>? seasons,
+    int? numberOfSeasons,
   }) {
     return MediaMetadata(
       imdbId: imdbId ?? this.imdbId,
@@ -45,6 +52,8 @@ class MediaMetadata {
       trailerKey: trailerKey ?? this.trailerKey,
       certification: certification ?? this.certification,
       cast: cast ?? this.cast,
+      seasons: seasons ?? this.seasons,
+      numberOfSeasons: numberOfSeasons ?? this.numberOfSeasons,
     );
   }
 

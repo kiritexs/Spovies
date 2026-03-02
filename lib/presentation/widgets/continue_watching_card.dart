@@ -1,18 +1,22 @@
 import 'dart:ui';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 
-/// "Continue Watching" glass panel card with progress bar.
+/// Individual "Continue Watching" glass card.
 ///
-/// Phase 1: Static placeholder. Phase 4 will connect to WatchHistoryRepository.
+/// Shows thumbnail, title, remaining time, and a progress bar at the bottom.
+/// Used in the horizontal Continue Watching row on the home screen.
 class ContinueWatchingCard extends StatelessWidget {
   final String title;
   final String remainingTime;
-  final double progress; // 0.0 – 1.0
+
+  /// 0.0 – 1.0
+  final double progress;
   final String? thumbnailUrl;
   final VoidCallback? onTap;
 
@@ -27,76 +31,67 @@ class ContinueWatchingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: AppSpacing.sectionPadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Continue Watching', style: AppTextStyles.sectionTitle),
-          const SizedBox(height: 16),
-          GestureDetector(
-            onTap: onTap,
-            child: ClipRRect(
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: AppSpacing.borderRadiusLg,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            height: AppSpacing.continueWatchingHeight,
+            decoration: BoxDecoration(
+              gradient: AppColors.glassGradient,
               borderRadius: AppSpacing.borderRadiusLg,
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                child: Container(
-                  height: AppSpacing.continueWatchingHeight,
-                  decoration: BoxDecoration(
-                    gradient: AppColors.glassGradient,
-                    borderRadius: AppSpacing.borderRadiusLg,
-                    border: Border.all(color: AppColors.glassBorder),
-                  ),
-                  child: Stack(
+              border: Border.all(color: AppColors.glassBorder),
+            ),
+            child: Stack(
+              children: [
+                // ─── Content Row ──────────────────────────────────
+                Padding(
+                  padding: AppSpacing.cardContentPadding,
+                  child: Row(
                     children: [
-                      // Content
-                      Padding(
-                        padding: AppSpacing.cardContentPadding,
-                        child: Row(
+                      _buildThumbnail(),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            // Thumbnail
-                            _buildThumbnail(),
-                            const SizedBox(width: 16),
-                            // Info
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    title,
-                                    style: AppTextStyles.cardTitle.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    remainingTime,
-                                    style: AppTextStyles.cardSubtitle,
-                                  ),
-                                ],
+                            Text(
+                              title,
+                              style: AppTextStyles.cardTitle.copyWith(
+                                fontWeight: FontWeight.w700,
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
+                            const SizedBox(height: 4),
+                            Text(remainingTime, style: AppTextStyles.cardSubtitle),
                           ],
                         ),
                       ),
-
-                      // Progress bar at bottom
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        child: _buildProgressBar(),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        Icons.play_circle_filled_rounded,
+                        color: AppColors.primary,
+                        size: 28,
                       ),
                     ],
                   ),
                 ),
-              ),
+
+                // ─── Progress Bar ──────────────────────────────────
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: _buildProgressBar(),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -105,37 +100,31 @@ class ContinueWatchingCard extends StatelessWidget {
     return SizedBox(
       width: AppSpacing.continueWatchingThumbWidth,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Thumbnail image or placeholder
             Container(
               color: AppColors.surfaceDark,
               child: thumbnailUrl != null && thumbnailUrl!.isNotEmpty
-                  ? Image.network(thumbnailUrl!, fit: BoxFit.cover)
-                  : const Center(
-                      child: Icon(
-                        Icons.movie_outlined,
-                        color: AppColors.textSecondary,
-                        size: 28,
-                      ),
-                    ),
+                  ? CachedNetworkImage(
+                      imageUrl: thumbnailUrl!,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => _thumbPlaceholder(),
+                    )
+                  : _thumbPlaceholder(),
             ),
-            // Play icon overlay
-            Container(
-              color: AppColors.overlayDark,
-              child: const Center(
-                child: Icon(
-                  Icons.play_circle_filled_rounded,
-                  color: Colors.white,
-                  size: 24,
-                ),
-              ),
-            ),
+            // Dim overlay
+            Container(color: AppColors.overlayDark),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _thumbPlaceholder() {
+    return const Center(
+      child: Icon(Icons.movie_outlined, color: AppColors.textSecondary, size: 28),
     );
   }
 
@@ -144,9 +133,7 @@ class ContinueWatchingCard extends StatelessWidget {
       height: AppSpacing.progressBarHeight,
       child: Stack(
         children: [
-          // Track
           Container(width: double.infinity, color: AppColors.progressTrack),
-          // Fill
           FractionallySizedBox(
             widthFactor: progress.clamp(0.0, 1.0),
             child: Container(color: AppColors.primary),
