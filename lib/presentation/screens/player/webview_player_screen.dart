@@ -1,6 +1,7 @@
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -13,7 +14,7 @@ import '../../../domain/entities/user_progress.dart';
 import '../../../plugins/event_bridge/event_bridge.dart';
 import '../../providers/watch_history_providers.dart';
 
-// ─── JavaScript injected at document-end (once, guarded by flag) ─────────────
+// ─── Bridge JS — injected at document-end, guarded by flag ───────────────────
 
 const _kBridgeJs = '''
 (function() {
@@ -28,29 +29,41 @@ const _kBridgeJs = '''
 })();
 ''';
 
-// ─── CSS injected at document-start to disable text selection globally ────────
+// ─── CSS — injected at document-start ────────────────────────────────────────
+// Disables text selection & long-press callouts globally.
+// Does NOT touch pointer-events so scrollable lists remain fully interactive.
 
 const _kNoSelectCss = '''
 (function() {
   var s = document.createElement('style');
-  s.textContent = '* { -webkit-user-select: none !important; '
-    + 'user-select: none !important; '
-    + '-webkit-touch-callout: none !important; } '
-    + 'video, canvas, img { pointer-events: auto !important; }';
+  s.textContent = [
+    '* {',
+    '  -webkit-user-select: none !important;',
+    '  user-select: none !important;',
+    '  -webkit-touch-callout: none !important;',
+    '}',
+  ].join('');
   (document.head || document.documentElement).appendChild(s);
 })();
 ''';
 
-/// Full-screen WebView player screen.
+/// Full-screen WebView player.
 ///
-/// Features:
-/// - Landscape orientation lock + immersive mode
-/// - Non-selectable text (CSS UserScript at document start)
-/// - Deduped postMessage → EventBridge (JS guarded by flag)
-/// - Linear progress bar during load
-/// - Swipe-down to dismiss
-/// - Error state with retry
-/// - Progress tracking → WatchHistory
+/// Design decisions:
+/// - **No full-body GestureDetector** — the previous swipe-to-dismiss
+///   wrapper was claiming all vertical drags in Flutter's gesture arena
+///   before the WebView could receive them, breaking internal list scrolling.
+///   Dismiss is handled by the × button and the Android back button only.
+/// - **`gestureRecognizers`** — explicitly transfers vertical drag, horizontal
+///   drag, and scale gesture ownership to the WebView so Flutter widgets
+///   above it never compete.
+/// - **`gestureNavigationEnabled: false`** — disables iOS WebView's built-in
+///   swipe-to-navigate-back, which would otherwise conflict with content
+///   that needs horizontal swiping (e.g. carousels, tab bars inside the player).
+/// - **Landscape lock** — `SystemChrome.setPreferredOrientations` is called
+///   in `initState`; `dispose` fully restores portrait + system UI.
+///   The iOS `Info.plist` already declares both landscape orientations so the
+///   lock works identically on iOS and Android.
 class WebViewPlayerScreen extends ConsumerStatefulWidget {
   final String url;
   final MediaItem media;
@@ -76,34 +89,56 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   bool _hasError = false;
   String _errorMsg = '';
 
-  // Swipe-to-dismiss tracking
-  double _dragStart = 0;
-  static const _kDismissThreshold = 120.0;
+  // ─── Gesture recognizers — transferred to the WebView ────────────────────
+  // Giving explicit ownership of these gestures to the WebView prevents the
+  // Flutter widget tree from competing, which is the root cause of scroll
+  // breakage in embedded lists.
+  static final _webViewGestures =
+      <Factory<OneSequenceGestureRecognizer>>{
+        Factory<VerticalDragGestureRecognizer>(
+          VerticalDragGestureRecognizer.new,
+        ),
+        Factory<HorizontalDragGestureRecognizer>(
+          HorizontalDragGestureRecognizer.new,
+        ),
+        Factory<ScaleGestureRecognizer>(ScaleGestureRecognizer.new),
+        Factory<LongPressGestureRecognizer>(LongPressGestureRecognizer.new),
+      };
 
   @override
   void initState() {
     super.initState();
-
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-
+    _lockLandscape();
     _eventBridge = EventBridge(onProgressUpdate: _onProgressUpdate);
   }
 
   @override
   void dispose() {
+    _restorePortrait();
+    super.dispose();
+  }
+
+  // ─── Orientation ─────────────────────────────────────────────────────────
+
+  void _lockLandscape() {
+    // Works on Android and iOS (Info.plist already allows landscape).
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    // Immersive mode: hides nav bar + status bar for full viewport.
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  void _restorePortrait() {
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
     SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.manual,
-      overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
+      overlays: SystemUiOverlay.values,
     );
-    super.dispose();
   }
 
   // ─── Progress Tracking ───────────────────────────────────────────────────
@@ -126,28 +161,41 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     ref.invalidate(continueWatchingProvider);
   }
 
-  // ─── WebView Settings ────────────────────────────────────────────────────
+  // ─── Settings ────────────────────────────────────────────────────────────
 
   InAppWebViewSettings get _settings => InAppWebViewSettings(
+    // Playback
     mediaPlaybackRequiresUserGesture: false,
     allowsInlineMediaPlayback: true,
+    allowsPictureInPictureMediaPlayback: true,
+
+    // JavaScript & Storage
     javaScriptEnabled: true,
     domStorageEnabled: true,
-    supportZoom: false,
-    transparentBackground: false,
     cacheEnabled: true,
+
+    // Scroll & touch
+    // NOTE: do NOT set isScrollEnabled: false — lists inside the player
+    // depend on the WebView's native scroll.
+    supportZoom: false,
     disableContextMenu: true,
-    // Improve touch responsiveness
+
+    // iOS: disable the built-in swipe-back/forward gesture so it doesn't
+    // intercept horizontal swipes inside the player UI.
+    gestureNavigationEnabled: false,
+
+    // Rendering
+    transparentBackground: false,
+
+    // Reduce unnecessary resource tracking
     useOnLoadResource: false,
   );
 
   List<UserScript> get _userScripts => [
-    // Disable text selection at document start (before content paints)
     UserScript(
       source: _kNoSelectCss,
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
     ),
-    // Bridge listener at document end (DOM ready)
     UserScript(
       source: _kBridgeJs,
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
@@ -160,28 +208,19 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, _) async {
-        if (!didPop) {
-          await _saveProgressOnExit();
-          if (mounted) Navigator.pop(context);
-        }
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _dismiss();
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: GestureDetector(
-          onVerticalDragStart: (d) => _dragStart = d.globalPosition.dy,
-          onVerticalDragEnd: (d) {
-            final delta = d.globalPosition.dy - _dragStart;
-            if (delta > _kDismissThreshold) _dismiss();
-          },
-          child: Stack(
-            children: [
-              _hasError ? _buildErrorState() : _buildWebView(),
-              _buildProgressBar(),
-              _buildCloseButton(),
-              if (_loadProgress < 100 && !_hasError) _buildLoadingOverlay(),
-            ],
-          ),
+        // No GestureDetector wrapper — touch events go directly to WebView.
+        body: Stack(
+          children: [
+            _hasError ? _buildErrorState() : _buildWebView(),
+            _buildLoadingOverlay(),
+            _buildProgressBar(),
+            _buildCloseButton(),
+          ],
         ),
       ),
     );
@@ -192,6 +231,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   Widget _buildWebView() {
     return InAppWebView(
       preventGestureDelay: true,
+      gestureRecognizers: _webViewGestures,
       initialUrlRequest: URLRequest(url: WebUri(widget.url)),
       initialSettings: _settings,
       initialUserScripts: UnmodifiableListView(_userScripts),
@@ -207,14 +247,15 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
         );
       },
       onProgressChanged: (controller, progress) {
+        if (!mounted) return;
         setState(() {
           _loadProgress = progress;
-          if (progress > 0) _hasError = false;
+          if (progress > 0 && _hasError) _hasError = false;
         });
       },
       onReceivedError: (controller, request, error) {
-        // Only show error for main frame failures
         if (request.isForMainFrame ?? false) {
+          if (!mounted) return;
           setState(() {
             _hasError = true;
             _errorMsg = error.description;
@@ -222,9 +263,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
         }
       },
       onConsoleMessage: (controller, message) {
-        if (kDebugMode) {
-          debugPrint('WebView: ${message.message}');
-        }
+        if (kDebugMode) debugPrint('WebView: ${message.message}');
       },
     );
   }
@@ -246,10 +285,11 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     );
   }
 
-  // ─── Loading Overlay (initial) ────────────────────────────────────────────
+  // ─── Initial Loading Overlay ──────────────────────────────────────────────
 
   Widget _buildLoadingOverlay() {
-    if (_loadProgress > 15) return const SizedBox.shrink();
+    // Only shown during the very first load (progress ≤ 15%).
+    if (_hasError || _loadProgress > 15) return const SizedBox.shrink();
     return Container(
       color: Colors.black,
       child: const Center(
@@ -267,39 +307,47 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     return Container(
       color: Colors.black,
       child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.wifi_off_rounded, color: Colors.white38, size: 56),
-            const SizedBox(height: 16),
-            const Text(
-              'Failed to load player',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.wifi_off_rounded,
+                color: Colors.white38,
+                size: 56,
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _errorMsg,
-              style: const TextStyle(color: Colors.white54, fontSize: 13),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _retry,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Retry'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+              const SizedBox(height: 16),
+              const Text(
+                'Failed to load player',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _errorMsg,
+                style: const TextStyle(color: Colors.white54, fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: _retry,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Retry'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -319,7 +367,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
             borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
             onTap: _dismiss,
             child: const Padding(
-              padding: EdgeInsets.all(8),
+              padding: EdgeInsets.all(10),
               child: Icon(Icons.close_rounded, color: Colors.white, size: 20),
             ),
           ),
@@ -330,8 +378,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
 
   // ─── Actions ──────────────────────────────────────────────────────────────
 
-  Future<void> _dismiss() async {
-    await _saveProgressOnExit();
+  void _dismiss() {
     if (mounted) Navigator.pop(context);
   }
 
@@ -341,10 +388,5 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
       _loadProgress = 0;
     });
     _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(widget.url)));
-  }
-
-  Future<void> _saveProgressOnExit() async {
-    // Final progress save is already throttled by EventBridge;
-    // nothing extra needed here. Left as hook for future use.
   }
 }
