@@ -1,8 +1,8 @@
 # Spovies — Technical Specification Document (TSD)
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Status:** Architecture & Logic (Pre-Implementation)  
-**Last Updated:** March 2, 2025
+**Last Updated:** March 2, 2026
 
 ---
 
@@ -14,7 +14,9 @@
 4. [Smart Features](#4-smart-features)
 5. [Project Roadmap (5 Phases)](#5-project-roadmap-5-phases)
 6. [State Management Flow & Riverpod Structure](#6-state-management-flow--riverpod-structure)
-7. [Backend Integration Plan](#7-backend-integration-plan)
+7. [Local-First Data Strategy](#7-local-first-data-strategy)
+8. [UI/UX Design System](#8-uiux-design-system)
+9. [TMDB API Integration Reference](#9-tmdb-api-integration-reference)
 
 ---
 
@@ -346,14 +348,16 @@ class UserProgress {
 
 ### Phase 1: Foundation (Weeks 1–2)
 
-- [ ] Project setup: Flutter, dependencies (Riverpod, Hive/Isar, Dio)
+- [ ] Project setup: Flutter, dependencies (Riverpod, Hive/Isar, Dio, `google_fonts`, `cached_network_image`, `material_symbols_icons`)
 - [ ] Folder structure per Clean Architecture
-- [ ] TMDB API wrapper (search, details, trending)
+- [ ] Design system: `AppTheme`, `AppColors`, `AppTextStyles`, `AppSpacing` matching `stitch/code.html` tokens
+- [ ] TMDB API wrapper: `TmdbApi` class with Bearer token auth, `/configuration`, `/genre/movie/list`, `/trending/movie/week`
+- [ ] Image loading with `CachedNetworkImage` + shimmer placeholder
 - [ ] Core entities: `MediaItem`, `Episode`
-- [ ] Basic home screen with trending movies
+- [ ] Home screen with Hero card (4:5), "Now Trending" horizontal snap row, glass bottom nav
 - [ ] Deep-link parsing (no navigation yet)
 
-**Deliverable:** App displays TMDB content; deep links parse correctly.
+**Deliverable:** App renders TMDB content with full design-system fidelity matching `code.html`; Hero + Trending row + glass nav functional.
 
 ---
 
@@ -372,14 +376,15 @@ class UserProgress {
 
 ### Phase 3: Unified Details & Plugin Actions (Weeks 5–6)
 
-- [ ] Details screen with `media_header` hook zone
+- [ ] Details screen: backdrop hero, cast row, trailer chip, rating badge, age cert — all from `append_to_response` single call
 - [ ] `MergeMetadataUseCase` for combining TMDB + plugin data
 - [ ] `ExecutePluginActionUseCase` (ExternalLink, WebView stubs)
-- [ ] Primary + "More Providers" dropdown UI
+- [ ] Primary + "More Providers" dropdown UI (glass bottom sheet)
 - [ ] User preference: Preferred Provider in Settings
-- [ ] `media_card_context` hook (long-press menu on cards)
+- [ ] `media_card_context` hook (long-press glass context menu on cards)
+- [ ] Palette generator: extract dominant color from poster, animate accent color
 
-**Deliverable:** Details page shows merged metadata; Watch button opens plugin (ExternalLink or WebView placeholder).
+**Deliverable:** Details page shows merged metadata with cinematic layout; Watch button opens plugin; accent color adapts to content.
 
 ---
 
@@ -397,16 +402,17 @@ class UserProgress {
 
 ---
 
-### Phase 5: Polish & Backend Prep (Weeks 9–10)
+### Phase 5: Polish & Export/Import (Weeks 9–10)
 
 - [ ] Theming engine (poster palette → accent color)
 - [ ] Intelligent fallback (plugin failure handling)
 - [ ] Deep-link navigation to Details
-- [ ] Backend API client (Django REST) for watchlist sync
-- [ ] Auth flow placeholder for future cloud sync
-- [ ] Performance tuning, error handling, analytics hooks
+- [ ] Settings screen: all sections (Data, Plugins, Appearance, Playback, About)
+- [ ] Export / Import feature (`ExportService`, `ImportService`, `.spovies` file format)
+- [ ] Share export via `share_plus`; import via `file_picker`
+- [ ] Performance tuning, error handling, shimmer/skeleton states on all loading UI
 
-**Deliverable:** Production-ready app; backend integration ready for Phase 6.
+**Deliverable:** Production-ready, fully local app. Users can back up and restore all data without any server.
 
 ---
 
@@ -597,35 +603,507 @@ The `WebViewPlayer` widget:
 
 ---
 
-## 7. Backend Integration Plan
+## 7. Local-First Data Strategy
 
-### 7.1 Django REST API (Future)
+> **Decision:** There is no backend. The app is fully local. All user data lives in Hive/Isar on-device. Users can back up and restore their data via an **Export / Import** feature in Settings. No auth, no cloud sync, no server.
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/auth/token/` | POST | Login; returns JWT |
-| `/api/watchlist/` | GET | User's watchlist |
-| `/api/watchlist/` | POST | Add to watchlist |
-| `/api/watchlist/{id}/` | DELETE | Remove from watchlist |
-| `/api/progress/` | GET | Sync user progress (batch) |
-| `/api/progress/` | POST | Upload progress |
-| `/api/progress/sync/` | POST | Conflict resolution (last-write-wins or merge) |
+---
 
-### 7.2 Flutter Client Strategy
+### 7.1 What is Stored Locally (Hive/Isar)
 
-- **Offline-first:** Local Hive/Isar is source of truth; sync when online.
-- **Background sync:** Use `workmanager` or similar for periodic upload.
-- **Conflict resolution:** Server timestamp wins; client sends `lastPlayedDate` for comparison.
-- **Auth:** Store JWT in `flutter_secure_storage`; refresh token flow.
+| Data | Box / Collection | Description |
+|------|-----------------|-------------|
+| `WatchHistory` | `watchHistoryBox` | Progress records per media item (`UserProgress`) |
+| `Watchlist` | `watchlistBox` | User's saved/bookmarked media |
+| `InstalledPlugins` | `pluginsBox` | Cached plugin manifests (fetched from URLs) |
+| `TmdbCache` | `tmdbCacheBox` | Cached API responses with TTL |
+| `GenreCache` | `genreCacheBox` | Movie + TV genre lists |
+| `TmdbConfig` | `configBox` | TMDB image configuration |
+| `AppSettings` | `settingsBox` | Theme mode, preferred provider, language, etc. |
 
-### 7.3 Data Sync Flow
+---
+
+### 7.2 Export / Import (Settings Screen)
+
+Users can export all their data to a single `.spovies` file (JSON under the hood, zipped) and import it on the same or a new device.
+
+#### Export Flow
 
 ```
-Local Hive ──► SyncService ──► Django REST ──► PostgreSQL
-     ▲                │
-     │                │ (on success)
-     └────────────────┘
+AppSettings + WatchHistory + Watchlist + InstalledPlugins
+       │
+       ▼
+  ExportService.export()
+       │
+  Serialize to JSON → Compress (gzip) → Write to file
+       │
+  Share via share_plus (share sheet: Files, Drive, AirDrop, etc.)
+  — or —
+  Save to user-chosen directory via file_picker
 ```
+
+#### Import Flow
+
+```
+User picks .spovies file (via file_picker)
+       │
+       ▼
+  ImportService.import()
+       │
+  Decompress → Validate schema version → Deserialize JSON
+       │
+  ┌────▼─────────────────────────────────────┐
+  │  Merge strategy:                          │
+  │  - WatchHistory: merge, keep latest date  │
+  │  - Watchlist: union (add missing items)   │
+  │  - Plugins: union (add missing manifests) │
+  │  - Settings: user chooses (keep or overwrite) │
+  └───────────────────────────────────────────┘
+       │
+  Write to Hive → Notify providers → UI refreshes
+```
+
+#### Export File Format (`.spovies`)
+
+```json
+{
+  "schemaVersion": 1,
+  "exportedAt": "2026-03-02T14:30:00Z",
+  "appVersion": "1.0.0",
+  "watchHistory": [ /* UserProgress[] */ ],
+  "watchlist": [ /* MediaItem[] (id, type, title, posterPath) */ ],
+  "plugins": [ /* PluginManifest[] */ ],
+  "settings": {
+    "preferredProvider": "example-source",
+    "themeMode": "dark",
+    "language": "en-US"
+  }
+}
+```
+
+---
+
+### 7.3 Settings Screen Sections
+
+| Section | Options |
+|---------|---------|
+| **Data** | Export Data, Import Data, Clear Watch History, Clear Watchlist |
+| **Plugins** | Add Plugin (paste URL), installed plugin list, remove plugin |
+| **Appearance** | Theme mode (Dark / Light / System), Language |
+| **Playback** | Preferred Provider (dropdown of installed plugins) |
+| **About** | App version, TMDB attribution, Spovies plugin docs link |
+
+---
+
+### 7.4 Riverpod Providers for Local Data
+
+```dart
+// Watchlist
+final watchlistProvider = NotifierProvider<WatchlistNotifier, List<MediaItem>>(...);
+
+// Watch history (Continue Watching)
+final watchHistoryProvider = NotifierProvider<WatchHistoryNotifier, List<UserProgress>>(...);
+
+// App settings (persisted to Hive, reactive)
+final appSettingsProvider = NotifierProvider<AppSettingsNotifier, AppSettings>(...);
+
+// Export/Import
+final exportServiceProvider = Provider<ExportService>((ref) => ExportService(ref));
+final importServiceProvider = Provider<ImportService>((ref) => ImportService(ref));
+```
+
+---
+
+### 7.5 Flutter Packages for Local Data & Export
+
+| Package | Purpose |
+|---------|---------|
+| `hive_flutter` / `isar` | Primary local database |
+| `path_provider` | Get app documents directory |
+| `share_plus` | Share export file via OS share sheet |
+| `file_picker` | Let user pick `.spovies` file to import |
+| `archive` | gzip compress/decompress the export file |
+
+---
+
+## 8. UI/UX Design System
+
+> **Reference:** `stitch/code.html` — The delivered app must match or exceed the visual and interaction quality of this reference at every screen. No component should feel "less polished" than the reference. This section is a binding constraint, not a suggestion.
+
+---
+
+### 8.1 Visual Identity
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| **Primary** | `#6C2BEE` | Buttons, active states, rating badges glow, progress bars, bottom nav indicator |
+| **Background (dark)** | `#0A0A0C` | App background |
+| **Surface (dark)** | `#1A1A1E` | Cards, modals, bottom nav |
+| **Glass overlay** | `rgba(26, 26, 30, 0.70)` + `blur(12px)` | Glass panels, floating nav, Continue Watching cards |
+| **Border (subtle)** | `rgba(255, 255, 255, 0.08)` | Card and glass borders |
+| **Text primary** | `#FFFFFF` | Titles, main content |
+| **Text secondary** | Slate 400 (`#94A3B8`) | Subtitles, metadata, genres |
+| **Glow** | `box-shadow: 0 0 20px -5px rgba(108, 43, 238, 0.3)` | Primary buttons, active elements |
+| **Selection** | bg: `#6C2BEE`, text: white | Text selection highlight |
+
+**Flutter mapping:**
+- `ThemeData.colorScheme` → seed color `Color(0xFF6C2BEE)`, brightness `Brightness.dark`
+- Custom `ColorScheme` extension for `glass`, `surface`, `backgroundDark`
+
+---
+
+### 8.2 Typography
+
+| Role | Font | Weight | Usage |
+|------|------|--------|-------|
+| **Display** | Spline Sans | 700 | Titles, Hero title, section headers |
+| **Body** | Spline Sans | 400 | Overviews, descriptions |
+| **Label** | Spline Sans | 600 | Buttons, tags, nav labels |
+| **Caption** | Spline Sans | 400 | Metadata, ratings, genres, timestamps |
+
+**Flutter mapping:** Use `google_fonts` package → `GoogleFonts.splineSans(...)`. Define a `AppTextStyles` class with all variants.
+
+---
+
+### 8.3 Iconography
+
+- **Icon set:** Material Symbols Outlined  
+- **Flutter package:** `material_symbols_icons`  
+- **Icon sizes:** 20px (buttons), 24px (nav), 16px (inline metadata)  
+- **Fill variation:** Filled (1) for active states, unfilled (0) for inactive  
+
+---
+
+### 8.4 Spacing & Shape
+
+| Token | Value |
+|-------|-------|
+| **Base border radius** | 8px (0.5rem) |
+| **Large radius** | 16px (1rem) — cards, inputs |
+| **XL radius** | 24px (1.5rem) — hero card, bottom nav |
+| **2XL radius** | 32px (2rem) — hero poster |
+| **Card padding** | 12px |
+| **Section padding H** | 24px |
+| **Section gap** | 32px between sections |
+
+---
+
+### 8.5 Component Specifications
+
+#### Hero Featured Card
+- **Aspect ratio:** 4:5
+- **Border radius:** 2xl (32px)
+- **Overlay:** `gradient-to-t from-background-dark via-transparent`
+- **"Featured Premiere" badge:** `#6C2BEE/90`, `blur(8px)`, rounded-full, top-left
+- **Hover/press:** scale `1.05` on poster image (700ms ease-in-out)
+- **Primary watch button:** Full width minus icon button, `h: 44px`, purple, `blur glow shadow`
+- **Watchlist icon button:** `44x44px`, glass bg, border `white/20`
+
+#### Media Card (Trending / Top Rated rows)
+- **Size:** 140px wide, `2:3` aspect ratio
+- **Border radius:** xl (16px)
+- **Rating badge:** Top-right, `32x32px`, `bg-black/60 blur(8px)`, white bold text, `border: white/10`
+- **Hover/press:** poster scale `1.10` (500ms)
+- **Snap scroll:** horizontal `snap-x`, no visible scrollbar
+- **Card gap:** 16px
+- **Text below:** Title (bold, truncated), Genre/Type (slate-400, xs)
+
+#### Continue Watching Glass Panel
+- **Height:** `96px` (fixed)
+- **Border radius:** xl (16px)
+- **Background:** glass panel (blur 12px, gradient)
+- **Progress bar:** 4px height, at card bottom, `#6C2BEE`, full-width track `white/5`
+- **Thumbnail:** 112px wide, 16px radius, inside card, with `play_circle` overlay on `black/40`
+- **Info:** Title (bold, truncated), remaining time (slate-400)
+
+#### Floating Glass Bottom Navigation
+- **Position:** Fixed, `bottom: 24px`, `left/right: 24px`
+- **Border radius:** 2xl (32px)
+- **Background:** glass panel (blur, gradient)
+- **Shadow:** `shadow-2xl shadow-black/50`
+- **4 tabs:** Home, Explore, Browse (Tickets icon), Profile
+- **Active state:** `#6C2BEE` color + dot indicator below icon
+- **Inactive state:** Slate-400, hover → white
+- **Icon scale on hover:** 1.10 with smooth transition
+
+#### Header / Search Bar
+- **Fixed top**, full-width
+- **Background:** gradient-to-b from `background-dark` via `background-dark/90` to transparent
+- **Logo + greeting:** "Welcome back" label (primary, uppercase tracking-widest xs) + App name (xl, bold, white)
+- **Search button:** `40x40px`, rounded-full, surface-dark, `border: white/10`
+
+---
+
+### 8.6 Motion & Animation
+
+| Interaction | Animation |
+|-------------|-----------|
+| Poster card hover | scale 1.05–1.10, 500–700ms ease-in-out |
+| Button tap | `active:scale-95` (95%), instant |
+| Screen transitions | Slide/fade, ~300ms |
+| WebView open | Bottom sheet slide-up or full-screen push |
+| Mini-player appear | Slide up from bottom, 300ms spring |
+| Palette color change | Animated color interpolation, 500ms |
+| Continue Watching progress | Animated width change on mount |
+
+---
+
+### 8.7 Dark/Light Mode
+
+- **Default:** Dark mode is the primary and default experience.
+- **Light mode:** `background-light: #F6F6F8`, text `slate-900`. Optional — dark is priority.
+- **Flutter:** `ThemeMode.dark` default; `ThemeMode.system` can be offered in Settings.
+
+---
+
+### 8.8 Home Screen Layout (Section Order)
+
+1. Header (fixed, top)
+2. Hero Featured Movie (first item of `trending/movie/week` or editor-picked)
+3. "Now Trending" horizontal scroll row
+4. "Continue Watching" glass card (only shown if user has watch history)
+5. "Top Rated" horizontal scroll row
+6. (Phase 5+) "New Releases", "For You" rows
+7. Floating Glass Bottom Nav (fixed, bottom)
+
+---
+
+## 9. TMDB API Integration Reference
+
+> **Base URL:** `https://api.themoviedb.org/3`  
+> **Auth:** Bearer token in `Authorization` header (API Read Access Token from TMDB account settings)  
+> **Rate limit:** ~50 requests per second per IP (TMDB enforced)
+
+---
+
+### 9.1 Authentication
+
+All requests use the **Bearer token** method:
+
+```
+Authorization: Bearer <TMDB_READ_ACCESS_TOKEN>
+accept: application/json
+```
+
+Store the token in `flutter_secure_storage` or `.env` (never hardcoded). In Flutter, use `Dio` with a base interceptor that attaches this header to every request.
+
+---
+
+### 9.2 Image Base URLs
+
+TMDB images are composed as:
+
+```
+https://image.tmdb.org/t/p/{size}/{path}
+```
+
+| Size | Use Case |
+|------|----------|
+| `w92` | Tiny thumbnails |
+| `w185` | Card thumbnails (Trending row) |
+| `w342` | Standard card posters |
+| `w500` | Hero card poster |
+| `w780` | Details backdrop |
+| `original` | Full-res download |
+
+Always fetch available sizes from `/configuration` on app init and cache locally.
+
+---
+
+### 9.3 Key Endpoints
+
+#### Trending
+```
+GET /trending/movie/day        → Daily trending movies
+GET /trending/movie/week       → Weekly trending (used for Hero)
+GET /trending/tv/day           → Daily trending TV
+GET /trending/tv/week          → Weekly trending TV
+```
+
+Response fields used by Spovies:
+- `id`, `title` / `name`, `poster_path`, `backdrop_path`, `vote_average`, `overview`, `genre_ids`, `media_type`, `release_date`
+
+---
+
+#### Movie Details
+```
+GET /movie/{movie_id}
+GET /movie/{movie_id}?append_to_response=credits,videos,images,release_dates
+```
+
+Key fields:
+- `id`, `imdb_id`, `title`, `overview`, `runtime`, `genres[]`, `vote_average`, `vote_count`
+- `poster_path`, `backdrop_path`
+- `credits.cast[]` (from append)
+- `videos.results[]` → filter `type == "Trailer"` and `site == "YouTube"` for trailer URL
+- `release_dates.results[]` → extract certification by country
+
+---
+
+#### TV Show Details
+```
+GET /tv/{series_id}
+GET /tv/{series_id}?append_to_response=credits,videos,aggregate_credits
+GET /tv/{series_id}/season/{season_number}
+GET /tv/{series_id}/season/{season_number}/episode/{episode_number}
+```
+
+Key fields:
+- `id`, `name`, `overview`, `first_air_date`, `number_of_seasons`, `number_of_episodes`
+- `seasons[]` → `season_number`, `episode_count`, `poster_path`
+- Season details: `episodes[]` → `episode_number`, `name`, `overview`, `still_path`, `runtime`
+
+---
+
+#### Search
+```
+GET /search/multi?query={query}&page=1
+GET /search/movie?query={query}&page=1
+GET /search/tv?query={query}&page=1
+```
+
+Returns `media_type: "movie" | "tv" | "person"` — filter to `movie` and `tv` for display.
+
+---
+
+#### Discover (for curated rows like "Top Rated")
+```
+GET /movie/top_rated?page=1
+GET /movie/popular?page=1
+GET /movie/upcoming?page=1
+GET /movie/now_playing?page=1
+GET /tv/top_rated?page=1
+GET /tv/popular?page=1
+```
+
+---
+
+#### Genres
+```
+GET /genre/movie/list
+GET /genre/tv/list
+```
+
+Map `genre_ids[]` from list results to names using cached genre list. Cache on app init.
+
+---
+
+#### Configuration (run once on init, cache with Hive)
+```
+GET /configuration
+```
+
+Returns image base URLs and available sizes. Cache this permanently with a TTL of 24 hours.
+
+---
+
+### 9.4 Flutter API Wrapper Design
+
+```dart
+// lib/data/datasources/remote/tmdb_api.dart
+
+class TmdbApi {
+  final Dio _dio;
+
+  TmdbApi(this._dio);
+
+  // Trending
+  Future<List<MediaItemModel>> getTrendingMovies({String window = 'week'});
+  Future<List<MediaItemModel>> getTrendingTv({String window = 'day'});
+
+  // Details
+  Future<MediaItemModel> getMovieDetails(int id);
+  Future<MediaItemModel> getTvDetails(int id);
+  Future<SeasonModel> getSeason(int seriesId, int seasonNumber);
+
+  // Search
+  Future<List<MediaItemModel>> search(String query);
+
+  // Curated lists
+  Future<List<MediaItemModel>> getTopRatedMovies({int page = 1});
+  Future<List<MediaItemModel>> getPopularMovies({int page = 1});
+  Future<List<MediaItemModel>> getUpcomingMovies({int page = 1});
+
+  // Config & genres
+  Future<TmdbConfigModel> getConfiguration();
+  Future<List<GenreModel>> getMovieGenres();
+  Future<List<GenreModel>> getTvGenres();
+}
+```
+
+**Dio Setup:**
+
+```dart
+final dioProvider = Provider<Dio>((ref) {
+  final dio = Dio(BaseOptions(
+    baseUrl: 'https://api.themoviedb.org/3',
+    headers: {
+      'Authorization': 'Bearer ${Env.tmdbReadAccessToken}',
+      'accept': 'application/json',
+    },
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 15),
+  ));
+
+  dio.interceptors.add(RetryInterceptor(dio, retries: 3));
+  dio.interceptors.add(LogInterceptor()); // remove in production
+
+  return dio;
+});
+```
+
+---
+
+### 9.5 Image Loading in Flutter
+
+Use `cached_network_image` for all TMDB images:
+
+```dart
+CachedNetworkImage(
+  imageUrl: 'https://image.tmdb.org/t/p/w500${media.posterPath}',
+  placeholder: (context, url) => ShimmerPlaceholder(),
+  errorWidget: (context, url, error) => FallbackPosterWidget(),
+  fit: BoxFit.cover,
+)
+```
+
+- **Shimmer loading state** for all poster/backdrop images (match card dimensions)
+- **Fallback widget:** App logo or genre icon on dark surface
+- Cache size limit configurable via `CacheManager`
+
+---
+
+### 9.6 Append-to-Response Strategy
+
+To minimize round trips on the Details screen, use a single call with `append_to_response`:
+
+```
+GET /movie/{id}?append_to_response=credits,videos,images,release_dates&language=en-US
+```
+
+This returns cast, trailer info, additional images, and age rating in one request. Map to:
+- `MediaItem.metadata.trailerKey` → YouTube video key for trailer
+- `MediaItem.metadata.cast` → List of `CastMember`
+- `MediaItem.metadata.certification` → "PG-13", "R", etc.
+
+---
+
+### 9.7 Rate Limiting & Caching Strategy
+
+| Data Type | Cache TTL | Storage |
+|-----------|-----------|---------|
+| Configuration | 24 hours | Hive |
+| Genre lists | 24 hours | Hive |
+| Trending lists | 30 minutes | Hive |
+| Movie/TV details | 1 hour | Hive |
+| Search results | No cache | In-memory only |
+| User progress | Persistent | Hive/Isar |
+
+Use `dio_cache_interceptor` or a custom Hive-backed cache layer.
+
+---
+
+*End of UI/UX Design System & TMDB API Reference*
 
 ---
 
