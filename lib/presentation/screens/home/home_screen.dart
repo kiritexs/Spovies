@@ -10,6 +10,12 @@ import 'package:spovies/presentation/widgets/hero_card.dart';
 import 'package:spovies/presentation/widgets/media_row.dart';
 import 'package:spovies/presentation/widgets/shimmer_placeholder.dart';
 import 'package:spovies/presentation/screens/settings/settings_screen.dart';
+import 'package:spovies/presentation/screens/details/details_screen.dart';
+import 'package:spovies/presentation/screens/search/search_screen.dart';
+import 'package:spovies/presentation/providers/watch_history_providers.dart';
+import 'package:spovies/core/utils/tmdb_image_url.dart';
+import 'package:spovies/core/config/app_config.dart';
+import 'package:spovies/domain/entities/media_type.dart';
 
 /// Main home screen — cinematic layout matching stitch/code.html.
 class HomeScreen extends ConsumerStatefulWidget {
@@ -39,7 +45,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             right: 0,
             child: AppHeader(
               onSearchTap: () {
-                // Phase 3: Navigate to search screen
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SearchScreen()),
+                );
               },
             ),
           ),
@@ -53,6 +62,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              } else if (index == 1) {
+                // Explore → open search
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SearchScreen()),
                 );
               } else {
                 setState(() => _navIndex = index);
@@ -111,12 +126,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
           const SizedBox(height: 32),
 
-          // ─── Continue Watching (Placeholder) ───
-          const ContinueWatchingCard(
-            title: 'Continue watching soon...',
-            remainingTime: 'Start watching to see progress here',
-            progress: 0.0,
-          ),
+          // ─── Continue Watching (Live) ───────
+          _buildContinueWatching(),
 
           const SizedBox(height: 32),
 
@@ -163,8 +174,56 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Widget _buildContinueWatching() {
+    final cwAsync = ref.watch(continueWatchingProvider);
+
+    return cwAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (items) {
+        if (items.isEmpty) {
+          return const ContinueWatchingCard(
+            title: 'Nothing yet...',
+            remainingTime: 'Start watching to see progress here',
+            progress: 0.0,
+          );
+        }
+
+        final item = items.first;
+        final thumbUrl = buildImageUrl(item.posterPath, AppConfig.posterSmall);
+
+        return ContinueWatchingCard(
+          title: item.title,
+          remainingTime: item.remainingTime,
+          progress: (item.percentage / 100).clamp(0.0, 1.0),
+          thumbnailUrl: thumbUrl,
+          onTap: () {
+            // Navigate to details for the watched item
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => DetailsScreen(
+                  media: MediaItem(
+                    id: item.mediaId,
+                    tmdbId: int.tryParse(item.mediaId) ?? 0,
+                    type: MediaType.fromString(item.mediaType),
+                    title: item.title,
+                    posterPath: item.posterPath,
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _onMovieTap(MediaItem movie) {
-    // Phase 3: Navigate to details screen
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => DetailsScreen(media: movie)),
+    );
   }
 
   String _resolveGenres(MediaItem movie, Map<int, String> genreMap) {

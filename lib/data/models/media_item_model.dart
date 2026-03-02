@@ -1,3 +1,4 @@
+import '../../domain/entities/cast_member.dart';
 import '../../domain/entities/media_item.dart';
 import '../../domain/entities/media_metadata.dart';
 import '../../domain/entities/media_type.dart';
@@ -73,6 +74,22 @@ class MediaItemModel {
       }
     }
 
+    // Extract cast (top 20)
+    final castList = <CastMember>[];
+    final credits = json['credits']?['cast'] as List<dynamic>?;
+    if (credits != null) {
+      for (final c in credits.take(20)) {
+        castList.add(
+          CastMember(
+            id: c['id'] as int,
+            name: c['name'] as String? ?? '',
+            character: c['character'] as String?,
+            profilePath: c['profile_path'] as String?,
+          ),
+        );
+      }
+    }
+
     return MediaItemModel._(
       MediaItem(
         id: json['id'].toString(),
@@ -97,6 +114,7 @@ class MediaItemModel {
           voteCount: json['vote_count'] as int?,
           trailerKey: trailerKey,
           certification: certification,
+          cast: castList,
         ),
       ),
     );

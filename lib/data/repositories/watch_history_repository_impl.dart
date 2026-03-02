@@ -1,0 +1,64 @@
+import 'package:hive_flutter/hive_flutter.dart';
+
+import '../../domain/entities/user_progress.dart';
+import '../../domain/repositories/watch_history_repository.dart';
+
+/// Hive-backed implementation of [WatchHistoryRepository].
+class WatchHistoryRepositoryImpl implements WatchHistoryRepository {
+  static const String _boxName = 'watch_history';
+
+  Box get _box => Hive.box(_boxName);
+
+  /// Unique key for a progress entry (handles episodes separately).
+  String _key(String mediaId, {int? season, int? episode}) {
+    if (season != null && episode != null) {
+      return '${mediaId}_s${season}_e$episode';
+    }
+    return mediaId;
+  }
+
+  @override
+  Future<void> saveProgress(UserProgress progress) async {
+    final key = _key(
+      progress.mediaId,
+      season: progress.season,
+      episode: progress.episode,
+    );
+    await _box.put(key, progress.toMap());
+  }
+
+  @override
+  Future<UserProgress?> getProgress(
+    String mediaId, {
+    int? season,
+    int? episode,
+  }) async {
+    final key = _key(mediaId, season: season, episode: episode);
+    final data = _box.get(key);
+    if (data == null) return null;
+    return UserProgress.fromMap(data as Map<dynamic, dynamic>);
+  }
+
+  @override
+  Future<List<UserProgress>> getContinueWatching({int limit = 10}) async {
+    final entries = <UserProgress>[];
+    for (final key in _box.keys) {
+      final data = _box.get(key);
+      if (data != null) {
+        final progress = UserProgress.fromMap(data as Map<dynamic, dynamic>);
+        // Only include items watched less than 90%
+        if (progress.percentage < 90) {
+          entries.add(progress);
+        }
+      }
+    }
+    // Sort by last played (newest first)
+    entries.sort((a, b) => b.lastPlayedDate.compareTo(a.lastPlayedDate));
+    return entries.take(limit).toList();
+  }
+
+  @override
+  Future<void> clearHistory() async {
+    await _box.clear();
+  }
+}

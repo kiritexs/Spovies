@@ -1,3 +1,5 @@
+import 'cast_member.dart';
+
 /// Nested metadata for a media item — ratings, genres, runtime, etc.
 class MediaMetadata {
   final String? imdbId;
@@ -8,6 +10,7 @@ class MediaMetadata {
   final int? voteCount;
   final String? trailerKey;
   final String? certification;
+  final List<CastMember> cast;
 
   const MediaMetadata({
     this.imdbId,
@@ -18,6 +21,7 @@ class MediaMetadata {
     this.voteCount,
     this.trailerKey,
     this.certification,
+    this.cast = const [],
   });
 
   MediaMetadata copyWith({
@@ -29,6 +33,7 @@ class MediaMetadata {
     int? voteCount,
     String? trailerKey,
     String? certification,
+    List<CastMember>? cast,
   }) {
     return MediaMetadata(
       imdbId: imdbId ?? this.imdbId,
@@ -39,6 +44,7 @@ class MediaMetadata {
       voteCount: voteCount ?? this.voteCount,
       trailerKey: trailerKey ?? this.trailerKey,
       certification: certification ?? this.certification,
+      cast: cast ?? this.cast,
     );
   }
 
