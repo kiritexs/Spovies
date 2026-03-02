@@ -632,7 +632,7 @@ class _GenreGrid extends ConsumerWidget {
                 gridDelegate:
                     const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 3,
-                  childAspectRatio: 1.7,
+                  childAspectRatio: 1.45,
                   crossAxisSpacing: 10,
                   mainAxisSpacing: 10,
                 ),
@@ -693,13 +693,16 @@ class _GenreGrid extends ConsumerWidget {
                           ),
                           // Content
                           Padding(
-                            padding: const EdgeInsets.all(12),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(icon, size: 20, color: Colors.white),
-                                const SizedBox(height: 6),
+                                Icon(icon, size: 18, color: Colors.white),
+                                const SizedBox(height: 5),
                                 Text(
                                   g.name,
                                   style:
@@ -737,7 +740,7 @@ class _GenreGrid extends ConsumerWidget {
         physics: const NeverScrollableScrollPhysics(),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3,
-          childAspectRatio: 1.7,
+          childAspectRatio: 1.45,
           crossAxisSpacing: 10,
           mainAxisSpacing: 10,
         ),
