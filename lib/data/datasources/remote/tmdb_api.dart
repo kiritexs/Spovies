@@ -50,6 +50,52 @@ class TmdbApi {
     return results.map((json) => MediaItemModel.fromTmdbJson(json)).toList();
   }
 
+  /// Popular TV shows.
+  Future<List<MediaItemModel>> getPopularTv({int page = 1}) async {
+    final response = await _dio.get(
+      '/tv/popular',
+      queryParameters: {'page': page},
+    );
+    final results = response.data['results'] as List;
+    return results.map((json) => MediaItemModel.fromTmdbJson(json)).toList();
+  }
+
+  /// Top rated TV shows.
+  Future<List<MediaItemModel>> getTopRatedTv({int page = 1}) async {
+    final response = await _dio.get(
+      '/tv/top_rated',
+      queryParameters: {'page': page},
+    );
+    final results = response.data['results'] as List;
+    return results.map((json) => MediaItemModel.fromTmdbJson(json)).toList();
+  }
+
+  /// Discover movies filtered by genre id.
+  Future<List<MediaItemModel>> discoverMoviesByGenre(int genreId) async {
+    final response = await _dio.get(
+      '/discover/movie',
+      queryParameters: {
+        'with_genres': genreId,
+        'sort_by': 'popularity.desc',
+      },
+    );
+    final results = response.data['results'] as List;
+    return results.map((json) => MediaItemModel.fromTmdbJson(json)).toList();
+  }
+
+  /// Discover TV shows filtered by genre id.
+  Future<List<MediaItemModel>> discoverTvByGenre(int genreId) async {
+    final response = await _dio.get(
+      '/discover/tv',
+      queryParameters: {
+        'with_genres': genreId,
+        'sort_by': 'popularity.desc',
+      },
+    );
+    final results = response.data['results'] as List;
+    return results.map((json) => MediaItemModel.fromTmdbJson(json)).toList();
+  }
+
   // ─── Details ──────────────────────────────────────────────────────────
 
   /// Movie details with appended credits, videos, images, release_dates.

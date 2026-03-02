@@ -232,9 +232,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final genreMap = genreMapAsync.value ?? {};
 
     return GridView.builder(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sectionPaddingH,
-      ),
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sectionPaddingH,
         0,

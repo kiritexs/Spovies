@@ -76,3 +76,54 @@ final genreMapProvider = FutureProvider<Map<int, String>>((ref) async {
   final repo = ref.watch(mediaRepositoryProvider);
   return repo.getGenreMap();
 });
+
+/// Trending TV shows for the week.
+final trendingTvProvider = FutureProvider<List<MediaItem>>((ref) async {
+  final api = ref.watch(tmdbApiProvider);
+  return (await api.getTrendingTv()).map((m) => m.toEntity()).toList();
+});
+
+/// Popular TV shows.
+final popularTvProvider = FutureProvider<List<MediaItem>>((ref) async {
+  final api = ref.watch(tmdbApiProvider);
+  return (await api.getPopularTv()).map((m) => m.toEntity()).toList();
+});
+
+/// Popular movies.
+final popularMoviesProvider = FutureProvider<List<MediaItem>>((ref) async {
+  final api = ref.watch(tmdbApiProvider);
+  return (await api.getPopularMovies()).map((m) => m.toEntity()).toList();
+});
+
+/// Discover movies by genre id.
+final discoverMoviesByGenreProvider =
+    FutureProvider.family<List<MediaItem>, int>((ref, genreId) async {
+      final api = ref.watch(tmdbApiProvider);
+      return (await api.discoverMoviesByGenre(genreId))
+          .map((m) => m.toEntity())
+          .toList();
+    });
+
+/// Discover TV shows by genre id.
+final discoverTvByGenreProvider =
+    FutureProvider.family<List<MediaItem>, int>((ref, genreId) async {
+      final api = ref.watch(tmdbApiProvider);
+      return (await api.discoverTvByGenre(genreId))
+          .map((m) => m.toEntity())
+          .toList();
+    });
+
+/// Combined genre list (movies + TV, deduped) for Discovery genre chips.
+final allGenresProvider = FutureProvider<List<({int id, String name})>>(
+  (ref) async {
+    final api = ref.watch(tmdbApiProvider);
+    final movie = await api.getMovieGenres();
+    final tv = await api.getTvGenres();
+    final seen = <int>{};
+    final merged = <({int id, String name})>[];
+    for (final g in [...movie, ...tv]) {
+      if (seen.add(g.id)) merged.add((id: g.id, name: g.name));
+    }
+    return merged;
+  },
+);

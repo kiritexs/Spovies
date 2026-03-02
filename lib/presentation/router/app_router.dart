@@ -3,9 +3,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../domain/entities/media_item.dart';
 import '../screens/details/details_screen.dart';
+import '../screens/explore/discover_screen.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/player/webview_player_screen.dart';
-import '../screens/search/search_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../screens/watchlist/watchlist_screen.dart';
 import 'shell_scaffold.dart';
@@ -42,13 +42,13 @@ final appRouter = GoRouter(
           ],
         ),
 
-        // Tab 1 — Explore (Search)
+        // Tab 1 — Explore (Discovery)
         StatefulShellBranch(
           navigatorKey: _exploreKey,
           routes: [
             GoRoute(
               path: '/explore',
-              builder: (context, state) => const SearchScreen(),
+              builder: (context, state) => const DiscoverScreen(),
             ),
           ],
         ),

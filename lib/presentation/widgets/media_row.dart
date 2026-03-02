@@ -7,12 +7,13 @@ import '../../domain/entities/media_item.dart';
 import 'media_card.dart';
 import 'shimmer_placeholder.dart';
 
-/// Horizontal snap-scroll row with section title and "See All" action.
+/// Horizontal snap-scroll row with optional section title and "See All" action.
 class MediaRow extends StatelessWidget {
   final String title;
   final List<MediaItem> movies;
   final Map<int, String> genreMap;
   final bool isLoading;
+  final bool showTitle;
   final VoidCallback? onSeeAllTap;
   final void Function(MediaItem)? onMovieTap;
 
@@ -22,6 +23,7 @@ class MediaRow extends StatelessWidget {
     required this.movies,
     this.genreMap = const {},
     this.isLoading = false,
+    this.showTitle = true,
     this.onSeeAllTap,
     this.onMovieTap,
   });
@@ -32,25 +34,27 @@ class MediaRow extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         // ─── Section Header ──────────────────
-        Padding(
-          padding: AppSpacing.sectionPadding,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(title, style: AppTextStyles.sectionTitle),
-              GestureDetector(
-                onTap: onSeeAllTap,
-                child: Text(
-                  'See All',
-                  style: AppTextStyles.labelSmall.copyWith(
-                    color: AppColors.primary,
+        if (showTitle) ...[
+          Padding(
+            padding: AppSpacing.sectionPadding,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(title, style: AppTextStyles.sectionTitle),
+                GestureDetector(
+                  onTap: onSeeAllTap,
+                  child: Text(
+                    'See All',
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color: AppColors.primary,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 16),
+          const SizedBox(height: 16),
+        ],
 
         // ─── Horizontal Scroll ───────────────
         SizedBox(
