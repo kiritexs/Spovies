@@ -232,7 +232,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   // ─── Results Grid ─────────────────────────────────────────────────────
 
   Widget _buildResultsGrid(
-    List results,
+    List<dynamic> results,
     AsyncValue<Map<int, String>> genreMapAsync,
   ) {
     final genreMap = genreMapAsync.value ?? {};
@@ -250,10 +250,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       itemCount: results.length,
       itemBuilder: (_, index) {
         final item = results[index];
-        final genreText = item.metadata.genreIds
+        final genreText = (item.metadata.genreIds as List<int>)
             .take(2)
             .map((id) => genreMap[id] ?? '')
-            .where((s) => s.isNotEmpty)
+            .where((String s) => s.isNotEmpty)
             .join(' • ');
 
         return MediaCard(
