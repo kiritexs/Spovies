@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -104,6 +105,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
         children: [
           // ─── WebView ──────────────────────────────────────────
           InAppWebView(
+            preventGestureDelay: true,
             initialUrlRequest: URLRequest(url: WebUri(widget.url)),
             initialSettings: InAppWebViewSettings(
               mediaPlaybackRequiresUserGesture: false,
@@ -111,7 +113,10 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
               javaScriptEnabled: true,
               domStorageEnabled: true,
               supportZoom: false,
-              transparentBackground: true,
+              // Opaque background reduces GPU compositing overhead (avoids alpha blending)
+              transparentBackground: false,
+              cacheEnabled: true,
+              disableContextMenu: true,
             ),
             onWebViewCreated: (controller) {
               _controller = controller;
@@ -146,8 +151,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
               );
             },
             onConsoleMessage: (controller, message) {
-              // Forward console messages for debugging
-              debugPrint('WebView Console: ${message.message}');
+              if (kDebugMode) {
+                debugPrint('WebView Console: ${message.message}');
+              }
             },
           ),
 
@@ -160,32 +166,24 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
               ),
             ),
 
-          // ─── Glass Close Button ────────────────────────────────
+          // ─── Close Button (simple opaque — avoids BackdropFilter GPU cost) ─
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
             right: 16,
-            child: ClipRRect(
+            child: Material(
+              color: Colors.black54,
               borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.glass,
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-                    border: Border.all(color: AppColors.glassBorder),
-                  ),
-                  child: IconButton(
-                    icon: const Icon(
-                      Icons.close_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                    onPressed: () => Navigator.pop(context),
-                    tooltip: 'Close Player',
-                  ),
+              child: IconButton(
+                icon: const Icon(
+                  Icons.close_rounded,
+                  color: Colors.white,
+                  size: 20,
                 ),
+                onPressed: () => Navigator.pop(context),
+                tooltip: 'Close Player',
               ),
             ),
+          ),
           ),
         ],
       ),
