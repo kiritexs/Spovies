@@ -1,18 +1,21 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/config/env.dart';
+import '../../data/datasources/remote/retry_interceptor.dart';
 import '../../data/datasources/remote/tmdb_api.dart';
+import '../../data/datasources/remote/tmdb_cache_interceptor.dart';
 import '../../data/repositories/media_repository_impl.dart';
 import '../../domain/entities/media_item.dart';
 import '../../domain/repositories/media_repository.dart';
 
 // ─── Infrastructure Providers ───────────────────────────────────────────
 
-/// Configured Dio instance with TMDB auth.
+/// Configured Dio instance with TMDB auth, caching, and retry.
 final dioProvider = Provider<Dio>((ref) {
-  final token = Env.tmdbApiKey; // This is actually your Read Access Token
+  final token = Env.tmdbApiKey;
 
   final dio = Dio(
     BaseOptions(
@@ -23,14 +26,23 @@ final dioProvider = Provider<Dio>((ref) {
     ),
   );
 
-  dio.interceptors.add(
-    LogInterceptor(
-      requestHeader: true,
-      responseHeader: true,
-      requestBody: false,
-      error: true,
-    ),
-  );
+  // 1. Cache interceptor (checks Hive before network, serves stale on error)
+  dio.interceptors.add(TmdbCacheInterceptor());
+
+  // 2. Retry interceptor (exponential backoff: 1s → 2s → 4s)
+  dio.interceptors.add(RetryInterceptor(dio: dio));
+
+  // 3. Logging (debug only)
+  if (kDebugMode) {
+    dio.interceptors.add(
+      LogInterceptor(
+        requestHeader: true,
+        responseHeader: true,
+        requestBody: false,
+        error: true,
+      ),
+    );
+  }
 
   return dio;
 });

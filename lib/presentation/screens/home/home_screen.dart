@@ -44,7 +44,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
           // ─── Fixed Header ──────────────────────
           Positioned(
-            top: 0,
+            top: -30,
             left: 0,
             right: 0,
             child: AppHeader(
@@ -60,26 +60,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // ─── Glass Bottom Nav ──────────────────
           GlassBottomNav(
             currentIndex: _navIndex,
-          onTap: (index) {
-            if (index == 3) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
-            } else if (index == 1) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SearchScreen()),
-              );
-            } else if (index == 2) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const WatchlistScreen()),
-              );
-            } else {
-              setState(() => _navIndex = index);
-            }
-          },
+            onTap: (index) {
+              if (index == 3) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              } else if (index == 1) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SearchScreen()),
+                );
+              } else if (index == 2) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const WatchlistScreen()),
+                );
+              } else {
+                setState(() => _navIndex = index);
+              }
+            },
           ),
         ],
       ),
@@ -110,7 +110,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   )
                 : const SizedBox.shrink(),
             loading: () => const HeroCardShimmer(),
-            error: (_, __) => _buildErrorCard(),
+            error: (_, __) => _buildErrorCard(ref),
           ),
 
           const SizedBox(height: 32),
@@ -128,7 +128,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               movies: const [],
               isLoading: true,
             ),
-            error: (_, __) => const SizedBox.shrink(),
+            error: (_, __) => _buildErrorRow(
+              'Now Trending',
+              () => ref.invalidate(trendingMoviesProvider),
+            ),
           ),
 
           const SizedBox(height: 32),
@@ -148,7 +151,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             loading: () =>
                 MediaRow(title: 'Top Rated', movies: const [], isLoading: true),
-            error: (_, __) => const SizedBox.shrink(),
+            error: (_, __) => _buildErrorRow(
+              'Top Rated',
+              () => ref.invalidate(topRatedMoviesProvider),
+            ),
           ),
 
           // Bottom padding for glass nav
@@ -158,25 +164,58 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildErrorCard() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 24),
+  Widget _buildErrorCard(WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
       child: AspectRatio(
         aspectRatio: 4 / 5,
         child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.error_outline, color: Colors.white54, size: 48),
-              SizedBox(height: 16),
-              Text(
-                'Failed to load content.\nCheck your API key.',
+              const Icon(Icons.error_outline, color: Colors.white54, size: 48),
+              const SizedBox(height: 16),
+              const Text(
+                'Failed to load content.\nCheck your connection.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white54),
+              ),
+              const SizedBox(height: 16),
+              TextButton.icon(
+                onPressed: () {
+                  ref.invalidate(trendingMoviesProvider);
+                  ref.invalidate(topRatedMoviesProvider);
+                },
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Retry'),
+                style: TextButton.styleFrom(foregroundColor: AppColors.primary),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildErrorRow(String title, VoidCallback onRetry) {
+    return Padding(
+      padding: AppSpacing.sectionPadding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: AppTextStyles.sectionTitle),
+          const SizedBox(height: 16),
+          Center(
+            child: TextButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Failed to load. Tap to retry'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

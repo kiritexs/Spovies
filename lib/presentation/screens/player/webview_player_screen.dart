@@ -148,17 +148,14 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   // Giving explicit ownership of these gestures to the WebView prevents the
   // Flutter widget tree from competing, which is the root cause of scroll
   // breakage in embedded lists.
-  static final _webViewGestures =
-      <Factory<OneSequenceGestureRecognizer>>{
-        Factory<VerticalDragGestureRecognizer>(
-          VerticalDragGestureRecognizer.new,
-        ),
-        Factory<HorizontalDragGestureRecognizer>(
-          HorizontalDragGestureRecognizer.new,
-        ),
-        Factory<ScaleGestureRecognizer>(ScaleGestureRecognizer.new),
-        Factory<LongPressGestureRecognizer>(LongPressGestureRecognizer.new),
-      };
+  static final _webViewGestures = <Factory<OneSequenceGestureRecognizer>>{
+    Factory<VerticalDragGestureRecognizer>(VerticalDragGestureRecognizer.new),
+    Factory<HorizontalDragGestureRecognizer>(
+      HorizontalDragGestureRecognizer.new,
+    ),
+    Factory<ScaleGestureRecognizer>(ScaleGestureRecognizer.new),
+    Factory<LongPressGestureRecognizer>(LongPressGestureRecognizer.new),
+  };
 
   @override
   void initState() {
@@ -205,7 +202,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
       mediaType: widget.media.type.name,
       title: widget.media.title,
       posterPath: widget.media.posterPath,
-      percentage: event.progress * 100,
+      percentage: event.progress,
       currentTime: event.currentTime,
       duration: event.duration,
       season: event.season,
