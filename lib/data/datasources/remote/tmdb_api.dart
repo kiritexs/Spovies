@@ -72,7 +72,7 @@ class TmdbApi {
     );
     final results = response.data['results'] as List;
     return results
-        .where((json) => json['media_type'] != 'person')
+        .where((json) => (json['media_type'] as String?) != 'person')
         .map((json) => MediaItemModel.fromTmdbJson(json))
         .toList();
   }

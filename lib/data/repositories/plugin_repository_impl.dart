@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../../core/errors/plugin_exception.dart';
 import '../../domain/entities/plugin_manifest.dart';
 import '../../domain/repositories/plugin_repository.dart';
@@ -44,7 +46,9 @@ class PluginRepositoryImpl implements PluginRepository {
     final manifests = <PluginManifest>[];
     for (final entry in HiveService.pluginsBox.values) {
       try {
-        final map = Map<String, dynamic>.from(entry);
+        // Normalize via JSON round-trip to ensure Map<String, dynamic> structure
+        // (Hive may return Map<dynamic, dynamic> which can cause parse failures)
+        final map = jsonDecode(jsonEncode(entry)) as Map<String, dynamic>;
         manifests.add(PluginManifestModel.fromJson(map));
       } catch (_) {
         // Skip corrupted entries
