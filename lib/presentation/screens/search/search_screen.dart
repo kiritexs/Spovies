@@ -3,6 +3,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:go_router/go_router.dart';
+
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_styles.dart';
@@ -10,7 +12,6 @@ import '../../providers/search_providers.dart';
 import '../../providers/media_providers.dart';
 import '../../widgets/media_card.dart';
 import '../../widgets/shimmer_placeholder.dart';
-import '../details/details_screen.dart';
 
 /// Full-screen search with glass surface input and live TMDB results.
 class SearchScreen extends ConsumerStatefulWidget {
@@ -50,16 +51,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               child: Row(
                 children: [
-                  // Back button
-                  IconButton(
-                    icon: const Icon(
-                      Icons.arrow_back_rounded,
-                      color: Colors.white,
-                    ),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  const SizedBox(width: 8),
-
                   // Search field
                   Expanded(
                     child: ClipRRect(
@@ -215,8 +206,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildShimmerGrid() {
     return GridView.builder(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sectionPaddingH,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sectionPaddingH,
+        0,
+        AppSpacing.sectionPaddingH,
+        120,
       ),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
@@ -240,6 +234,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     return GridView.builder(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sectionPaddingH,
+      ),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sectionPaddingH,
+        0,
+        AppSpacing.sectionPaddingH,
+        120, // clear floating nav bar
       ),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
@@ -265,10 +265,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         return MediaCard(
           movie: item,
           genreText: genreText,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => DetailsScreen(media: item)),
-          ),
+          onTap: () => context.push('/details', extra: item),
         );
       },
     );

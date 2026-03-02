@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
@@ -10,7 +11,6 @@ import '../../../core/utils/tmdb_image_url.dart';
 import '../../../domain/entities/media_item.dart';
 import '../../providers/watchlist_providers.dart';
 import '../../widgets/shimmer_placeholder.dart';
-import '../details/details_screen.dart';
 
 /// Watchlist screen — grid of saved media items with remove option.
 class WatchlistScreen extends ConsumerWidget {
@@ -100,10 +100,7 @@ class WatchlistScreen extends ConsumerWidget {
         final item = items[index];
         return _WatchlistItem(
           item: item,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => DetailsScreen(media: item)),
-          ),
+          onTap: () => context.push('/details', extra: item),
           onRemove: () =>
               ref.read(watchlistProvider.notifier).remove(item.tmdbId),
         );

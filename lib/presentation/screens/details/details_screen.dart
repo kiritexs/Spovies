@@ -17,12 +17,14 @@ import '../../../domain/entities/media_type.dart';
 import '../../../domain/entities/plugin_manifest.dart';
 import '../../../plugins/protocol/action_type.dart';
 import '../../../plugins/protocol/plugin_url_resolver.dart';
+import 'package:go_router/go_router.dart';
+
 import '../../../plugins/protocol/trigger_hook.dart';
 import '../../providers/details_providers.dart';
 import '../../providers/plugin_providers.dart';
 import '../../providers/watchlist_providers.dart';
+import '../../router/app_router.dart';
 import '../../widgets/shimmer_placeholder.dart';
-import '../player/webview_player_screen.dart';
 
 /// Cinematic full-screen movie/TV details page.
 ///
@@ -238,7 +240,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             ),
             child: IconButton(
               icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => context.pop(),
             ),
           ),
         ),
@@ -561,15 +563,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
         break;
       case ActionType.webview:
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => WebViewPlayerScreen(
-              url: url,
-              media: media,
-              pluginName: plugin.name,
-            ),
-          ),
+        context.push(
+          '/player',
+          extra: PlayerArgs(url: url, media: media, pluginName: plugin.name),
         );
         break;
       case ActionType.metadataFetch:
