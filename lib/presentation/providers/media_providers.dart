@@ -95,6 +95,12 @@ final popularMoviesProvider = FutureProvider<List<MediaItem>>((ref) async {
   return (await api.getPopularMovies()).map((m) => m.toEntity()).toList();
 });
 
+/// Top rated TV shows.
+final topRatedTvProvider = FutureProvider<List<MediaItem>>((ref) async {
+  final api = ref.watch(tmdbApiProvider);
+  return (await api.getTopRatedTv()).map((m) => m.toEntity()).toList();
+});
+
 /// Discover movies by genre id.
 final discoverMoviesByGenreProvider =
     FutureProvider.family<List<MediaItem>, int>((ref, genreId) async {

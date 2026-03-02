@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/datasources/local/hive_service.dart';
 import '../../data/repositories/plugin_repository_impl.dart';
 import '../../domain/entities/plugin_manifest.dart';
 import '../../domain/repositories/plugin_repository.dart';
@@ -18,8 +19,6 @@ final _pluginDioProvider = Provider<Dio>((ref) {
       headers: {'accept': 'application/json'},
     ),
   );
-
-  // Add logging for plugin discovery debugging
   dio.interceptors.add(
     LogInterceptor(
       requestHeader: false,
@@ -27,7 +26,6 @@ final _pluginDioProvider = Provider<Dio>((ref) {
       responseBody: true,
     ),
   );
-
   return dio;
 });
 
@@ -41,11 +39,49 @@ final pluginRepositoryProvider = Provider<PluginRepository>((ref) {
   return PluginRepositoryImpl(ref.watch(pluginDiscoveryProvider));
 });
 
+// ─── Enable / Disable ────────────────────────────────────────────────────
+
+/// Notifier that persists per-plugin enabled/disabled state in [HiveService.settingsBox].
+///
+/// State is a `Map<pluginId, isEnabled>`. Missing keys are treated as enabled.
+class PluginEnabledNotifier extends Notifier<Map<String, bool>> {
+  static const _prefix = 'plugin_enabled:';
+
+  @override
+  Map<String, bool> build() {
+    // Read every matching key from the settings box on startup
+    final box = HiveService.settingsBox;
+    final map = <String, bool>{};
+    for (final key in box.keys) {
+      if (key is String && key.startsWith(_prefix)) {
+        final id = key.substring(_prefix.length);
+        map[id] = box.get(key) as bool? ?? true;
+      }
+    }
+    return map;
+  }
+
+  /// Returns `true` if the plugin is enabled (default: enabled).
+  bool isEnabled(String pluginId) => state[pluginId] ?? true;
+
+  /// Toggle and persist a plugin's enabled state.
+  void toggle(String pluginId) {
+    final next = !(state[pluginId] ?? true);
+    HiveService.settingsBox.put('$_prefix$pluginId', next);
+    state = {...state, pluginId: next};
+  }
+}
+
+final pluginEnabledProvider =
+    NotifierProvider<PluginEnabledNotifier, Map<String, bool>>(
+      PluginEnabledNotifier.new,
+    );
+
 // ─── Data Providers ─────────────────────────────────────────────────────
 
 /// All installed plugin manifests.
 ///
-/// This is a FutureProvider so it auto-refreshes when invalidated.
+/// FutureProvider so it auto-refreshes when invalidated.
 final installedPluginsProvider = FutureProvider<List<PluginManifest>>((
   ref,
 ) async {
@@ -53,19 +89,28 @@ final installedPluginsProvider = FutureProvider<List<PluginManifest>>((
   return repo.getInstalled();
 });
 
-/// Plugins that support a given [TriggerHook].
+/// Plugins that support a given [TriggerHook], filtered by enabled state.
+///
+/// Watches [installedPluginsProvider] so it automatically re-evaluates
+/// whenever a plugin is installed or uninstalled — no restart required.
 final pluginsForHookProvider =
-    FutureProvider.family<List<PluginManifest>, TriggerHook>((ref, hook) async {
-      final repo = ref.watch(pluginRepositoryProvider);
-      return repo.getForHook(hook);
-    });
+    FutureProvider.family<List<PluginManifest>, TriggerHook>((
+  ref,
+  hook,
+) async {
+  // Re-run when the installed list changes (install / uninstall)
+  final installed = await ref.watch(installedPluginsProvider.future);
+  // Filter by enabled state
+  final enabledMap = ref.watch(pluginEnabledProvider);
+  return installed
+      .where((p) => p.hooks.contains(hook))
+      .where((p) => enabledMap[p.pluginId] ?? true)
+      .toList();
+});
 
 // ─── Install / Uninstall Notifier ───────────────────────────────────────
 
 /// Manages plugin install and uninstall with loading states.
-///
-/// After a successful install/uninstall, it invalidates [installedPluginsProvider]
-/// so the list auto-refreshes.
 class PluginInstallNotifier extends AsyncNotifier<void> {
   @override
   Future<void> build() async {}
@@ -77,6 +122,8 @@ class PluginInstallNotifier extends AsyncNotifier<void> {
       final repo = ref.read(pluginRepositoryProvider);
       final manifest = await repo.install(url);
       state = const AsyncData(null);
+      // Invalidate the whole installed list; pluginsForHookProvider
+      // depends on it and will cascade-refresh automatically.
       ref.invalidate(installedPluginsProvider);
       return manifest;
     } catch (e, st) {

@@ -10,6 +10,8 @@ import '../../../core/theme/app_text_styles.dart';
 import '../../../domain/entities/plugin_manifest.dart';
 import '../../providers/plugin_providers.dart';
 
+// ignore_for_file: use_build_context_synchronously
+
 /// Plugin management screen — add, view, and remove plugins.
 ///
 /// Features:
@@ -114,96 +116,9 @@ class PluginManagementScreen extends ConsumerWidget {
           onDismissed: (_) {
             ref.read(pluginInstallProvider.notifier).uninstall(plugin.pluginId);
           },
-          child: _buildPluginTile(plugin),
+          child: _PluginTile(plugin: plugin),
         );
       },
-    );
-  }
-
-  Widget _buildPluginTile(PluginManifest plugin) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: AppColors.glassGradient,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-            border: Border.all(color: AppColors.glassBorder),
-          ),
-          child: Row(
-            children: [
-              // Icon
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-                ),
-                child: const Icon(
-                  Icons.extension_rounded,
-                  color: AppColors.primary,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 16),
-
-              // Info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(plugin.name, style: AppTextStyles.cardTitle),
-                    const SizedBox(height: 2),
-                    Text(
-                      'v${plugin.version} • ${plugin.actionType.value}',
-                      style: AppTextStyles.cardSubtitle,
-                    ),
-                    const SizedBox(height: 6),
-                    // Hook chips
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: plugin.hooks.map((h) {
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: AppColors.primary.withValues(alpha: 0.3),
-                            ),
-                          ),
-                          child: Text(
-                            h.value,
-                            style: AppTextStyles.cardSubtitle.copyWith(
-                              color: AppColors.primary,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Swipe hint
-              Icon(
-                Icons.swipe_left_rounded,
-                color: AppColors.textMuted.withValues(alpha: 0.4),
-                size: 18,
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -264,6 +179,154 @@ class PluginManagementScreen extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Plugin Tile ──────────────────────────────────────────────────────────────
+
+class _PluginTile extends ConsumerWidget {
+  final PluginManifest plugin;
+
+  const _PluginTile({required this.plugin});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enabledMap = ref.watch(pluginEnabledProvider);
+    final isEnabled = enabledMap[plugin.pluginId] ?? true;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: isEnabled
+                ? AppColors.glassGradient
+                : LinearGradient(
+                    colors: [
+                      AppColors.surfaceDark.withValues(alpha: 0.4),
+                      AppColors.surfaceDark.withValues(alpha: 0.2),
+                    ],
+                  ),
+            borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+            border: Border.all(
+              color: isEnabled
+                  ? AppColors.glassBorder
+                  : AppColors.glassBorder.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  // Plugin icon
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 200),
+                    opacity: isEnabled ? 1.0 : 0.4,
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.15),
+                        borderRadius:
+                            BorderRadius.circular(AppSpacing.radiusBase),
+                      ),
+                      child: const Icon(
+                        Icons.extension_rounded,
+                        color: AppColors.primary,
+                        size: 22,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+
+                  // Name + version
+                  Expanded(
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 200),
+                      opacity: isEnabled ? 1.0 : 0.5,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(plugin.name, style: AppTextStyles.cardTitle),
+                          const SizedBox(height: 2),
+                          Text(
+                            'v${plugin.version} • ${plugin.actionType.value}',
+                            style: AppTextStyles.cardSubtitle,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Enable / Disable toggle
+                  Switch(
+                    value: isEnabled,
+                    onChanged: (_) =>
+                        ref.read(pluginEnabledProvider.notifier).toggle(
+                              plugin.pluginId,
+                            ),
+                    activeColor: AppColors.primary,
+                    inactiveThumbColor: AppColors.textMuted,
+                    inactiveTrackColor:
+                        AppColors.surfaceDark.withValues(alpha: 0.8),
+                  ),
+                ],
+              ),
+
+              // Hook chips + swipe hint
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 200),
+                      opacity: isEnabled ? 1.0 : 0.4,
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: plugin.hooks.map((h) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color:
+                                    AppColors.primary.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Text(
+                              h.value,
+                              style: AppTextStyles.cardSubtitle.copyWith(
+                                color: AppColors.primary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.swipe_left_rounded,
+                    color: AppColors.textMuted.withValues(alpha: 0.35),
+                    size: 16,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

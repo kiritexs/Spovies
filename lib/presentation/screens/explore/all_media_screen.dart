@@ -1,48 +1,180 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../domain/entities/media_item.dart';
+import '../../providers/media_providers.dart';
 import '../../widgets/media_card.dart';
 import '../../widgets/shimmer_placeholder.dart';
 
-/// Args passed via GoRouter `extra` to the `/all-media` route.
+// ─── Browse Category ──────────────────────────────────────────────────────────
+
+/// Identifies which TMDB endpoint backs a "See All" grid.
+enum BrowseCategory {
+  trendingMovies,
+  trendingTv,
+  popularMovies,
+  popularTv,
+  topRatedMovies,
+  topRatedTv,
+  discoverMoviesByGenre,
+  discoverTvByGenre,
+}
+
+/// Data passed via GoRouter `extra` to the `/all-media` route.
 class AllMediaArgs {
   final String title;
-  final List<MediaItem> items;
+  final BrowseCategory category;
+
+  /// Required for [BrowseCategory.discoverMoviesByGenre] /
+  /// [BrowseCategory.discoverTvByGenre].
+  final int? genreId;
   final Map<int, String> genreMap;
 
   const AllMediaArgs({
     required this.title,
-    required this.items,
-    required this.genreMap,
+    required this.category,
+    this.genreId,
+    this.genreMap = const {},
   });
 }
 
-/// Full-screen grid of media items, reached via "See All".
-class AllMediaScreen extends StatelessWidget {
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
+class AllMediaScreen extends ConsumerStatefulWidget {
   final AllMediaArgs args;
 
   const AllMediaScreen({super.key, required this.args});
 
   @override
-  Widget build(BuildContext context) {
-    final topPad = MediaQuery.of(context).padding.top;
+  ConsumerState<AllMediaScreen> createState() => _AllMediaScreenState();
+}
 
+class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
+  final _scrollController = ScrollController();
+
+  final List<MediaItem> _items = [];
+  int _page = 0;
+  bool _isLoading = false;
+  bool _hasMore = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNextPage();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 300) {
+      _loadNextPage();
+    }
+  }
+
+  Future<void> _loadNextPage() async {
+    if (_isLoading || !_hasMore) return;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final nextPage = _page + 1;
+      final api = ref.read(tmdbApiProvider);
+      final cat = widget.args.category;
+      final genreId = widget.args.genreId;
+
+      List<MediaItem> newItems;
+
+      switch (cat) {
+        case BrowseCategory.trendingMovies:
+          // Trending only has one page on TMDB; for variety load popular on p>1
+          if (nextPage == 1) {
+            newItems = (await api.getTrendingMovies())
+                .map((m) => m.toEntity())
+                .toList();
+          } else {
+            newItems = (await api.getPopularMovies(page: nextPage - 1))
+                .map((m) => m.toEntity())
+                .toList();
+          }
+        case BrowseCategory.trendingTv:
+          if (nextPage == 1) {
+            newItems =
+                (await api.getTrendingTv()).map((m) => m.toEntity()).toList();
+          } else {
+            newItems = (await api.getPopularTv(page: nextPage - 1))
+                .map((m) => m.toEntity())
+                .toList();
+          }
+        case BrowseCategory.popularMovies:
+          newItems = (await api.getPopularMovies(page: nextPage))
+              .map((m) => m.toEntity())
+              .toList();
+        case BrowseCategory.popularTv:
+          newItems = (await api.getPopularTv(page: nextPage))
+              .map((m) => m.toEntity())
+              .toList();
+        case BrowseCategory.topRatedMovies:
+          newItems = (await api.getTopRatedMovies(page: nextPage))
+              .map((m) => m.toEntity())
+              .toList();
+        case BrowseCategory.topRatedTv:
+          newItems = (await api.getTopRatedTv(page: nextPage))
+              .map((m) => m.toEntity())
+              .toList();
+        case BrowseCategory.discoverMoviesByGenre:
+          newItems = (await api.discoverMoviesByGenre(genreId!, page: nextPage))
+              .map((m) => m.toEntity())
+              .toList();
+        case BrowseCategory.discoverTvByGenre:
+          newItems = (await api.discoverTvByGenre(genreId!, page: nextPage))
+              .map((m) => m.toEntity())
+              .toList();
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _page = nextPage;
+        _items.addAll(newItems);
+        // TMDB returns 20 results per page max; fewer = last page
+        if (newItems.length < 20) _hasMore = false;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
       body: CustomScrollView(
+        controller: _scrollController,
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // ── App bar ────────────────────────────────────────────────────
+          // ── App bar ──────────────────────────────────────────────────
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.backgroundDark,
             surfaceTintColor: Colors.transparent,
-            expandedHeight: topPad + 56,
-            collapsedHeight: kToolbarHeight,
             leading: IconButton(
               icon: const Icon(
                 Icons.arrow_back_ios_new_rounded,
@@ -51,11 +183,11 @@ class AllMediaScreen extends StatelessWidget {
               ),
               onPressed: () => context.pop(),
             ),
-            title: Text(args.title, style: AppTextStyles.appTitle),
+            title: Text(widget.args.title, style: AppTextStyles.appTitle),
             centerTitle: false,
           ),
 
-          // ── Count badge ────────────────────────────────────────────────
+          // ── Count / loading badge ─────────────────────────────────────
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(
@@ -64,62 +196,129 @@ class AllMediaScreen extends StatelessWidget {
                 AppSpacing.sectionPaddingH,
                 16,
               ),
-              child: Text(
-                '${args.items.length} titles',
-                style: AppTextStyles.cardSubtitle,
-              ),
+              child: _items.isEmpty && _isLoading
+                  ? const SizedBox.shrink()
+                  : Text(
+                      '${_items.length} titles${_hasMore ? '+' : ''}',
+                      style: AppTextStyles.cardSubtitle,
+                    ),
             ),
           ),
 
-          // ── Grid ───────────────────────────────────────────────────────
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.sectionPaddingH,
-              0,
-              AppSpacing.sectionPaddingH,
-              40,
+          // ── Grid ─────────────────────────────────────────────────────
+          if (_items.isEmpty && _isLoading)
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sectionPaddingH,
+              ),
+              sliver: SliverGrid(
+                gridDelegate:
+                    const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  childAspectRatio: 0.52,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (_, __) => const ShimmerPlaceholder(),
+                  childCount: 12,
+                ),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sectionPaddingH,
+                0,
+                AppSpacing.sectionPaddingH,
+                0,
+              ),
+              sliver: SliverGrid(
+                gridDelegate:
+                    const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  childAspectRatio: 0.52,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) {
+                    final item = _items[i];
+                    final genreText = item.metadata.genreIds
+                        .take(2)
+                        .map((id) => widget.args.genreMap[id] ?? '')
+                        .where((s) => s.isNotEmpty)
+                        .join(' • ');
+                    return MediaCard(
+                      movie: item,
+                      genreText: genreText,
+                      onTap: () => context.push('/details', extra: item),
+                    );
+                  },
+                  childCount: _items.length,
+                ),
+              ),
             ),
-            sliver: args.items.isEmpty
-                ? SliverGrid(
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      childAspectRatio: 0.52,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                    ),
-                    delegate: SliverChildBuilderDelegate(
-                      (_, __) => const ShimmerPlaceholder(),
-                      childCount: 12,
-                    ),
-                  )
-                : SliverGrid(
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      childAspectRatio: 0.52,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                    ),
-                    delegate: SliverChildBuilderDelegate(
-                      (context, i) {
-                        final item = args.items[i];
-                        final genreText = item.metadata.genreIds
-                            .take(2)
-                            .map((id) => args.genreMap[id] ?? '')
-                            .where((s) => s.isNotEmpty)
-                            .join(' • ');
-                        return MediaCard(
-                          movie: item,
-                          genreText: genreText,
-                          onTap: () =>
-                              context.push('/details', extra: item),
-                        );
-                      },
-                      childCount: args.items.length,
-                    ),
+
+          // ── Error state ───────────────────────────────────────────────
+          if (_error != null)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        color: AppColors.textSecondary,
+                        size: 32,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Failed to load more',
+                        style: AppTextStyles.cardSubtitle,
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: _loadNextPage,
+                        child: const Text('Retry'),
+                      ),
+                    ],
                   ),
-          ),
+                ),
+              ),
+            ),
+
+          // ── Load more indicator ───────────────────────────────────────
+          if (_isLoading && _items.isNotEmpty)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.primary,
+                    strokeWidth: 2,
+                  ),
+                ),
+              ),
+            ),
+
+          // ── End-of-list message ───────────────────────────────────────
+          if (!_hasMore && _items.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: Text(
+                    'All ${_items.length} titles loaded',
+                    style: AppTextStyles.cardSubtitle,
+                  ),
+                ),
+              ),
+            ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
       ),
     );

@@ -71,12 +71,16 @@ class TmdbApi {
   }
 
   /// Discover movies filtered by genre id.
-  Future<List<MediaItemModel>> discoverMoviesByGenre(int genreId) async {
+  Future<List<MediaItemModel>> discoverMoviesByGenre(
+    int genreId, {
+    int page = 1,
+  }) async {
     final response = await _dio.get(
       '/discover/movie',
       queryParameters: {
         'with_genres': genreId,
         'sort_by': 'popularity.desc',
+        'page': page,
       },
     );
     final results = response.data['results'] as List;
@@ -84,12 +88,16 @@ class TmdbApi {
   }
 
   /// Discover TV shows filtered by genre id.
-  Future<List<MediaItemModel>> discoverTvByGenre(int genreId) async {
+  Future<List<MediaItemModel>> discoverTvByGenre(
+    int genreId, {
+    int page = 1,
+  }) async {
     final response = await _dio.get(
       '/discover/tv',
       queryParameters: {
         'with_genres': genreId,
         'sort_by': 'popularity.desc',
+        'page': page,
       },
     );
     final results = response.data['results'] as List;

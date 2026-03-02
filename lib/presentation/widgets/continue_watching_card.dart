@@ -20,6 +20,9 @@ class ContinueWatchingCard extends StatelessWidget {
   final String? thumbnailUrl;
   final VoidCallback? onTap;
 
+  /// Optional episode label, e.g. "S2 E4". Shown below the title for TV shows.
+  final String? episodeLabel;
+
   const ContinueWatchingCard({
     super.key,
     required this.title,
@@ -27,6 +30,7 @@ class ContinueWatchingCard extends StatelessWidget {
     required this.progress,
     this.thumbnailUrl,
     this.onTap,
+    this.episodeLabel,
   });
 
   @override
@@ -66,6 +70,30 @@ class ContinueWatchingCard extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
+                            if (episodeLabel != null) ...[
+                              const SizedBox(height: 2),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color: AppColors.primary.withValues(alpha: 0.35),
+                                  ),
+                                ),
+                                child: Text(
+                                  episodeLabel!,
+                                  style: AppTextStyles.cardSubtitle.copyWith(
+                                    color: AppColors.primary,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 4),
                             Text(remainingTime, style: AppTextStyles.cardSubtitle),
                           ],

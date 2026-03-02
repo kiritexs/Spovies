@@ -201,6 +201,9 @@ class _ContinueWatchingSection extends ConsumerWidget {
                     remainingTime: item.remainingTime,
                     progress: (item.percentage / 100).clamp(0.0, 1.0),
                     thumbnailUrl: thumbUrl,
+                    episodeLabel: (item.season != null && item.episode != null)
+                        ? 'S${item.season} E${item.episode}'
+                        : null,
                     onTap: () => context.push(
                       '/details',
                       extra: MediaItem(
