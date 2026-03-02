@@ -180,9 +180,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     supportZoom: false,
     disableContextMenu: true,
 
-    // iOS: disable the built-in swipe-back/forward gesture so it doesn't
-    // intercept horizontal swipes inside the player UI.
-    gestureNavigationEnabled: false,
+    // iOS: disable swipe-back/forward navigation so it doesn't intercept
+    // horizontal swipes inside the player UI (e.g. carousels, tab bars).
+    allowsBackForwardNavigationGestures: false,
 
     // Rendering
     transparentBackground: false,
