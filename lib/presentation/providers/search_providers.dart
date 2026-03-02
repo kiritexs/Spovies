@@ -3,6 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/entities/media_item.dart';
 import 'media_providers.dart';
 
+// ─── Nav visibility ──────────────────────────────────────────────────────
+
+/// True while the user is actively typing in the search field.
+/// ShellScaffold watches this to hide the bottom nav bar.
+final isSearchActiveProvider = StateProvider<bool>((ref) => false);
+
 // ─── Search State ────────────────────────────────────────────────────────
 
 /// The current search query — updated by the search text field.

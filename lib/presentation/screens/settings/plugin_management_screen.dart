@@ -55,7 +55,6 @@ class PluginManagementScreen extends ConsumerWidget {
             : _buildPluginList(context, ref, plugins),
       ),
       floatingActionButton: _buildAddFab(context, ref),
-      floatingActionButtonLocation: _FabAboveNavLocation.location,
     );
   }
 
@@ -528,26 +527,5 @@ class _AddPluginSheetState extends ConsumerState<_AddPluginSheet> {
         });
       }
     }
-  }
-}
-
-/// Positions the FAB above the shell's floating bottom nav (same clearance as list padding).
-class _FabAboveNavLocation extends FloatingActionButtonLocation {
-  _FabAboveNavLocation();
-
-  static const _bottomOffset = 120.0; // clear floating nav bar
-  static const _margin = 16.0;
-
-  static const location = _FabAboveNavLocation();
-
-  @override
-  Offset getOffset(ScaffoldPrelayoutGeometry scaffoldGeometry) {
-    final width = scaffoldGeometry.scaffoldSize.width;
-    final height = scaffoldGeometry.scaffoldSize.height;
-    final fabWidth = scaffoldGeometry.floatingActionButtonSize.width;
-    final fabHeight = scaffoldGeometry.floatingActionButtonSize.height;
-    final end = width - fabWidth - _margin;
-    final bottom = height - fabHeight - _margin - _bottomOffset;
-    return Offset(end, bottom);
   }
 }

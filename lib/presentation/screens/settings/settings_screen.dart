@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
@@ -12,7 +13,6 @@ import '../../providers/plugin_providers.dart';
 import '../../providers/settings_providers.dart';
 import '../../providers/watch_history_providers.dart';
 import '../../providers/watchlist_providers.dart';
-import 'plugin_management_screen.dart';
 
 /// Settings screen with glass-themed sections.
 ///
@@ -56,12 +56,7 @@ class SettingsScreen extends ConsumerWidget {
                   icon: Icons.extension_rounded,
                   title: 'Manage Plugins',
                   subtitle: 'Add, remove, and view installed plugins',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const PluginManagementScreen(),
-                    ),
-                  ),
+                  onTap: () => context.push('/plugins'),
                 ),
 
                 const SizedBox(height: AppSpacing.sectionGap),
@@ -163,11 +158,7 @@ class SettingsScreen extends ConsumerWidget {
                   icon: Icons.gavel_rounded,
                   title: 'Open Source Licenses',
                   subtitle: 'View third-party library licenses',
-                  onTap: () => showLicensePage(
-                    context: context,
-                    applicationName: 'Spovies',
-                    applicationVersion: '1.0.0',
-                  ),
+                  onTap: () => context.push('/licenses'),
                 ),
               ],
             ),

@@ -49,13 +49,23 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   void _onSearchChanged() {
     final query = _searchController.text;
     ref.read(searchQueryProvider.notifier).update(query);
-    setState(() => _isSearching = query.trim().isNotEmpty);
+    final active = query.trim().isNotEmpty;
+    setState(() => _isSearching = active);
+    ref.read(isSearchActiveProvider.notifier).state = active;
   }
 
   void _clearSearch() {
     _searchController.clear();
     ref.read(searchQueryProvider.notifier).update('');
     setState(() => _isSearching = false);
+    ref.read(isSearchActiveProvider.notifier).state = false;
+  }
+
+  @override
+  void deactivate() {
+    // Ensure nav bar reappears when leaving the tab mid-search
+    ref.read(isSearchActiveProvider.notifier).state = false;
+    super.deactivate();
   }
 
   void _selectGenre(int id, String name) {

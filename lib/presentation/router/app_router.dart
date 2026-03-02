@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:flutter/material.dart';
+
 import '../../domain/entities/media_item.dart';
 import '../screens/details/details_screen.dart';
 import '../screens/explore/all_media_screen.dart';
 import '../screens/explore/discover_screen.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/player/webview_player_screen.dart';
+import '../screens/settings/plugin_management_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../screens/watchlist/watchlist_screen.dart';
 import 'shell_scaffold.dart';
@@ -109,6 +112,25 @@ final appRouter = GoRouter(
         final args = state.extra as AllMediaArgs;
         return AllMediaScreen(args: args);
       },
+    ),
+
+    // Settings sub-pages — pushed over the shell so the nav bar is hidden
+    GoRoute(
+      path: '/plugins',
+      parentNavigatorKey: _rootKey,
+      builder: (context, state) => const PluginManagementScreen(),
+    ),
+
+    GoRoute(
+      path: '/licenses',
+      parentNavigatorKey: _rootKey,
+      builder: (context, state) => Theme(
+        data: ThemeData.dark(),
+        child: const LicensePage(
+          applicationName: 'Spovies',
+          applicationVersion: '1.0.0',
+        ),
+      ),
     ),
   ],
 );
