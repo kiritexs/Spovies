@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../domain/entities/media_item.dart';
 import '../screens/details/details_screen.dart';
+import '../screens/explore/all_media_screen.dart';
 import '../screens/explore/discover_screen.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/player/webview_player_screen.dart';
@@ -98,6 +99,15 @@ final appRouter = GoRouter(
           media: args.media,
           pluginName: args.pluginName,
         );
+      },
+    ),
+
+    GoRoute(
+      path: '/all-media',
+      parentNavigatorKey: _rootKey,
+      builder: (context, state) {
+        final args = state.extra as AllMediaArgs;
+        return AllMediaScreen(args: args);
       },
     ),
   ],

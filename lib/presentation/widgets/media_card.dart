@@ -65,9 +65,25 @@ class _MediaCardState extends State<MediaCard>
         width: AppSpacing.mediaCardWidth,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // ─── Poster ──────────────────────────
-            _buildPoster(),
+            // ─── Poster (flexible so card fits grid cell) ─────────────────
+            Flexible(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final preferredHeight = AppSpacing.mediaCardWidth /
+                      AppSpacing.mediaCardAspectRatio;
+                  final h = constraints.maxHeight.isFinite
+                      ? preferredHeight.clamp(0.0, constraints.maxHeight)
+                      : preferredHeight;
+                  return SizedBox(
+                    height: h,
+                    width: AppSpacing.mediaCardWidth,
+                    child: _buildPosterContent(),
+                  );
+                },
+              ),
+            ),
             const SizedBox(height: 8),
             // ─── Info ────────────────────────────
             Text(
@@ -85,7 +101,6 @@ class _MediaCardState extends State<MediaCard>
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            
           ],
         ),
       ),
@@ -95,35 +110,39 @@ class _MediaCardState extends State<MediaCard>
   Widget _buildPoster() {
     return AspectRatio(
       aspectRatio: AppSpacing.mediaCardAspectRatio,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: AppSpacing.borderRadiusLg,
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x40000000),
-              blurRadius: 12,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: AppSpacing.borderRadiusLg,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Poster image with scale animation
-              AnimatedBuilder(
-                animation: _scaleAnimation,
-                builder: (_, child) =>
-                    Transform.scale(scale: _scaleAnimation.value, child: child),
-                child: _buildImage(),
-              ),
+      child: _buildPosterContent(),
+    );
+  }
 
-              // Rating badge
-              if (widget.movie.metadata.rating != null)
-                Positioned(top: 8, right: 8, child: _buildRatingBadge()),
-            ],
+  /// Poster content (decoration, image, badge). Fills its parent.
+  Widget _buildPosterContent() {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: AppSpacing.borderRadiusLg,
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x40000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
           ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: AppSpacing.borderRadiusLg,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            AnimatedBuilder(
+              animation: _scaleAnimation,
+              builder: (_, child) => Transform.scale(
+                scale: _scaleAnimation.value,
+                child: child,
+              ),
+              child: _buildImage(),
+            ),
+            if (widget.movie.metadata.rating != null)
+              Positioned(top: 8, right: 8, child: _buildRatingBadge()),
+          ],
         ),
       ),
     );

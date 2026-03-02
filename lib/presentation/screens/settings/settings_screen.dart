@@ -40,7 +40,12 @@ class SettingsScreen extends ConsumerWidget {
 
           // ─── Body ─────────────────────────────────────────────────
           SliverPadding(
-            padding: const EdgeInsets.all(AppSpacing.xl),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl,
+              AppSpacing.xl,
+              AppSpacing.xl,
+              120, // clear floating nav bar
+            ),
             sliver: SliverList.list(
               children: [
                 // ── Plugins Section ────────────────────────────────

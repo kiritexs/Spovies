@@ -4,29 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_styles.dart';
-import '../../../core/utils/tmdb_image_url.dart';
 import '../../../domain/entities/media_item.dart';
 import '../../providers/media_providers.dart';
 import '../../providers/search_providers.dart';
 import '../../widgets/media_card.dart';
 import '../../widgets/media_row.dart';
 import '../../widgets/shimmer_placeholder.dart';
+import 'all_media_screen.dart';
 
-/// Full Discovery / Explore tab.
-///
-/// Layout:
-///  • Sticky glass search bar at the top
-///  • [Empty query] — Discovery mode:
-///      - Trending section with Movie ↔ TV chip toggle
-///      - Genre filter chips (horizontal scroll)
-///      - If genre selected → genre results grid (movies + TV columns)
-///      - If no genre   → Popular Movies row + Popular TV Shows row
-///  • [Non-empty query] — Search mode:
-///      - Debounced TMDB multi-search results grid
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+
 class DiscoverScreen extends ConsumerStatefulWidget {
   const DiscoverScreen({super.key});
 
@@ -36,14 +26,11 @@ class DiscoverScreen extends ConsumerStatefulWidget {
 
 class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   final _searchController = TextEditingController();
-  final _scrollController = ScrollController();
   bool _isSearching = false;
 
-  /// null = no genre filter active
   int? _selectedGenreId;
   String? _selectedGenreName;
 
-  /// Movie | TV toggle for Trending section
   bool _trendingMovies = true;
 
   @override
@@ -56,7 +43,6 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   void dispose() {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
-    _scrollController.dispose();
     super.dispose();
   }
 
@@ -93,15 +79,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       extendBody: true,
       body: Column(
         children: [
-          // ── Status bar space + search bar ──────────────────────────────
           SizedBox(height: topPad),
           _SearchBar(
             controller: _searchController,
             isSearching: _isSearching,
             onClear: _clearSearch,
           ),
-
-          // ── Content ────────────────────────────────────────────────────
           Expanded(
             child: _isSearching
                 ? _SearchResults(controller: _searchController)
@@ -138,9 +121,9 @@ class _SearchBar extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sectionPaddingH,
-        12,
+        10,
         AppSpacing.sectionPaddingH,
-        12,
+        10,
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
@@ -186,7 +169,7 @@ class _SearchBar extends StatelessWidget {
   }
 }
 
-// ─── Discovery Content (no query) ────────────────────────────────────────────
+// ─── Discovery Content ────────────────────────────────────────────────────────
 
 class _DiscoveryContent extends ConsumerWidget {
   final bool trendingMovies;
@@ -205,13 +188,12 @@ class _DiscoveryContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final genreMapAsync = ref.watch(genreMapProvider);
-    final genreMap = genreMapAsync.value ?? {};
+    final genreMap = ref.watch(genreMapProvider).value ?? {};
 
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
-        // ── Trending section ──────────────────────────────────────────────
+        // ── Trending ────────────────────────────────────────────────────
         SliverToBoxAdapter(
           child: _TrendingSection(
             showMovies: trendingMovies,
@@ -220,11 +202,11 @@ class _DiscoveryContent extends ConsumerWidget {
           ),
         ),
 
-        const SliverToBoxAdapter(child: SizedBox(height: 28)),
+        const SliverToBoxAdapter(child: SizedBox(height: 32)),
 
-        // ── Genre chips ───────────────────────────────────────────────────
+        // ── Genre Grid ──────────────────────────────────────────────────
         SliverToBoxAdapter(
-          child: _GenreChips(
+          child: _GenreGrid(
             selectedId: selectedGenreId,
             onSelect: onSelectGenre,
           ),
@@ -232,39 +214,15 @@ class _DiscoveryContent extends ConsumerWidget {
 
         const SliverToBoxAdapter(child: SizedBox(height: 28)),
 
-        // ── Genre results OR popular rows ──────────────────────────────────
+        // ── Genre results OR popular rows ───────────────────────────────
         if (selectedGenreId != null) ...[
           SliverToBoxAdapter(
-            child: Padding(
-              padding: AppSpacing.sectionPadding,
-              child: Row(
-                children: [
-                  Text(selectedGenreName!, style: AppTextStyles.sectionTitle),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: AppColors.primary.withValues(alpha: 0.4),
-                      ),
-                    ),
-                    child: Text(
-                      'Genre',
-                      style: AppTextStyles.tag.copyWith(
-                        color: AppColors.primary,
-                        fontSize: 10,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+            child: _GenreHeader(
+              name: selectedGenreName!,
+              onClear: () => onSelectGenre(selectedGenreId!, selectedGenreName!),
             ),
           ),
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
           SliverToBoxAdapter(
             child: _GenreResults(
               genreId: selectedGenreId!,
@@ -272,7 +230,7 @@ class _DiscoveryContent extends ConsumerWidget {
             ),
           ),
         ] else ...[
-          // Popular Movies row
+          // Popular Movies
           SliverToBoxAdapter(
             child: ref.watch(popularMoviesProvider).when(
               data: (movies) => MediaRow(
@@ -280,6 +238,14 @@ class _DiscoveryContent extends ConsumerWidget {
                 movies: movies,
                 genreMap: genreMap,
                 onMovieTap: (m) => context.push('/details', extra: m),
+                onSeeAllTap: () => context.push(
+                  '/all-media',
+                  extra: AllMediaArgs(
+                    title: 'Popular Movies',
+                    items: movies,
+                    genreMap: genreMap,
+                  ),
+                ),
               ),
               loading: () => const MediaRow(
                 title: 'Popular Movies',
@@ -292,7 +258,7 @@ class _DiscoveryContent extends ConsumerWidget {
 
           const SliverToBoxAdapter(child: SizedBox(height: 28)),
 
-          // Popular TV Shows row
+          // Popular TV
           SliverToBoxAdapter(
             child: ref.watch(popularTvProvider).when(
               data: (shows) => MediaRow(
@@ -300,6 +266,14 @@ class _DiscoveryContent extends ConsumerWidget {
                 movies: shows,
                 genreMap: genreMap,
                 onMovieTap: (m) => context.push('/details', extra: m),
+                onSeeAllTap: () => context.push(
+                  '/all-media',
+                  extra: AllMediaArgs(
+                    title: 'Popular TV Shows',
+                    items: shows,
+                    genreMap: genreMap,
+                  ),
+                ),
               ),
               loading: () => const MediaRow(
                 title: 'Popular TV Shows',
@@ -309,11 +283,125 @@ class _DiscoveryContent extends ConsumerWidget {
               error: (_, __) => const SizedBox.shrink(),
             ),
           ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 28)),
+
+          // Trending Movies row
+          SliverToBoxAdapter(
+            child: ref.watch(trendingMoviesProvider).when(
+              data: (movies) => MediaRow(
+                title: 'Trending Movies',
+                movies: movies,
+                genreMap: genreMap,
+                onMovieTap: (m) => context.push('/details', extra: m),
+                onSeeAllTap: () => context.push(
+                  '/all-media',
+                  extra: AllMediaArgs(
+                    title: 'Trending Movies',
+                    items: movies,
+                    genreMap: genreMap,
+                  ),
+                ),
+              ),
+              loading: () => const MediaRow(
+                title: 'Trending Movies',
+                movies: [],
+                isLoading: true,
+              ),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+          ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 28)),
+
+          // Trending TV row
+          SliverToBoxAdapter(
+            child: ref.watch(trendingTvProvider).when(
+              data: (shows) => MediaRow(
+                title: 'Trending TV Shows',
+                movies: shows,
+                genreMap: genreMap,
+                onMovieTap: (m) => context.push('/details', extra: m),
+                onSeeAllTap: () => context.push(
+                  '/all-media',
+                  extra: AllMediaArgs(
+                    title: 'Trending TV Shows',
+                    items: shows,
+                    genreMap: genreMap,
+                  ),
+                ),
+              ),
+              loading: () => const MediaRow(
+                title: 'Trending TV Shows',
+                movies: [],
+                isLoading: true,
+              ),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+          ),
         ],
 
-        // Bottom padding for nav bar
         const SliverToBoxAdapter(child: SizedBox(height: 120)),
       ],
+    );
+  }
+}
+
+// ─── Genre Header (when genre selected) ──────────────────────────────────────
+
+class _GenreHeader extends StatelessWidget {
+  final String name;
+  final VoidCallback onClear;
+
+  const _GenreHeader({required this.name, required this.onClear});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: AppSpacing.sectionPadding,
+      child: Row(
+        children: [
+          Text(name, style: AppTextStyles.sectionTitle),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.4),
+              ),
+            ),
+            child: Text(
+              'Genre',
+              style: AppTextStyles.tag.copyWith(
+                color: AppColors.primary,
+                fontSize: 10,
+              ),
+            ),
+          ),
+          const Spacer(),
+          GestureDetector(
+            onTap: onClear,
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.close_rounded,
+                  size: 14,
+                  color: AppColors.textSecondary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Clear',
+                  style: AppTextStyles.labelSmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -340,23 +428,17 @@ class _TrendingSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Title + toggle
         Padding(
           padding: AppSpacing.sectionPadding,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Trending', style: AppTextStyles.sectionTitle),
-              _ToggleChips(
-                selected: showMovies,
-                onToggle: onToggle,
-              ),
+              _ToggleChips(selected: showMovies, onToggle: onToggle),
             ],
           ),
         ),
         const SizedBox(height: 12),
-
-        // Horizontal cards
         listAsync.when(
           data: (items) => MediaRow(
             title: '',
@@ -364,6 +446,14 @@ class _TrendingSection extends ConsumerWidget {
             genreMap: genreMap,
             onMovieTap: (m) => context.push('/details', extra: m),
             showTitle: false,
+            onSeeAllTap: () => context.push(
+              '/all-media',
+              extra: AllMediaArgs(
+                title: showMovies ? 'Trending Movies' : 'Trending TV',
+                items: items,
+                genreMap: genreMap,
+              ),
+            ),
           ),
           loading: () => const MediaRow(
             title: '',
@@ -378,7 +468,7 @@ class _TrendingSection extends ConsumerWidget {
   }
 }
 
-// ─── Movie / TV Toggle Chips ──────────────────────────────────────────────────
+// ─── Movie / TV Toggle ────────────────────────────────────────────────────────
 
 class _ToggleChips extends StatelessWidget {
   final bool selected; // true = Movies
@@ -388,42 +478,59 @@ class _ToggleChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _Chip(label: 'Movies', active: selected, onTap: () => onToggle(true)),
-        const SizedBox(width: 8),
-        _Chip(label: 'TV', active: !selected, onTap: () => onToggle(false)),
-      ],
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceDark,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ToggleOption(
+            label: 'Movies',
+            active: selected,
+            onTap: () => onToggle(true),
+          ),
+          _ToggleOption(
+            label: 'TV',
+            active: !selected,
+            onTap: () => onToggle(false),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _Chip extends StatelessWidget {
+class _ToggleOption extends StatelessWidget {
   final String label;
   final bool active;
   final VoidCallback onTap;
 
-  const _Chip({required this.label, required this.active, required this.onTap});
+  const _ToggleOption({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
-          color: active ? AppColors.primary : AppColors.surfaceDark,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: active ? AppColors.primary : AppColors.glassBorder,
-          ),
+          color: active ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
         ),
         child: Text(
           label,
           style: AppTextStyles.labelSmall.copyWith(
             color: active ? Colors.white : AppColors.textSecondary,
+            fontWeight: active ? FontWeight.w600 : FontWeight.w400,
           ),
         ),
       ),
@@ -431,43 +538,73 @@ class _Chip extends StatelessWidget {
   }
 }
 
-// ─── Genre Chips ──────────────────────────────────────────────────────────────
+// ─── Genre Grid ───────────────────────────────────────────────────────────────
 
-class _GenreChips extends ConsumerWidget {
+class _GenreGrid extends ConsumerWidget {
   final int? selectedId;
   final void Function(int id, String name) onSelect;
 
-  const _GenreChips({required this.selectedId, required this.onSelect});
+  const _GenreGrid({required this.selectedId, required this.onSelect});
+
+  // Genre → gradient colors
+  static const _genreColors = <int, List<Color>>{
+    28: [Color(0xFFE53935), Color(0xFFB71C1C)],   // Action
+    12: [Color(0xFF1E88E5), Color(0xFF0D47A1)],   // Adventure
+    16: [Color(0xFFAB47BC), Color(0xFF6A1B9A)],   // Animation
+    35: [Color(0xFFFFB300), Color(0xFFE65100)],   // Comedy
+    80: [Color(0xFF546E7A), Color(0xFF263238)],   // Crime
+    99: [Color(0xFF26A69A), Color(0xFF004D40)],   // Documentary
+    18: [Color(0xFF5C6BC0), Color(0xFF283593)],   // Drama
+    10751: [Color(0xFF66BB6A), Color(0xFF1B5E20)], // Family
+    14: [Color(0xFFBA68C8), Color(0xFF4A148C)],   // Fantasy
+    36: [Color(0xFF8D6E63), Color(0xFF3E2723)],   // History
+    27: [Color(0xFF1A237E), Color(0xFF000000)],   // Horror
+    10402: [Color(0xFFEC407A), Color(0xFF880E4F)], // Music
+    9648: [Color(0xFF455A64), Color(0xFF102027)], // Mystery
+    10749: [Color(0xFFEF5350), Color(0xFFB71C1C)], // Romance
+    878: [Color(0xFF1565C0), Color(0xFF4A148C)],  // Sci-Fi
+    53: [Color(0xFF37474F), Color(0xFF000000)],   // Thriller
+    10752: [Color(0xFF6D4C41), Color(0xFF1B0000)], // War
+    37: [Color(0xFFD4890A), Color(0xFF4E342E)],   // Western
+    10759: [Color(0xFFEF5350), Color(0xFFE65100)], // Action & Adventure
+    10762: [Color(0xFF43A047), Color(0xFF1B5E20)], // Kids
+    10763: [Color(0xFF0288D1), Color(0xFF01579B)], // News
+    10764: [Color(0xFFFF7043), Color(0xFFBF360C)], // Reality
+    10765: [Color(0xFF5E35B1), Color(0xFF1A237E)], // Sci-Fi & Fantasy
+    10767: [Color(0xFF00BCD4), Color(0xFF006064)], // Talk
+    10768: [Color(0xFF827717), Color(0xFF33691E)], // War & Politics
+  };
 
   static const _genreIcons = <int, IconData>{
-    28: Icons.bolt_rounded,          // Action
-    12: Icons.explore_rounded,       // Adventure
-    16: Icons.brush_rounded,         // Animation
-    35: Icons.sentiment_very_satisfied_rounded, // Comedy
-    80: Icons.search_rounded,        // Crime
-    99: Icons.videocam_rounded,      // Documentary
-    18: Icons.theater_comedy_rounded, // Drama
-    10751: Icons.family_restroom_rounded, // Family
-    14: Icons.auto_awesome_rounded,  // Fantasy
-    36: Icons.history_edu_rounded,   // History
-    27: Icons.nightlight_rounded,    // Horror
-    10402: Icons.music_note_rounded, // Music
-    9648: Icons.psychology_rounded,  // Mystery
-    10749: Icons.favorite_rounded,   // Romance
-    878: Icons.rocket_launch_rounded, // Science Fiction
-    10770: Icons.tv_rounded,         // TV Movie
-    53: Icons.remove_red_eye_rounded, // Thriller
-    10752: Icons.military_tech_rounded, // War
-    37: Icons.landscape_rounded,     // Western
-    10759: Icons.sports_martial_arts_rounded, // Action & Adventure (TV)
-    10762: Icons.child_care_rounded, // Kids
-    10763: Icons.newspaper_rounded,  // News
-    10764: Icons.emoji_events_rounded, // Reality
-    10765: Icons.science_rounded,    // Sci-Fi & Fantasy (TV)
-    10766: Icons.format_list_bulleted_rounded, // Soap
-    10767: Icons.mic_rounded,        // Talk
-    10768: Icons.flag_rounded,       // War & Politics (TV)
+    28: Icons.bolt_rounded,
+    12: Icons.explore_rounded,
+    16: Icons.brush_rounded,
+    35: Icons.sentiment_very_satisfied_rounded,
+    80: Icons.search_rounded,
+    99: Icons.videocam_rounded,
+    18: Icons.theater_comedy_rounded,
+    10751: Icons.family_restroom_rounded,
+    14: Icons.auto_awesome_rounded,
+    36: Icons.history_edu_rounded,
+    27: Icons.nightlight_rounded,
+    10402: Icons.music_note_rounded,
+    9648: Icons.psychology_rounded,
+    10749: Icons.favorite_rounded,
+    878: Icons.rocket_launch_rounded,
+    10770: Icons.tv_rounded,
+    53: Icons.remove_red_eye_rounded,
+    10752: Icons.military_tech_rounded,
+    37: Icons.landscape_rounded,
+    10759: Icons.sports_martial_arts_rounded,
+    10762: Icons.child_care_rounded,
+    10763: Icons.newspaper_rounded,
+    10764: Icons.emoji_events_rounded,
+    10765: Icons.science_rounded,
+    10767: Icons.mic_rounded,
+    10768: Icons.flag_rounded,
   };
+
+  static const _fallbackColors = [Color(0xFF37474F), Color(0xFF102027)];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -480,89 +617,133 @@ class _GenreChips extends ConsumerWidget {
           padding: AppSpacing.sectionPadding,
           child: Text('Browse by Genre', style: AppTextStyles.sectionTitle),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         genresAsync.when(
-          loading: () => _buildShimmer(),
+          loading: _buildShimmer,
           error: (_, __) => const SizedBox.shrink(),
-          data: (genres) => SizedBox(
-            height: 44,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
+          data: (genres) {
+            return Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.sectionPaddingH,
               ),
-              itemCount: genres.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (_, i) {
-                final g = genres[i];
-                final isActive = selectedId == g.id;
-                final icon = _genreIcons[g.id] ?? Icons.movie_outlined;
+              child: GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate:
+                    const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  childAspectRatio: 1.7,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                ),
+                itemCount: genres.length,
+                itemBuilder: (_, i) {
+                  final g = genres[i];
+                  final isActive = selectedId == g.id;
+                  final colors =
+                      _genreColors[g.id] ?? _fallbackColors;
+                  final icon =
+                      _genreIcons[g.id] ?? Icons.movie_outlined;
 
-                return GestureDetector(
-                  onTap: () => onSelect(g.id, g.name),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 0,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isActive
-                          ? AppColors.primary
-                          : AppColors.surfaceDark,
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(
-                        color: isActive
-                            ? AppColors.primary
-                            : AppColors.glassBorder,
+                  return GestureDetector(
+                    onTap: () => onSelect(g.id, g.name),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: isActive
+                              ? [
+                                  AppColors.primary,
+                                  AppColors.primary
+                                      .withValues(alpha: 0.7),
+                                ]
+                              : colors,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        border: isActive
+                            ? Border.all(
+                                color: Colors.white.withValues(alpha: 0.6),
+                                width: 1.5,
+                              )
+                            : null,
+                        boxShadow: [
+                          BoxShadow(
+                            color: (isActive
+                                    ? AppColors.primary
+                                    : colors.first)
+                                .withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Stack(
+                        children: [
+                          // Background icon (large, watermark style)
+                          Positioned(
+                            right: -8,
+                            bottom: -8,
+                            child: Icon(
+                              icon,
+                              size: 52,
+                              color: Colors.white.withValues(alpha: 0.12),
+                            ),
+                          ),
+                          // Content
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(icon, size: 20, color: Colors.white),
+                                const SizedBox(height: 6),
+                                Text(
+                                  g.name,
+                                  style:
+                                      AppTextStyles.labelSmall.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          icon,
-                          size: 15,
-                          color: isActive
-                              ? Colors.white
-                              : AppColors.textSecondary,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          g.name,
-                          style: AppTextStyles.labelSmall.copyWith(
-                            color: isActive
-                                ? Colors.white
-                                : AppColors.textSecondary,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
+                  );
+                },
+              ),
+            );
+          },
         ),
       ],
     );
   }
 
   Widget _buildShimmer() {
-    return SizedBox(
-      height: 44,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sectionPaddingH,
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sectionPaddingH,
+      ),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          childAspectRatio: 1.7,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
         ),
-        itemCount: 8,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemCount: 12,
         itemBuilder: (_, __) => ShimmerPlaceholder(
-          width: 90,
-          height: 38,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(12),
         ),
       ),
     );
@@ -583,8 +764,9 @@ class _GenreResults extends ConsumerWidget {
     final tvAsync = ref.watch(discoverTvByGenreProvider(genreId));
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Movies sub-row
+        // Movies
         moviesAsync.when(
           data: (movies) => movies.isEmpty
               ? const SizedBox.shrink()
@@ -593,6 +775,14 @@ class _GenreResults extends ConsumerWidget {
                   movies: movies,
                   genreMap: genreMap,
                   onMovieTap: (m) => context.push('/details', extra: m),
+                  onSeeAllTap: () => context.push(
+                    '/all-media',
+                    extra: AllMediaArgs(
+                      title: 'Movies',
+                      items: movies,
+                      genreMap: genreMap,
+                    ),
+                  ),
                 ),
           loading: () => const MediaRow(
             title: 'Movies',
@@ -602,9 +792,9 @@ class _GenreResults extends ConsumerWidget {
           error: (_, __) => const SizedBox.shrink(),
         ),
 
-        const SizedBox(height: 24),
+        const SizedBox(height: 28),
 
-        // TV sub-row
+        // TV Shows
         tvAsync.when(
           data: (shows) => shows.isEmpty
               ? const SizedBox.shrink()
@@ -613,6 +803,14 @@ class _GenreResults extends ConsumerWidget {
                   movies: shows,
                   genreMap: genreMap,
                   onMovieTap: (m) => context.push('/details', extra: m),
+                  onSeeAllTap: () => context.push(
+                    '/all-media',
+                    extra: AllMediaArgs(
+                      title: 'TV Shows',
+                      items: shows,
+                      genreMap: genreMap,
+                    ),
+                  ),
                 ),
           loading: () => const MediaRow(
             title: 'TV Shows',
@@ -639,7 +837,7 @@ class _SearchResults extends ConsumerWidget {
     final genreMap = ref.watch(genreMapProvider).value ?? {};
 
     return resultsAsync.when(
-      loading: () => _shimmerGrid(),
+      loading: _shimmerGrid,
       error: (e, _) {
         if (e.toString().contains('cancelled')) return _shimmerGrid();
         return Center(
