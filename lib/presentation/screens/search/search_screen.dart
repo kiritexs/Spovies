@@ -220,7 +220,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
-        childAspectRatio: 0.55,
+        childAspectRatio: 0.5,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
       ),
@@ -243,16 +243,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
-        childAspectRatio: 0.55,
+        childAspectRatio: 0.5,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
       ),
       itemCount: results.length,
       itemBuilder: (_, index) {
         final item = results[index];
-        final genreText = (item.metadata.genreIds as List<int>)
+        final List<int> genreIds =
+            (item.metadata.genreIds as List<dynamic>?)
+                ?.map((e) => e as int)
+                .toList() ??
+            [];
+
+        final genreText = genreIds
             .take(2)
-            .map((id) => genreMap[id] ?? '')
+            .map<String>((id) => genreMap[id] ?? '')
             .where((String s) => s.isNotEmpty)
             .join(' • ');
 

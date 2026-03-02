@@ -54,7 +54,7 @@ class MediaRow extends StatelessWidget {
 
         // ─── Horizontal Scroll ───────────────
         SizedBox(
-          height: 260, // Card aspect 2:3 at 140w = 210h + text ~50
+          height: 275, // Increased from 260 to fit poster + 2 lines of text
           child: isLoading
               ? _buildShimmerRow()
               : ListView.separated(
@@ -98,8 +98,8 @@ class MediaRow extends StatelessWidget {
     if (ids.isEmpty || genreMap.isEmpty) return movie.type.displayName;
     return ids
         .take(2)
-        .map((id) => genreMap[id] ?? '')
-        .where((n) => n.isNotEmpty)
+        .map<String>((id) => genreMap[id] ?? '')
+        .where((String n) => n.isNotEmpty)
         .join(' • ');
   }
 }

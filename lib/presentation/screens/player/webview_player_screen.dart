@@ -184,7 +184,6 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
               ),
             ),
           ),
-          ),
         ],
       ),
     );

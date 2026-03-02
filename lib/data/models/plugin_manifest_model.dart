@@ -27,7 +27,9 @@ class PluginManifestModel {
         json['presentationMode'] as String?,
       ),
       eventBridgeConfig: json['eventBridgeConfig'] != null
-          ? _parseEventBridge(json['eventBridgeConfig'] as Map<String, dynamic>)
+          ? _parseEventBridge(
+              Map<String, dynamic>.from(json['eventBridgeConfig'] as Map),
+            )
           : null,
     );
   }

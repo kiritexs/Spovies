@@ -85,6 +85,7 @@ class _MediaCardState extends State<MediaCard>
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
+            
           ],
         ),
       ),

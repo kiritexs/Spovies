@@ -90,11 +90,13 @@ class MediaItemModel {
       }
     }
 
+    final type = json['name'] != null ? MediaType.tv : MediaType.movie;
+
     return MediaItemModel._(
       MediaItem(
         id: json['id'].toString(),
         tmdbId: json['id'] as int,
-        type: MediaType.movie,
+        type: type,
         title: (json['title'] ?? json['name'] ?? '') as String,
         overview: json['overview'] as String?,
         posterPath: json['poster_path'] as String?,
