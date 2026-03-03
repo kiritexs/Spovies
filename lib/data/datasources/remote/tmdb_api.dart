@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../../domain/entities/episode.dart';
+import '../../../domain/entities/media_type.dart';
 import '../../models/media_item_model.dart';
 import '../../models/genre_model.dart';
 
@@ -57,7 +58,12 @@ class TmdbApi {
       queryParameters: {'page': page},
     );
     final results = response.data['results'] as List;
-    return results.map((json) => MediaItemModel.fromTmdbJson(json)).toList();
+    return results
+        .map(
+          (json) =>
+              MediaItemModel.fromTmdbJson(json, defaultType: MediaType.tv),
+        )
+        .toList();
   }
 
   /// Top rated TV shows.
@@ -67,7 +73,12 @@ class TmdbApi {
       queryParameters: {'page': page},
     );
     final results = response.data['results'] as List;
-    return results.map((json) => MediaItemModel.fromTmdbJson(json)).toList();
+    return results
+        .map(
+          (json) =>
+              MediaItemModel.fromTmdbJson(json, defaultType: MediaType.tv),
+        )
+        .toList();
   }
 
   /// Discover movies filtered by genre id.
@@ -101,7 +112,12 @@ class TmdbApi {
       },
     );
     final results = response.data['results'] as List;
-    return results.map((json) => MediaItemModel.fromTmdbJson(json)).toList();
+    return results
+        .map(
+          (json) =>
+              MediaItemModel.fromTmdbJson(json, defaultType: MediaType.tv),
+        )
+        .toList();
   }
 
   // ─── Details ──────────────────────────────────────────────────────────

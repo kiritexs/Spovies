@@ -32,7 +32,11 @@ class AppHeader extends StatelessWidget {
               children: [
                 Text('WELCOME BACK', style: AppTextStyles.welcomeLabel),
                 const SizedBox(height: 2),
-                Text('Spovies', style: AppTextStyles.appTitle),
+                Image.asset(
+                  'assets/Layer_8.png',
+                  height: 32,
+                  fit: BoxFit.contain,
+                ),
               ],
             ),
 

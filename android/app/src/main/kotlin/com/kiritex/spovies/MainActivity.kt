@@ -1,4 +1,4 @@
-package com.spovies.spovies
+package com.kiritex.spovies
 
 import io.flutter.embedding.android.FlutterActivity
 

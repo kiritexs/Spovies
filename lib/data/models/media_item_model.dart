@@ -11,8 +11,16 @@ class MediaItemModel {
   MediaItemModel._(this.entity);
 
   /// Parse a movie/TV item from TMDB list endpoints (trending, top_rated, search).
-  factory MediaItemModel.fromTmdbJson(Map<String, dynamic> json) {
-    final mediaType = MediaType.fromString(json['media_type'] as String?);
+  ///
+  /// [defaultType] is used when the JSON doesn't include a `media_type` field
+  /// (e.g. `/tv/popular`, `/movie/top_rated`). Trending endpoints include it.
+  factory MediaItemModel.fromTmdbJson(
+    Map<String, dynamic> json, {
+    MediaType? defaultType,
+  }) {
+    final mediaType = json['media_type'] != null
+        ? MediaType.fromString(json['media_type'] as String?)
+        : (defaultType ?? MediaType.movie);
     final title = (json['title'] ?? json['name'] ?? '') as String;
     final releaseDate =
         (json['release_date'] ?? json['first_air_date']) as String?;
@@ -149,12 +157,14 @@ class MediaItemModel {
       for (final s in rawSeasons) {
         final num = s['season_number'] as int? ?? 0;
         if (num == 0) continue;
-        seasonsList.add(TvSeason(
-          seasonNumber: num,
-          episodeCount: s['episode_count'] as int? ?? 0,
-          name: s['name'] as String?,
-          posterPath: s['poster_path'] as String?,
-        ));
+        seasonsList.add(
+          TvSeason(
+            seasonNumber: num,
+            episodeCount: s['episode_count'] as int? ?? 0,
+            name: s['name'] as String?,
+            posterPath: s['poster_path'] as String?,
+          ),
+        );
       }
     }
 
@@ -165,14 +175,16 @@ class MediaItemModel {
     final castSource = aggCredits ?? credits;
     if (castSource != null) {
       for (final c in castSource.take(20)) {
-        castList.add(CastMember(
-          id: c['id'] as int,
-          name: c['name'] as String? ?? '',
-          character: (c['roles'] as List<dynamic>?)?.isNotEmpty == true
-              ? (c['roles'] as List<dynamic>).first['character'] as String?
-              : c['character'] as String?,
-          profilePath: c['profile_path'] as String?,
-        ));
+        castList.add(
+          CastMember(
+            id: c['id'] as int,
+            name: c['name'] as String? ?? '',
+            character: (c['roles'] as List<dynamic>?)?.isNotEmpty == true
+                ? (c['roles'] as List<dynamic>).first['character'] as String?
+                : c['character'] as String?,
+            profilePath: c['profile_path'] as String?,
+          ),
+        );
       }
     }
 

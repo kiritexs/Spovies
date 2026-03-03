@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
@@ -159,6 +160,35 @@ class SettingsScreen extends ConsumerWidget {
                   title: 'Open Source Licenses',
                   subtitle: 'View third-party library licenses',
                   onTap: () => context.push('/licenses'),
+                ),
+
+                const SizedBox(height: AppSpacing.sectionGap + 8),
+
+                // ── Powered by Kiritex ─────────────────────────────
+                Center(
+                  child: Column(
+                    children: [
+                      Text(
+                        'Powered by',
+                        style: AppTextStyles.cardSubtitle.copyWith(
+                          fontSize: 12,
+                          color: AppColors.textSecondary.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () => launchUrl(
+                          Uri.parse('https://github.com/kiritexs'),
+                          mode: LaunchMode.externalApplication,
+                        ),
+                        child: Image.asset(
+                          'assets/logo.png',
+                          height: 28,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
