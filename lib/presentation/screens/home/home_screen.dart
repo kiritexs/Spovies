@@ -39,7 +39,7 @@ class HomeScreen extends ConsumerWidget {
 
           // ─── Fixed header overlay ────────────────────────────────
           Positioned(
-            top: 0,
+            top: -30,
             left: 0,
             right: 0,
             child: AppHeader(
@@ -125,11 +125,8 @@ class _HomeContent extends ConsumerWidget {
               genreMap: genreMap,
               onMovieTap: (m) => context.push('/details', extra: m),
             ),
-            loading: () => const MediaRow(
-              title: 'Top Rated',
-              movies: [],
-              isLoading: true,
-            ),
+            loading: () =>
+                const MediaRow(title: 'Top Rated', movies: [], isLoading: true),
             error: (_, __) => _RetryRow(
               title: 'Top Rated',
               onRetry: () => ref.invalidate(topRatedMoviesProvider),
