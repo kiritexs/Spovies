@@ -143,7 +143,7 @@ class SettingsScreen extends ConsumerWidget {
                   context,
                   icon: Icons.info_outline_rounded,
                   title: 'Spovies',
-                  subtitle: 'v1.0.0 • Powered by TMDB',
+                  subtitle: 'v0.1.0 • A KIRITEX PROJECT',
                 ),
                 const SizedBox(height: 8),
                 _buildGlassTile(
@@ -154,40 +154,55 @@ class SettingsScreen extends ConsumerWidget {
                       'This product uses the TMDB API but is not endorsed or certified by TMDB.',
                 ),
                 const SizedBox(height: 8),
-                _buildGlassTile(
-                  context,
-                  icon: Icons.gavel_rounded,
-                  title: 'Open Source Licenses',
-                  subtitle: 'View third-party library licenses',
-                  onTap: () => context.push('/licenses'),
-                ),
 
+                // _buildGlassTile(
+                //   context,
+                //   icon: Icons.gavel_rounded,
+                //   title: 'Open Source Licenses',
+                //   subtitle: 'View third-party library licenses',
+                //   onTap: () => context.push('/licenses'),
+                // ),
                 const SizedBox(height: AppSpacing.sectionGap + 8),
 
                 // ── Powered by Kiritex ─────────────────────────────
                 Center(
-                  child: Column(
-                    children: [
-                      Text(
-                        'Powered by',
-                        style: AppTextStyles.cardSubtitle.copyWith(
-                          fontSize: 12,
-                          color: AppColors.textSecondary.withValues(alpha: 0.6),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: AppColors.glassGradient,
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                      border: Border.all(color: AppColors.glassBorder),
+                    ),
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.sectionPaddingH * 3,
+                      AppSpacing.sectionPaddingH,
+                      AppSpacing.sectionPaddingH * 3,
+                      AppSpacing.sectionPaddingH * 1.5,
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          'Powered by',
+                          style: AppTextStyles.cardSubtitle.copyWith(
+                            fontSize: 12,
+                            color: AppColors.textSecondary.withValues(
+                              alpha: 0.6,
+                            ),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      GestureDetector(
-                        onTap: () => launchUrl(
-                          Uri.parse('https://github.com/kiritexs'),
-                          mode: LaunchMode.externalApplication,
+                        const SizedBox(height: 8),
+                        GestureDetector(
+                          onTap: () => launchUrl(
+                            Uri.parse('https://github.com/kiritexs'),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          child: Image.asset(
+                            'assets/logo.png',
+                            height: 28,
+                            fit: BoxFit.contain,
+                          ),
                         ),
-                        child: Image.asset(
-                          'assets/logo.png',
-                          height: 28,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ],

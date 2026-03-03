@@ -30,13 +30,13 @@ class AppHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('WELCOME BACK', style: AppTextStyles.welcomeLabel),
-                const SizedBox(height: 2),
                 Image.asset(
                   'assets/Layer_8.png',
                   height: 32,
                   fit: BoxFit.contain,
                 ),
+                const SizedBox(height: 2),
+                Text('WELCOME BACK', style: AppTextStyles.welcomeLabel),
               ],
             ),
 
