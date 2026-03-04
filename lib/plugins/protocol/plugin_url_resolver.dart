@@ -34,37 +34,46 @@ class PluginUrlResolver {
   }) {
     final template = plugin.urlTemplate;
 
-    final hasSeasonPlaceholder = template.contains('{{season}}');
-    final hasEpisodePlaceholder = template.contains('{{episode}}');
+    final hasSeasonPlaceholder =
+        template.contains('{{season}}') || template.contains('{{/season}}');
+    final hasEpisodePlaceholder =
+        template.contains('{{episode}}') || template.contains('{{/episode}}');
 
     var url = template;
 
     // ── Basic substitutions ────────────────────────────────────────────────
     url = url.replaceAll('{{tmdbId}}', media.tmdbId.toString());
+    url = url.replaceAll('{{id}}', media.tmdbId.toString());
     url = url.replaceAll('{{type}}', media.type.name);
     url = url.replaceAll('{{title}}', Uri.encodeComponent(media.title));
     url = url.replaceAll('{{imdbId}}', media.metadata.imdbId ?? '');
 
     // ── Explicit season / episode placeholders ─────────────────────────────
-    if (hasSeasonPlaceholder) {
-      url = url.replaceAll('{{season}}', (season ?? 1).toString());
-    }
-    if (hasEpisodePlaceholder) {
-      url = url.replaceAll('{{episode}}', (episode ?? 1).toString());
+    final sVal = (season ?? 1).toString();
+    final eVal = (episode ?? 1).toString();
+
+    if (media.type == MediaType.tv) {
+      url = url.replaceAll('{{season}}', sVal);
+      url = url.replaceAll('{{/season}}', '/$sVal');
+      url = url.replaceAll('{{episode}}', eVal);
+      url = url.replaceAll('{{/episode}}', '/$eVal');
+    } else {
+      // For movies, explicit season/episode placeholders are cleared
+      url = url.replaceAll('{{season}}', '');
+      url = url.replaceAll('{{/season}}', '');
+      url = url.replaceAll('{{episode}}', '');
+      url = url.replaceAll('{{/episode}}', '');
     }
 
     // ── TV path-based fallback ─────────────────────────────────────────────
-    // When neither placeholder exists but we're dealing with a TV show,
+    // When no season/episode placeholder exists but we're dealing with a TV show,
     // append /season/episode as path segments before any query string.
-    // Defaults to 1/1 so the media-header "Watch" button always lands on
-    // a valid episode instead of the service's homepage.
     if (media.type == MediaType.tv &&
         !hasSeasonPlaceholder &&
         !hasEpisodePlaceholder) {
       final s = season ?? 1;
       final e = episode ?? 1;
       final uri = Uri.parse(url);
-      // Ensure no trailing slash before appending
       final cleanPath = uri.path.endsWith('/')
           ? uri.path.substring(0, uri.path.length - 1)
           : uri.path;

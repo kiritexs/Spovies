@@ -84,8 +84,41 @@ const _kIosInlineVideoFix = '''
 })();
 ''';
 
+// ─── Suppress native Fullscreen API — injected at document-start ─────────────
+//
+// Both iOS and Android WebViews intercept the Fullscreen API and hand the
+// video to a native player overlay, which kills the web-based subtitle
+// rendering and player controls.  This script no-ops every fullscreen
+// entry-point so the video stays inside the WebView at all times.
+// The player is already running in landscape immersive mode, so the user
+// experience is effectively fullscreen without the native takeover.
+
+const _kSuppressFullscreenJs = '''
+(function() {
+  if (window.__spoviesNoNativeFS) return;
+  window.__spoviesNoNativeFS = true;
+
+  // No-op all fullscreen entry points.
+  Element.prototype.requestFullscreen = function() { return Promise.resolve(); };
+  if (Element.prototype.webkitRequestFullscreen) {
+    Element.prototype.webkitRequestFullscreen = function() {};
+  }
+  if (typeof HTMLVideoElement !== 'undefined') {
+    var vp = HTMLVideoElement.prototype;
+    if (vp.webkitEnterFullscreen)  vp.webkitEnterFullscreen  = function() {};
+    if (vp.webkitEnterFullScreen)  vp.webkitEnterFullScreen  = function() {};
+  }
+
+  // Tell the page that fullscreen is not available, so players fall back
+  // to their CSS-based "theater" / inline mode.
+  Object.defineProperty(document, 'fullscreenEnabled',        { get: function() { return false; } });
+  Object.defineProperty(document, 'webkitFullscreenEnabled',  { get: function() { return false; } });
+})();
+''';
+
 // ─── CSS — injected at document-start ────────────────────────────────────────
-// Disables text selection & long-press callouts globally.
+// • Disables text selection & long-press callouts globally.
+// • Constrains popup/dialog dimensions so they don't overflow on mobile.
 // Does NOT touch pointer-events so scrollable lists remain fully interactive.
 
 const _kNoSelectCss = '''
@@ -96,6 +129,12 @@ const _kNoSelectCss = '''
     '  -webkit-user-select: none !important;',
     '  user-select: none !important;',
     '  -webkit-touch-callout: none !important;',
+    '}',
+    '.modal, .popup, [class*="dialog"], [class*="Dialog"],',
+    '[class*="dropdown"], [class*="menu-popup"], [class*="select-menu"] {',
+    '  max-height: 60vh !important;',
+    '  max-width: 80vw !important;',
+    '  overflow-y: auto !important;',
     '}',
   ].join('');
   (document.head || document.documentElement).appendChild(s);
@@ -148,13 +187,17 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   // Giving explicit ownership of these gestures to the WebView prevents the
   // Flutter widget tree from competing, which is the root cause of scroll
   // breakage in embedded lists.
+  // NOTE: LongPressGestureRecognizer was intentionally removed — it causes
+  // a ~500 ms delay in the gesture arena before taps are forwarded to the
+  // WebView, making buttons appear to require a "double click".  The
+  // _kNoSelectCss script already disables the browser's long-press context
+  // menu, so there is no loss of functionality.
   static final _webViewGestures = <Factory<OneSequenceGestureRecognizer>>{
     Factory<VerticalDragGestureRecognizer>(VerticalDragGestureRecognizer.new),
     Factory<HorizontalDragGestureRecognizer>(
       HorizontalDragGestureRecognizer.new,
     ),
     Factory<ScaleGestureRecognizer>(ScaleGestureRecognizer.new),
-    Factory<LongPressGestureRecognizer>(LongPressGestureRecognizer.new),
   };
 
   @override
@@ -246,8 +289,12 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   );
 
   List<UserScript> get _userScripts => [
-    // Must be AT_DOCUMENT_START so the MutationObserver and play() override
-    // are live before the streaming site's own scripts execute.
+    // Must be AT_DOCUMENT_START so overrides are live before the streaming
+    // site's own scripts execute.
+    UserScript(
+      source: _kSuppressFullscreenJs,
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+    ),
     UserScript(
       source: _kIosInlineVideoFix,
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
@@ -349,13 +396,17 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
 
   Widget _buildLoadingOverlay() {
     // Only shown during the very first load (progress ≤ 15%).
+    // Wrapped in IgnorePointer so taps pass through to the WebView
+    // even while the spinner is visible — fixes laggy play button.
     if (_hasError || _loadProgress > 15) return const SizedBox.shrink();
-    return Container(
-      color: Colors.black,
-      child: const Center(
-        child: CircularProgressIndicator(
-          color: AppColors.primary,
-          strokeWidth: 2,
+    return IgnorePointer(
+      child: Container(
+        color: Colors.black,
+        child: const Center(
+          child: CircularProgressIndicator(
+            color: AppColors.primary,
+            strokeWidth: 2,
+          ),
         ),
       ),
     );
