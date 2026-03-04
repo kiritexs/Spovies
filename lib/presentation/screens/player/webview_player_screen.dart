@@ -267,20 +267,56 @@ const _kAdRemovalJs = '''
   if (window.__spoviesAdBlock) return;
   window.__spoviesAdBlock = true;
 
-  // Known ad selectors — covers most streaming-site overlay patterns.
+  // Comprehensive ad selectors — covers streaming-site overlay patterns.
   var adSelectors = [
+    // --- iframes ---
     'iframe[src*="ads"]', 'iframe[src*="doubleclick"]',
     'iframe[src*="googlesyndication"]', 'iframe[src*="adservice"]',
+    'iframe[src*="popads"]', 'iframe[src*="popcash"]',
+    'iframe[src*="juicyads"]', 'iframe[src*="exoclick"]',
+    'iframe[src*="trafficjunky"]', 'iframe[src*="propellerads"]',
+    'iframe[src*="adsterra"]', 'iframe[src*="onclkds"]',
+    'iframe[src*="onclickmax"]', 'iframe[src*="pushame"]',
+    // --- div class/id patterns ---
     'div[class*="ad-overlay"]', 'div[class*="ad-container"]',
+    'div[class*="ads-"]', 'div[class*="-ads"]',
+    'div[class*="adsbygoogle"]', 'div[class*="ad-banner"]',
+    'div[class*="ad_"]', 'div[id*="ad_"]',
+    'div[class*="ads_"]', 'div[id*="ads_"]',
     'div[class*="popup"]', 'div[id*="popup"]',
     'div[class*="overlay-ad"]', 'div[id*="overlay-ad"]',
+    'div[class*="banner-ad"]', 'div[class*="ad-banner"]',
+    'div[class*="sticky-ad"]', 'div[class*="ad-sticky"]',
+    'div[class*="ad-float"]', 'div[class*="float-ad"]',
+    'div[class*="interstitial"]', 'div[class*="preroll"]',
+    'div[class*="popunder"]', 'div[id*="popunder"]',
+    'div[class*="modal-ad"]', 'div[class*="ad-modal"]',
+    // --- generic overlay/click-jacker patterns ---
+    'div[class*="overlay"][style*="z-index"]',
+    'div[id*="overlay"][style*="z-index"]',
+    // --- target blank + nofollow ---
     'a[target="_blank"][rel*="nofollow"]',
+    'a[target="_blank"][href*="click"]',
+    'a[target="_blank"][href*="track"]',
     '[onclick*="window.open"]',
+    // --- ins (Google AdSense containers) ---
+    'ins.adsbygoogle',
   ].join(',');
 
   function removeAds() {
     document.querySelectorAll(adSelectors).forEach(function(el) {
       el.remove();
+    });
+    // Remove fixed-position overlays that cover the entire viewport
+    // (common click-jacker pattern) but skip the actual video player.
+    document.querySelectorAll('div, section, aside').forEach(function(el) {
+      var cs = window.getComputedStyle(el);
+      if (cs.position === 'fixed' && cs.zIndex && parseInt(cs.zIndex) > 999) {
+        // Skip if it contains a video element (it's the actual player).
+        if (!el.querySelector('video') && !el.querySelector('iframe[src*="embed"]')) {
+          el.remove();
+        }
+      }
     });
   }
 
@@ -291,24 +327,119 @@ const _kAdRemovalJs = '''
   var mo = new MutationObserver(function() { removeAds(); });
   mo.observe(document.documentElement, { childList: true, subtree: true });
 
+  // Periodic fallback sweep — catches ads injected via timers.
+  setInterval(removeAds, 1500);
+
   // Neuter window.open so JS-driven popups are silently swallowed.
   window.open = function() { return null; };
+
+  // Neuter document.createElement for ad iframes/scripts.
+  var _origCreate = document.createElement.bind(document);
+  document.createElement = function(tag) {
+    var el = _origCreate(tag);
+    if (tag.toLowerCase() === 'iframe') {
+      // Override the src setter to block ad iframes.
+      var _origSrc = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src');
+      if (_origSrc && _origSrc.set) {
+        var origSet = _origSrc.set;
+        Object.defineProperty(el, 'src', {
+          set: function(v) {
+            var blocked = ['ads','doubleclick','googlesyndication','popads',
+                           'popcash','exoclick','trafficjunky','propellerads',
+                           'adsterra','onclkds','onclickmax','juicyads'];
+            for (var i = 0; i < blocked.length; i++) {
+              if (v && v.indexOf(blocked[i]) !== -1) return;
+            }
+            origSet.call(this, v);
+          },
+          get: function() { return _origSrc.get ? _origSrc.get.call(this) : ''; }
+        });
+      }
+    }
+    return el;
+  };
 })();
 ''';
 
-// Domain fragments used by shouldOverrideUrlLoading to reject ad navigations.
+// ─── Anti click-jacking JS — injected at document-start ──────────────────────
+//
+// Intercepts click events at the capture phase to block popunder scripts
+// and click-jacking overlays that redirect to ad pages.
+
+const _kAntiClickjackJs = '''
+(function() {
+  if (window.__spoviesAntiCJ) return;
+  window.__spoviesAntiCJ = true;
+
+  // List of ad domain fragments to detect in href/action attributes.
+  var adDomains = ['doubleclick','googlesyndication','popads','popcash',
+    'exoclick','trafficjunky','propellerads','adsterra','juicyads',
+    'onclkds','onclickmax','pushame','hilltopads','adtng','adrunnr',
+    'adskeeper','clickadu','clickaine'];
+
+  function isAdUrl(url) {
+    if (!url) return false;
+    for (var i = 0; i < adDomains.length; i++) {
+      if (url.indexOf(adDomains[i]) !== -1) return true;
+    }
+    return false;
+  }
+
+  document.addEventListener('click', function(e) {
+    var t = e.target;
+    // Walk up to find an anchor.
+    while (t && t.nodeName !== 'A' && t.nodeName !== 'BODY') {
+      t = t.parentNode;
+    }
+    if (t && t.nodeName === 'A') {
+      var href = t.getAttribute('href') || '';
+      if (isAdUrl(href) || (t.target === '_blank' && isAdUrl(href))) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return false;
+      }
+    }
+  }, true);
+
+  // Block popunder: intercept addEventListener on body/document for click
+  // events that call window.open.
+  var _origAEL = EventTarget.prototype.addEventListener;
+  EventTarget.prototype.addEventListener = function(type, fn, opts) {
+    if (type === 'click' && (this === document || this === document.body || this === window)) {
+      // Wrap the listener to block window.open calls.
+      var wrapped = function(e) {
+        var _openBackup = window.open;
+        window.open = function() { return null; };
+        try { fn.call(this, e); } catch(ex) {}
+        window.open = _openBackup;
+      };
+      return _origAEL.call(this, type, wrapped, opts);
+    }
+    return _origAEL.call(this, type, fn, opts);
+  };
+})();
+''';
+
+// Domain fragments used by shouldOverrideUrlLoading and
+// shouldInterceptRequest to reject ad navigations and resource loads.
 const _kBlockedDomainFragments = [
+  // Google ads & tracking
   'doubleclick.net',
   'googlesyndication.com',
   'googleadservices.com',
   'adservice.google.',
   'pagead2.googlesyndication.com',
+  'google-analytics.com',
+  'analytics.google.com',
+  // Yahoo / Oath
   'ads.yahoo.com',
+  'advertising.com',
+  // Major ad exchanges
   'adnxs.com',
   'adsrvr.org',
-  'advertising.com',
   'outbrain.com',
   'taboola.com',
+  // Pop / redirect ad networks
   'popads.net',
   'popcash.net',
   'juicyads.com',
@@ -318,15 +449,42 @@ const _kBlockedDomainFragments = [
   'hilltopads.net',
   'adsterra.com',
   'revenuehits.com',
-  'facebook.net/tr',
-  'connect.facebook.net',
-  'analytics.google.com',
-  'google-analytics.com',
-  'hotjar.com',
-  'cdn.mouseflow.com',
+  'onclkds.com',
+  'onclickmax.com',
+  'pushame.com',
+  'clickadu.com',
+  'clickaine.com',
+  'adtng.com',
+  'adrunnr.com',
+  'adskeeper.co.uk',
+  'a-ads.com',
+  'ad-maven.com',
+  'admaven.co',
+  'revcontent.com',
+  'mgid.com',
+  'bidvertiser.com',
+  'richpush.co',
+  'galaksion.com',
+  'acint.net',
+  // URL shorteners / link monetization
   'adf.ly',
   'shorte.st',
   'linkvertise.com',
+  'bc.vc',
+  'ouo.io',
+  'sh.st',
+  // Social trackers
+  'facebook.net/tr',
+  'connect.facebook.net',
+  // Analytics / heatmaps
+  'hotjar.com',
+  'cdn.mouseflow.com',
+  'clarity.ms',
+  // Common streaming-site ad domains
+  'betrad.com',
+  'serving-sys.com',
+  'yieldmanager.com',
+  'cpmstar.com',
 ];
 
 /// Full-screen WebView player.
@@ -464,6 +622,17 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     domStorageEnabled: true,
     cacheEnabled: true,
 
+    // ── Performance ──────────────────────────────────────────────────
+    // GPU rendering on Android — biggest impact on scroll/video lag.
+    hardwareAcceleration: true,
+    // Skip expensive initial layout/zoom computations.
+    useWideViewPort: false,
+    loadWithOverviewMode: false,
+    // Remove Android overscroll glow that triggers recompositing.
+    overScrollMode: OverScrollMode.NEVER,
+    // We show our own error state — skip the default error page.
+    disableDefaultErrorPage: true,
+
     // Scroll & touch
     // NOTE: do NOT set isScrollEnabled: false — lists inside the player
     // depend on the WebView's native scroll.
@@ -480,6 +649,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     // Reduce unnecessary resource tracking
     useOnLoadResource: false,
 
+    // Enable network-level ad blocking via shouldInterceptRequest.
+    useShouldInterceptRequest: true,
+
     // Enable multi-window support so onCreateWindow is called — we block
     // every popup attempt there.  Without this, some ad popups bypass the
     // WebView entirely and trigger external browser intents.
@@ -494,8 +666,10 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     // connections to blocked domains to determine resource type,
     // causing ConnectException floods.  Ad blocking is handled by:
     //   1. shouldOverrideUrlLoading (blocks navigation)
-    //   2. _kAdRemovalJs (removes DOM elements)
-    //   3. onCreateWindow → false (blocks popups)
+    //   2. shouldInterceptRequest (blocks ad resource loads)
+    //   3. _kAdRemovalJs (removes DOM elements)
+    //   4. _kAntiClickjackJs (prevents click-jacking)
+    //   5. onCreateWindow → false (blocks popups)
   );
 
   List<UserScript> get _userScripts => [
@@ -527,6 +701,14 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     UserScript(
       source: _kAdRemovalJs,
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
+      forMainFrameOnly: false,
+    ),
+    // Anti click-jacking — must be AT_DOCUMENT_START to intercept
+    // click handlers before ad scripts register them.
+    UserScript(
+      source: _kAntiClickjackJs,
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+      forMainFrameOnly: false,
     ),
   ];
 
@@ -613,6 +795,19 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
           }
         }
         return NavigationActionPolicy.ALLOW;
+      },
+      // ── Block ad resource loads at the network level ───────────────
+      // Fires for every sub-resource (scripts, images, iframes).
+      // Returning null allows the request; returning an empty
+      // WebResourceResponse effectively blocks it.
+      shouldInterceptRequest: (controller, request) async {
+        final url = request.url.toString();
+        for (final domain in _kBlockedDomainFragments) {
+          if (url.contains(domain)) {
+            return WebResourceResponse(contentType: 'text/plain', data: null);
+          }
+        }
+        return null;
       },
     );
   }
