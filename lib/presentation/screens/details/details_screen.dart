@@ -22,6 +22,7 @@ import 'package:go_router/go_router.dart';
 import '../../../plugins/protocol/trigger_hook.dart';
 import '../../providers/details_providers.dart';
 import '../../providers/plugin_providers.dart';
+import '../../providers/settings_providers.dart';
 import '../../providers/watchlist_providers.dart';
 import '../../router/app_router.dart';
 import '../../widgets/shimmer_placeholder.dart';
@@ -54,14 +55,19 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     final pluginsAsync = ref.watch(
       pluginsForHookProvider(TriggerHook.mediaHeader),
     );
+    final preferredId = ref.watch(preferredPluginProvider);
 
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
       body: detailsAsync.when(
         loading: () => _buildLoading(context),
         error: (e, _) => _buildError(context, e.toString()),
-        data: (details) =>
-            _buildContent(context, details, pluginsAsync.value ?? []),
+        data: (details) => _buildContent(
+          context,
+          details,
+          pluginsAsync.value ?? [],
+          preferredId,
+        ),
       ),
     );
   }
@@ -111,6 +117,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     BuildContext context,
     MediaItem details,
     List<PluginManifest> plugins,
+    String? preferredId,
   ) {
     final isTV = details.type == MediaType.tv;
 
@@ -144,7 +151,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               const SizedBox(height: 20),
 
               // Action buttons row
-              _buildActionRow(context, details, plugins),
+              _buildActionRow(context, details, plugins, preferredId),
               const SizedBox(height: 8),
 
               // Trailer chip
@@ -166,7 +173,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
               // Episode list — TV only
               if (isTV && details.metadata.seasons.isNotEmpty) ...[
-                _buildEpisodeSection(context, details, plugins),
+                _buildEpisodeSection(context, details, plugins, preferredId),
               ],
             ],
           ),
@@ -371,7 +378,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     BuildContext context,
     MediaItem details,
     List<PluginManifest> plugins,
+    String? preferredId,
   ) {
+    final activePlugin = _resolvePlugin(plugins, preferredId);
     final isInWatchlist = ref.watch(
       watchlistProvider.select(
         (list) => list.any((m) => m.tmdbId == details.tmdbId),
@@ -381,7 +390,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     return Row(
       children: [
         // Watch button (if plugin available)
-        if (plugins.isNotEmpty)
+        if (activePlugin != null)
           Expanded(
             child: Container(
               height: AppSpacing.buttonHeight,
@@ -390,11 +399,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 boxShadow: AppColors.primaryGlowShadow,
               ),
               child: ElevatedButton.icon(
-                onPressed: () =>
-                    _executePlugin(context, plugins.first, details),
+                onPressed: () => _executePlugin(context, activePlugin, details),
                 icon: const Icon(Icons.play_arrow_rounded, size: 24),
                 label: Text(
-                  'Watch with ${plugins.first.name}',
+                  'Watch with ${activePlugin.name}',
                   style: AppTextStyles.label,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -410,7 +418,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             ),
           ),
 
-        if (plugins.isNotEmpty) const SizedBox(width: 12),
+        if (activePlugin != null) const SizedBox(width: 12),
 
         // Watchlist toggle button
         ClipRRect(
@@ -458,6 +466,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     BuildContext context,
     MediaItem details,
     List<PluginManifest> plugins,
+    String? preferredId,
   ) {
     final seasons = details.metadata.seasons;
     // Ensure selected season is valid
@@ -523,18 +532,19 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           ),
           data: (episodes) => Column(
             children: episodes.map((ep) {
+              final epPlugin = _resolvePlugin(episodePlugins, preferredId);
               return _EpisodeRow(
                 episode: ep,
                 plugins: episodePlugins,
-                onPlay: episodePlugins.isEmpty
+                onPlay: epPlugin == null
                     ? null
                     : () => _executePlugin(
-                          context,
-                          episodePlugins.first,
-                          details,
-                          season: ep.seasonNumber,
-                          episode: ep.episodeNumber,
-                        ),
+                        context,
+                        epPlugin,
+                        details,
+                        season: ep.seasonNumber,
+                        episode: ep.episodeNumber,
+                      ),
               );
             }).toList(),
           ),
@@ -542,6 +552,22 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         const SizedBox(height: 16),
       ],
     );
+  }
+
+  // ─── Resolve Preferred Plugin ─────────────────────────────────────────
+
+  /// Returns the user's preferred plugin if it's in [plugins], otherwise
+  /// falls back to the first plugin.  Returns null if the list is empty.
+  PluginManifest? _resolvePlugin(
+    List<PluginManifest> plugins,
+    String? preferredId,
+  ) {
+    if (plugins.isEmpty) return null;
+    if (preferredId != null) {
+      final match = plugins.where((p) => p.pluginId == preferredId);
+      if (match.isNotEmpty) return match.first;
+    }
+    return plugins.first;
   }
 
   void _executePlugin(
@@ -757,9 +783,8 @@ class _EpisodeRow extends StatelessWidget {
                   ? CachedNetworkImage(
                       imageUrl: stillUrl,
                       fit: BoxFit.cover,
-                      placeholder: (_, __) => Container(
-                        color: AppColors.surfaceDark,
-                      ),
+                      placeholder: (_, __) =>
+                          Container(color: AppColors.surfaceDark),
                       errorWidget: (_, __, ___) =>
                           Container(color: AppColors.surfaceDark),
                     )
