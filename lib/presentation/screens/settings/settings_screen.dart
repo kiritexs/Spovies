@@ -286,6 +286,14 @@ class SettingsScreen extends ConsumerWidget {
       error: (_, __) => <dynamic>[],
     );
 
+    // If the saved preferred ID doesn't match any loaded plugin (e.g. still
+    // loading, or plugin was uninstalled), fall back to null so the
+    // DropdownButton's assertion is satisfied.
+    final effectiveValue =
+        (current != null && plugins.any((p) => p.pluginId == current))
+        ? current
+        : null;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
       child: BackdropFilter(
@@ -312,11 +320,11 @@ class SettingsScreen extends ConsumerWidget {
             ),
             title: Text('Preferred Provider', style: AppTextStyles.cardTitle),
             subtitle: Text(
-              current ?? 'Auto (first available)',
+              effectiveValue ?? 'Auto (first available)',
               style: AppTextStyles.cardSubtitle,
             ),
             trailing: DropdownButton<String?>(
-              value: current,
+              value: effectiveValue,
               underline: const SizedBox.shrink(),
               dropdownColor: AppColors.surfaceDark,
               iconEnabledColor: AppColors.textSecondary,

@@ -15,6 +15,10 @@ import '../../../plugins/event_bridge/event_bridge.dart';
 import '../../providers/watch_history_providers.dart';
 
 // ─── Bridge JS — injected at document-end, guarded by flag ───────────────────
+//
+// Forwards postMessage events from the page’s own scripts (e.g. Provider A’s
+// PLAYER_EVENT) to the Dart side.  Kept as a supplementary source; the
+// primary tracking is now in _kVideoProgressJs.
 
 const _kBridgeJs = '''
 (function() {
@@ -26,6 +30,117 @@ const _kBridgeJs = '''
       window.flutter_inappwebview.callHandler('spoviesEventBridge', d);
     }
   });
+})();
+''';
+
+// ─── Universal video progress tracking + auto-resume ─────────────────────
+//
+// Hooks directly into the HTML5 <video> element’s native events so watch
+// progress is tracked for **every** plugin — not just those that emit their
+// own postMessage events (like Provider A).
+//
+// Also handles auto-resume: if [resumeTime] > 0, the script seeks the
+// <video> to that position as soon as the media metadata is loaded.
+//
+// IMPORTANT: this UserScript must be injected with `forMainFrameOnly: false`
+// because streaming sites put their <video> inside cross-origin iframes.
+
+String _videoProgressJs(double resumeTime) =>
+    '''
+(function() {
+  if (window.__spoviesVideoTracker) return;
+  window.__spoviesVideoTracker = true;
+
+  var THROTTLE_MS = 3000;
+  var lastSent = 0;
+  var RESUME_TARGET = $resumeTime;
+  var seekDone = false;
+
+  function send(eventName, video) {
+    if (!video || !video.duration || isNaN(video.duration)) return;
+    var now = Date.now();
+    if (eventName === 'timeupdate' && (now - lastSent) < THROTTLE_MS) return;
+    lastSent = now;
+
+    var progress = (video.currentTime / video.duration) * 100;
+    var payload = JSON.stringify({
+      type: 'PLAYER_EVENT',
+      data: {
+        event: eventName,
+        currentTime: video.currentTime,
+        duration: video.duration,
+        progress: progress
+      }
+    });
+    if (window.flutter_inappwebview) {
+      window.flutter_inappwebview.callHandler('spoviesEventBridge', payload);
+    }
+  }
+
+  var patched = new WeakSet();
+
+  function hookVideo(video) {
+    if (patched.has(video)) return;
+    patched.add(video);
+
+    // --- progress tracking listeners ---
+    ['timeupdate', 'play', 'pause', 'ended', 'seeked'].forEach(function(ev) {
+      video.addEventListener(ev, function() { send(ev, video); });
+    });
+
+    // --- auto-resume seek ---
+    if (RESUME_TARGET > 0 && !seekDone) {
+      function doSeek() {
+        if (seekDone) return;
+        if (video.duration && video.duration > 0 && RESUME_TARGET < video.duration) {
+          seekDone = true;
+          video.currentTime = RESUME_TARGET;
+        }
+      }
+      // Try immediately if metadata already loaded.
+      if (video.readyState >= 1) {
+        doSeek();
+      } else {
+        video.addEventListener('loadedmetadata', doSeek, { once: true });
+      }
+      // Safety net: also try on canplay in case loadedmetadata already fired.
+      video.addEventListener('canplay', doSeek, { once: true });
+    }
+  }
+
+  function scanDoc(root) {
+    if (!root || !root.querySelectorAll) return;
+    root.querySelectorAll('video').forEach(hookVideo);
+  }
+
+  scanDoc(document);
+
+  var mo = new MutationObserver(function(mutations) {
+    for (var i = 0; i < mutations.length; i++) {
+      var added = mutations[i].addedNodes;
+      for (var j = 0; j < added.length; j++) {
+        var node = added[j];
+        if (node.nodeName === 'VIDEO') hookVideo(node);
+        if (node.querySelectorAll) {
+          node.querySelectorAll('video').forEach(hookVideo);
+        }
+      }
+    }
+  });
+  mo.observe(document.documentElement, { childList: true, subtree: true });
+
+  // Interval fallback: scan same-origin iframes every 2s.
+  setInterval(function() {
+    try {
+      var frames = document.querySelectorAll('iframe');
+      for (var i = 0; i < frames.length; i++) {
+        try {
+          var doc = frames[i].contentDocument || frames[i].contentWindow.document;
+          scanDoc(doc);
+        } catch(e) {}
+      }
+    } catch(e) {}
+  }, 2000);
 })();
 ''';
 
@@ -141,6 +256,79 @@ const _kNoSelectCss = '''
 })();
 ''';
 
+// ─── Ad & popup removal JS — injected at document-end ─────────────────────────
+//
+// Removes common ad overlays, tracking iframes, and misbehaving click-jackers
+// from the DOM.  A MutationObserver ensures dynamically-injected ads are caught
+// throughout the page’s lifetime.
+
+const _kAdRemovalJs = '''
+(function() {
+  if (window.__spoviesAdBlock) return;
+  window.__spoviesAdBlock = true;
+
+  // Known ad selectors — covers most streaming-site overlay patterns.
+  var adSelectors = [
+    'iframe[src*="ads"]', 'iframe[src*="doubleclick"]',
+    'iframe[src*="googlesyndication"]', 'iframe[src*="adservice"]',
+    'div[class*="ad-overlay"]', 'div[class*="ad-container"]',
+    'div[class*="popup"]', 'div[id*="popup"]',
+    'div[class*="overlay-ad"]', 'div[id*="overlay-ad"]',
+    'a[target="_blank"][rel*="nofollow"]',
+    '[onclick*="window.open"]',
+  ].join(',');
+
+  function removeAds() {
+    document.querySelectorAll(adSelectors).forEach(function(el) {
+      el.remove();
+    });
+  }
+
+  // Initial sweep.
+  removeAds();
+
+  // Watch for dynamically-injected ad elements.
+  var mo = new MutationObserver(function() { removeAds(); });
+  mo.observe(document.documentElement, { childList: true, subtree: true });
+
+  // Neuter window.open so JS-driven popups are silently swallowed.
+  window.open = function() { return null; };
+})();
+''';
+
+// Domain fragments used by shouldOverrideUrlLoading to reject ad navigations.
+const _kBlockedDomainFragments = [
+  'doubleclick.net',
+  'googlesyndication.com',
+  'googleadservices.com',
+  'adservice.google.',
+  'pagead2.googlesyndication.com',
+  'ads.yahoo.com',
+  'adnxs.com',
+  'adsrvr.org',
+  'advertising.com',
+  'outbrain.com',
+  'taboola.com',
+  'popads.net',
+  'popcash.net',
+  'juicyads.com',
+  'exoclick.com',
+  'trafficjunky.com',
+  'propellerads.com',
+  'hilltopads.net',
+  'adsterra.com',
+  'revenuehits.com',
+  'facebook.net/tr',
+  'connect.facebook.net',
+  'analytics.google.com',
+  'google-analytics.com',
+  'hotjar.com',
+  'cdn.mouseflow.com',
+  'adf.ly',
+  'shorte.st',
+  'linkvertise.com',
+];
+
 /// Full-screen WebView player.
 ///
 /// Design decisions:
@@ -163,11 +351,16 @@ class WebViewPlayerScreen extends ConsumerStatefulWidget {
   final MediaItem media;
   final String pluginName;
 
+  /// If > 0, the player will attempt to seek the <video> to this position
+  /// (in seconds) once the page finishes loading.
+  final double resumeTimeSeconds;
+
   const WebViewPlayerScreen({
     super.key,
     required this.url,
     required this.media,
     required this.pluginName,
+    this.resumeTimeSeconds = 0,
   });
 
   @override
@@ -286,6 +479,23 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
 
     // Reduce unnecessary resource tracking
     useOnLoadResource: false,
+
+    // Enable multi-window support so onCreateWindow is called — we block
+    // every popup attempt there.  Without this, some ad popups bypass the
+    // WebView entirely and trigger external browser intents.
+    supportMultipleWindows: true,
+
+    // Block JavaScript from opening alert/confirm/prompt dialogs that ad
+    // scripts abuse to prevent the user from closing the page.
+    javaScriptCanOpenWindowsAutomatically: false,
+
+    // NOTE: ContentBlocker rules were removed — on Android,
+    // flutter_inappwebview's ContentBlockerHandler makes HTTP
+    // connections to blocked domains to determine resource type,
+    // causing ConnectException floods.  Ad blocking is handled by:
+    //   1. shouldOverrideUrlLoading (blocks navigation)
+    //   2. _kAdRemovalJs (removes DOM elements)
+    //   3. onCreateWindow → false (blocks popups)
   );
 
   List<UserScript> get _userScripts => [
@@ -305,6 +515,17 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     ),
     UserScript(
       source: _kBridgeJs,
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
+    ),
+    // forMainFrameOnly: false — the <video> element is often inside a
+    // cross-origin iframe.  This script must run in EVERY frame.
+    UserScript(
+      source: _videoProgressJs(widget.resumeTimeSeconds),
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
+      forMainFrameOnly: false,
+    ),
+    UserScript(
+      source: _kAdRemovalJs,
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
     ),
   ];
@@ -370,7 +591,28 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
         }
       },
       onConsoleMessage: (controller, message) {
-        if (kDebugMode) debugPrint('WebView: ${message.message}');
+        if (kDebugMode) {
+          // Filter out noisy streaming-site log spam.
+          final msg = message.message;
+          if (msg == 'undefined' || msg.startsWith('[object Object]')) return;
+          debugPrint('WebView: $msg');
+        }
+      },
+      // ── Block popup windows (ad popups) ────────────────────────────
+      onCreateWindow: (controller, createWindowAction) async {
+        // Return false to prevent ANY new window from opening.
+        // Streaming players don't need popups; only ad scripts do.
+        return false;
+      },
+      // ── Block navigation to ad domains ─────────────────────────────
+      shouldOverrideUrlLoading: (controller, navigationAction) async {
+        final url = navigationAction.request.url?.toString() ?? '';
+        for (final domain in _kBlockedDomainFragments) {
+          if (url.contains(domain)) {
+            return NavigationActionPolicy.CANCEL;
+          }
+        }
+        return NavigationActionPolicy.ALLOW;
       },
     );
   }

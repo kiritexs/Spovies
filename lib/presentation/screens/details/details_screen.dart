@@ -23,6 +23,7 @@ import '../../../plugins/protocol/trigger_hook.dart';
 import '../../providers/details_providers.dart';
 import '../../providers/plugin_providers.dart';
 import '../../providers/settings_providers.dart';
+import '../../providers/watch_history_providers.dart';
 import '../../providers/watchlist_providers.dart';
 import '../../router/app_router.dart';
 import '../../widgets/shimmer_placeholder.dart';
@@ -570,13 +571,13 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     return plugins.first;
   }
 
-  void _executePlugin(
+  Future<void> _executePlugin(
     BuildContext context,
     PluginManifest plugin,
     MediaItem media, {
     int? season,
     int? episode,
-  }) {
+  }) async {
     final url = PluginUrlResolver.resolve(
       plugin,
       media,
@@ -589,9 +590,27 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
         break;
       case ActionType.webview:
+        // Look up saved progress to auto-resume from last position.
+        final repo = ref.read(watchHistoryRepositoryProvider);
+        final saved = await repo.getProgress(
+          media.tmdbId.toString(),
+          season: season,
+          episode: episode,
+        );
+        // Only resume if the user hasn't finished the content (< 90%).
+        final resumeTime = (saved != null && saved.percentage < 90)
+            ? saved.currentTime
+            : 0.0;
+
+        if (!context.mounted) return;
         context.push(
           '/player',
-          extra: PlayerArgs(url: url, media: media, pluginName: plugin.name),
+          extra: PlayerArgs(
+            url: url,
+            media: media,
+            pluginName: plugin.name,
+            resumeTimeSeconds: resumeTime,
+          ),
         );
         break;
       case ActionType.metadataFetch:
