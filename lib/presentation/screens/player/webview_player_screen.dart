@@ -232,6 +232,66 @@ const _kSuppressFullscreenJs = '''
 })();
 ''';
 
+// ─── Android WebView identity spoof — injected at document-start ─────────────
+//
+// Even when a custom desktop User-Agent string is set, Android WebView still
+// injects `sec-ch-ua: "Android WebView"` HTTP headers AND exposes
+// `navigator.userAgentData.brands` containing "Android WebView" to JavaScript.
+// Many streaming sites (e.g. example.com) check these hints and either:
+//   a) Serve a mobile HTML layout whose DOM is missing elements the desktop
+//      player script expects → `null.addEventListener` crash, blank player.
+//   b) Outright block or degrade the experience for detected WebViews.
+//
+// This script overrides `navigator.userAgentData` to present as a standard
+// desktop Chrome browser.  It does NOT affect HTTP `sec-ch-ua` headers
+// (those are set at the native layer), but covers all JS-side detections.
+
+const _kSpoofUserAgentDataJs = '''
+(function() {
+  if (window.__spoviesUASpoof) return;
+  window.__spoviesUASpoof = true;
+
+  if (typeof navigator.userAgentData === 'undefined') return;
+
+  var brands = [
+    { brand: 'Not/A)Brand',  version: '8'   },
+    { brand: 'Chromium',     version: '124' },
+    { brand: 'Google Chrome', version: '124' }
+  ];
+
+  var spoofed = {
+    brands:   brands,
+    mobile:   false,
+    platform: 'Windows',
+    getHighEntropyValues: function(hints) {
+      var r = {};
+      for (var i = 0; i < hints.length; i++) {
+        switch (hints[i]) {
+          case 'brands':          r.brands          = brands;    break;
+          case 'mobile':          r.mobile          = false;     break;
+          case 'platform':        r.platform        = 'Windows'; break;
+          case 'platformVersion': r.platformVersion = '15.0.0';  break;
+          case 'uaFullVersion':   r.uaFullVersion   = '124.0.6367.60'; break;
+          case 'architecture':    r.architecture    = 'x86';     break;
+          case 'model':           r.model           = '';        break;
+        }
+      }
+      return Promise.resolve(r);
+    },
+    toJSON: function() {
+      return { brands: brands, mobile: false, platform: 'Windows' };
+    }
+  };
+
+  try {
+    Object.defineProperty(navigator, 'userAgentData', {
+      get: function() { return spoofed; },
+      configurable: true
+    });
+  } catch(e) {}
+})();
+''';
+
 // ─── CSS — injected at document-start ────────────────────────────────────────
 // • Disables text selection & long-press callouts globally.
 // • Constrains popup/dialog dimensions so they don't overflow on mobile.
@@ -474,7 +534,7 @@ const _kAntiClickjackJs = '''
   if (window.__spoviesAntiCJ) return;
   window.__spoviesAntiCJ = true;
 
-  // List of ad domain fragments to detect in href/action attributes.
+  // Ad domain fragments used by all interceptors below.
   var adDomains = ['doubleclick','googlesyndication','popads','popcash',
     'exoclick','trafficjunky','propellerads','adsterra','juicyads',
     'onclkds','onclickmax','pushame','hilltopads','adtng','adrunnr',
@@ -483,21 +543,22 @@ const _kAntiClickjackJs = '''
 
   function isAdUrl(url) {
     if (!url) return false;
+    var s = url.toString().toLowerCase();
     for (var i = 0; i < adDomains.length; i++) {
-      if (url.indexOf(adDomains[i]) !== -1) return true;
+      if (s.indexOf(adDomains[i]) !== -1) return true;
     }
     return false;
   }
 
+  // ── 1. Block <a> clicks to known ad domains ──────────────────────────
   document.addEventListener('click', function(e) {
     var t = e.target;
-    // Walk up to find an anchor.
     while (t && t.nodeName !== 'A' && t.nodeName !== 'BODY') {
       t = t.parentNode;
     }
     if (t && t.nodeName === 'A') {
       var href = t.getAttribute('href') || '';
-      if (isAdUrl(href) || (t.target === '_blank' && isAdUrl(href))) {
+      if (isAdUrl(href) || t.target === '_blank') {
         e.preventDefault();
         e.stopImmediatePropagation();
         return false;
@@ -505,12 +566,10 @@ const _kAntiClickjackJs = '''
     }
   }, true);
 
-  // Block popunder: intercept addEventListener on body/document for click
-  // events that call window.open.
+  // ── 2. Block window.open / popunder via wrapped click listeners ───────
   var _origAEL = EventTarget.prototype.addEventListener;
   EventTarget.prototype.addEventListener = function(type, fn, opts) {
     if (type === 'click' && (this === document || this === document.body || this === window)) {
-      // Wrap the listener to block window.open calls.
       var wrapped = function(e) {
         var _openBackup = window.open;
         window.open = function() { return null; };
@@ -521,6 +580,69 @@ const _kAntiClickjackJs = '''
     }
     return _origAEL.call(this, type, fn, opts);
   };
+
+  // ── 3. Block Location.prototype navigations ───────────────────────────
+  //
+  // The "skip button opens an ad" pattern most commonly works by placing
+  // a transparent div over the skip button whose onclick calls
+  // location.assign() or location.replace() with an ad URL.
+  // shouldOverrideUrlLoading on Android does NOT reliably fire for all
+  // programmatic same-page navigations, so we patch them in JS too.
+  //
+  // We block:
+  //  a. Known ad domains (as above)
+  //  b. Any non-http(s) scheme (intent://, market://, fb:// etc.) —
+  //     these are Android deep-link tricks that open external apps.
+
+  function isSuspiciousNavigation(url) {
+    if (!url) return false;
+    var s = url.toString();
+    // Block non-standard schemes — the player only needs http/https/blob/data.
+    var scheme = s.split(':')[0].toLowerCase();
+    if (scheme !== 'http' && scheme !== 'https' &&
+        scheme !== 'blob' && scheme !== 'data' &&
+        scheme !== 'about' && scheme !== 'javascript') {
+      return true;
+    }
+    return isAdUrl(s);
+  }
+
+  var _origAssign = Location.prototype.assign;
+  Location.prototype.assign = function(url) {
+    if (isSuspiciousNavigation(url)) return;
+    return _origAssign.apply(this, arguments);
+  };
+
+  var _origReplace = Location.prototype.replace;
+  Location.prototype.replace = function(url) {
+    if (isSuspiciousNavigation(url)) return;
+    return _origReplace.apply(this, arguments);
+  };
+
+  // ── 4. Catch setTimeout-delayed navigations that bypass click checks ──
+  //
+  // Some ad scripts do: elem.onclick = function() { setTimeout(function() {
+  //   location.href = 'ad-url'; }, 0); }
+  // The click interceptor above (step 1) doesn't block this because the
+  // navigation is scheduled asynchronously.  We catch it by also patching
+  // the href setter on the location object.
+  try {
+    var locProto = Location.prototype;
+    var origHrefDescriptor = Object.getOwnPropertyDescriptor(locProto, 'href');
+    if (origHrefDescriptor && origHrefDescriptor.set) {
+      var origSet = origHrefDescriptor.set;
+      Object.defineProperty(locProto, 'href', {
+        get: origHrefDescriptor.get,
+        set: function(url) {
+          if (isSuspiciousNavigation(url)) return;
+          origSet.call(this, url);
+        },
+        configurable: true,
+      });
+    }
+  } catch(e) {
+    // Location.prototype may not be patchable on all WebView versions; safe to ignore.
+  }
 })();
 ''';
 
@@ -737,16 +859,25 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   // ─── Settings ────────────────────────────────────────────────────────────
 
   InAppWebViewSettings get _settings => InAppWebViewSettings(
-    // User-Agent & Content Mode — Desktop for Windows, Mobile for Android/iOS.
-    userAgent: Platform.isWindows
-        ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
-        : (Platform.isAndroid
-              ? 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36'
-              : 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'),
+    // User-Agent & Content Mode.
+    //
+    // Windows & Android → Desktop Chrome UA + DESKTOP content mode.
+    // Streaming embed sites (e.g. example.com, example.*) serve their desktop
+    // player layout when they see a desktop UA.  The mobile layout is often
+    // missing player DOM elements that the site's own JS expects, causing
+    // `null.addEventListener` crashes and a blank/broken player on Android.
+    //
+    // iOS → Mobile Safari UA + MOBILE content mode.
+    // iOS playback works correctly in mobile mode thanks to `allowsInlineMediaPlayback`
+    // and the `_kIosInlineVideoFix` script.  Switching iOS to desktop mode can
+    // break `playsinline` behaviour on WKWebView.
+    userAgent: Platform.isIOS
+        ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+        : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
 
-    preferredContentMode: Platform.isWindows
-        ? UserPreferredContentMode.DESKTOP
-        : UserPreferredContentMode.MOBILE,
+    preferredContentMode: Platform.isIOS
+        ? UserPreferredContentMode.MOBILE
+        : UserPreferredContentMode.DESKTOP,
 
     // Playback — inline is required so iOS does not hand off to AVPlayer.
     mediaPlaybackRequiresUserGesture: false,
@@ -817,6 +948,16 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   );
 
   List<UserScript> get _userScripts => [
+    // 0. Android: Spoof navigator.userAgentData ASAP so any inline scripts that
+    //    run at document-start see a regular Chrome identity, not "Android WebView".
+    //    Applied before all other scripts so site feature-detection runs against
+    //    the spoofed data.
+    if (Platform.isAndroid)
+      UserScript(
+        source: _kSpoofUserAgentDataJs,
+        injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        forMainFrameOnly: false,
+      ),
     // 1. Spovies AdGuard (DNS-level block replacement).
     UserScript(
       source: _kAdGuardJs,
@@ -942,7 +1083,11 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
           if (!mounted) return;
           setState(() {
             _loadProgress = progress;
-            if (progress > 0 && _hasError) _hasError = false;
+            // Do NOT auto-clear _hasError here. When a fatal connection
+            // error occurs, the WebView falls back to about:blank and fires
+            // onProgressChanged again (progress 10→100) for that blank page.
+            // Resetting _hasError here hides the error from the user.
+            // Error state is only cleared by an explicit _retry() call.
           });
         },
         // ── Surface fatal main-frame errors; ignore sub-resource noise ──
@@ -952,9 +1097,16 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
             debugPrint('WebView Error (${error.type}): ${error.description}');
           }
           // WebView2 and mobile WebViews emit connection-reset / cancelled
-          // errors constantly during HLS streaming. Only surface an error UI
-          // when the main frame itself fails before anything has loaded.
-          if (isMainFrame && _loadProgress < 10 && mounted) {
+          // errors constantly during HLS streaming (e.g. for aborted segment
+          // fetches). Only surface an error UI when the MAIN frame fails
+          // before the page is meaningfully loaded (< 50%).
+          //
+          // NOTE: onProgressChanged fires *before* onReceivedError — if the
+          // very first request fails at exactly progress=10, the old threshold
+          // of "< 10" evaluated to false and the error was silently hidden.
+          // Using < 50 correctly catches all early-stage connection failures
+          // (including ERR_CONNECTION_REFUSED, ERR_NAME_NOT_RESOLVED, etc.).
+          if (isMainFrame && _loadProgress < 50 && mounted) {
             setState(() {
               _hasError = true;
               _errorMsg = error.description;
@@ -996,13 +1148,33 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
           // Streaming players don't need popups; only ad scripts do.
           return false;
         },
-        // ── Block navigation to ad domains ─────────────────────────────
+        // ── Block navigation to ad domains and suspicious schemes ────────
         shouldOverrideUrlLoading: (controller, navigationAction) async {
           final urlRequest = navigationAction.request;
           final url = urlRequest.url?.toString() ?? '';
           if (url.isEmpty) return NavigationActionPolicy.ALLOW;
 
-          // 1. Block known ad/malicious domains
+          // 1. Block non-standard URL schemes.
+          //    Streaming players only need http/https/blob/data/about.
+          //    Android ad networks frequently abuse intent://, market://,
+          //    fb://, etc. to force-open external apps or the Play Store
+          //    when the user taps a "skip" button sitting over an invisible
+          //    ad overlay. These navigations must never leave the WebView.
+          final scheme = urlRequest.url?.scheme ?? '';
+          if (scheme.isNotEmpty &&
+              scheme != 'https' &&
+              scheme != 'http' &&
+              scheme != 'blob' &&
+              scheme != 'data' &&
+              scheme != 'about' &&
+              scheme != 'javascript') {
+            if (kDebugMode) {
+              debugPrint('WebView: Blocked non-standard scheme "$scheme": $url');
+            }
+            return NavigationActionPolicy.CANCEL;
+          }
+
+          // 2. Block known ad/malicious domains
           for (final domain in _kBlockedDomainFragments) {
             if (url.contains(domain)) {
               if (kDebugMode) {
