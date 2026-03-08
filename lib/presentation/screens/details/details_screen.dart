@@ -63,11 +63,17 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       body: detailsAsync.when(
         loading: () => _buildLoading(context),
         error: (e, _) => _buildError(context, e.toString()),
-        data: (details) => _buildContent(
-          context,
-          details,
-          pluginsAsync.value ?? [],
-          preferredId,
+        data: (details) => LayoutBuilder(
+          builder: (context, constraints) {
+            final isDesktop = constraints.maxWidth >= 900;
+            return _buildContent(
+              context,
+              details,
+              pluginsAsync.value ?? [],
+              preferredId,
+              isDesktop,
+            );
+          },
         ),
       ),
     );
@@ -119,7 +125,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     MediaItem details,
     List<PluginManifest> plugins,
     String? preferredId,
+    bool isDesktop,
   ) {
+    if (isDesktop) {
+      return _buildDesktopContent(context, details, plugins, preferredId);
+    }
+
     final isTV = details.type == MediaType.tv;
 
     return CustomScrollView(
@@ -180,6 +191,249 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildDesktopContent(
+    BuildContext context,
+    MediaItem details,
+    List<PluginManifest> plugins,
+    String? preferredId,
+  ) {
+    final isTV = details.type == MediaType.tv;
+    final backdropUrl = buildImageUrl(
+      details.backdropPath ?? details.posterPath,
+      AppConfig.backdropLarge,
+    );
+
+    return Stack(
+      children: [
+        // 1. Full Screen Blurred Background
+        if (backdropUrl.isNotEmpty)
+          Positioned.fill(
+            child: Opacity(
+              opacity: 0.4,
+              child: CachedNetworkImage(
+                imageUrl: backdropUrl,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+        Positioned.fill(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
+            child: Container(color: Colors.black.withOpacity(0.4)),
+          ),
+        ),
+
+        // 2. Main Content
+        SafeArea(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Left: Poster
+              Padding(
+                padding: const EdgeInsets.all(48.0),
+                child: Hero(
+                  tag: 'poster_${details.tmdbId}',
+                  child: Container(
+                    width: 340,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black54,
+                          blurRadius: 40,
+                          offset: Offset(0, 20),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: AspectRatio(
+                        aspectRatio: 2 / 3,
+                        child: CachedNetworkImage(
+                          imageUrl: buildImageUrl(
+                            details.posterPath,
+                            AppConfig.posterLarge,
+                          ),
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => const ShimmerPlaceholder(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Right: Info (Scrollable)
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(0, 48, 64, 48),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Subtitle / Year
+                      if (details.year != null)
+                        Text(
+                          details.year!,
+                          style: AppTextStyles.tag.copyWith(
+                            color: AppColors.primary,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+
+                      // Title
+                      Text(
+                        details.title,
+                        style: AppTextStyles.heroTitle.copyWith(
+                          fontSize: 56,
+                          height: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Metadata Row
+                      _buildMetadataRow(details),
+                      const SizedBox(height: 24),
+
+                      // Actions
+                      _buildDesktopActionRow(
+                        context,
+                        details,
+                        plugins,
+                        preferredId,
+                      ),
+                      const SizedBox(height: 32),
+
+                      // Overview
+                      Text('Synopsis', style: AppTextStyles.sectionTitle),
+                      const SizedBox(height: 12),
+                      _buildOverview(details),
+                      const SizedBox(height: 32),
+
+                      // Cast
+                      if (details.metadata.cast.isNotEmpty) ...[
+                        Text('Cast & Crew', style: AppTextStyles.sectionTitle),
+                        const SizedBox(height: 16),
+                        _buildCastRow(details.metadata.cast),
+                        const SizedBox(height: 32),
+                      ],
+
+                      // Episodes
+                      if (isTV && details.metadata.seasons.isNotEmpty)
+                        _buildEpisodeSection(
+                          context,
+                          details,
+                          plugins,
+                          preferredId,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Back Button
+        _buildBackButton(context),
+      ],
+    );
+  }
+
+  Widget _buildDesktopActionRow(
+    BuildContext context,
+    MediaItem details,
+    List<PluginManifest> plugins,
+    String? preferredId,
+  ) {
+    final activePlugin = _resolvePlugin(plugins, preferredId);
+    final isInWatchlist = ref.watch(
+      watchlistProvider.select(
+        (list) => list.any((m) => m.tmdbId == details.tmdbId),
+      ),
+    );
+
+    return Row(
+      children: [
+        if (activePlugin != null)
+          SizedBox(
+            width: 280,
+            height: 56,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: AppColors.primaryGlowShadow,
+              ),
+              child: ElevatedButton.icon(
+                onPressed: () => _executePlugin(context, activePlugin, details),
+                icon: const Icon(Icons.play_arrow_rounded, size: 28),
+                label: Text(
+                  'Watch Movie',
+                  style: AppTextStyles.label.copyWith(fontSize: 18),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: 0,
+                ),
+              ),
+            ),
+          ),
+        const SizedBox(width: 16),
+        // Watchlist
+        _buildCircularDesktopAction(
+          icon: isInWatchlist
+              ? Icons.bookmark_rounded
+              : Icons.bookmark_border_rounded,
+          color: isInWatchlist ? AppColors.primary : Colors.white,
+          onPressed: () => ref.read(watchlistProvider.notifier).toggle(details),
+          isActive: isInWatchlist,
+        ),
+        const SizedBox(width: 12),
+        // Trailer
+        if (details.metadata.trailerKey != null)
+          _buildCircularDesktopAction(
+            icon: Icons.movie_outlined,
+            onPressed: () => launchUrl(
+              Uri.parse(
+                'https://www.youtube.com/watch?v=${details.metadata.trailerKey}',
+              ),
+              mode: LaunchMode.externalApplication,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCircularDesktopAction({
+    required IconData icon,
+    required VoidCallback onPressed,
+    Color color = Colors.white,
+    bool isActive = false,
+  }) {
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        color: isActive
+            ? AppColors.primary.withOpacity(0.15)
+            : Colors.white.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isActive ? AppColors.primary : Colors.white.withOpacity(0.15),
+          width: 1.5,
+        ),
+      ),
+      child: IconButton(
+        icon: Icon(icon, color: color, size: 24),
+        onPressed: onPressed,
+      ),
     );
   }
 

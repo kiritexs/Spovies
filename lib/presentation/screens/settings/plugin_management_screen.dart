@@ -233,8 +233,9 @@ class _PluginTile extends ConsumerWidget {
                       height: 44,
                       decoration: BoxDecoration(
                         color: AppColors.primary.withValues(alpha: 0.15),
-                        borderRadius:
-                            BorderRadius.circular(AppSpacing.radiusBase),
+                        borderRadius: BorderRadius.circular(
+                          AppSpacing.radiusBase,
+                        ),
                       ),
                       child: const Icon(
                         Icons.extension_rounded,
@@ -267,14 +268,14 @@ class _PluginTile extends ConsumerWidget {
                   // Enable / Disable toggle
                   Switch(
                     value: isEnabled,
-                    onChanged: (_) =>
-                        ref.read(pluginEnabledProvider.notifier).toggle(
-                              plugin.pluginId,
-                            ),
-                    activeColor: AppColors.primary,
+                    onChanged: (_) => ref
+                        .read(pluginEnabledProvider.notifier)
+                        .toggle(plugin.pluginId),
+                    activeThumbColor: AppColors.primary,
                     inactiveThumbColor: AppColors.textMuted,
-                    inactiveTrackColor:
-                        AppColors.surfaceDark.withValues(alpha: 0.8),
+                    inactiveTrackColor: AppColors.surfaceDark.withValues(
+                      alpha: 0.8,
+                    ),
                   ),
                 ],
               ),
@@ -300,8 +301,7 @@ class _PluginTile extends ConsumerWidget {
                               color: AppColors.primary.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(
-                                color:
-                                    AppColors.primary.withValues(alpha: 0.3),
+                                color: AppColors.primary.withValues(alpha: 0.3),
                               ),
                             ),
                             child: Text(

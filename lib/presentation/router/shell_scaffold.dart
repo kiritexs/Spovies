@@ -6,13 +6,13 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../providers/search_providers.dart';
 import '../widgets/glass_bottom_nav.dart';
+import '../widgets/desktop_side_nav.dart';
+import '../widgets/desktop_window_frame.dart';
 
 /// Shell scaffold rendered by [StatefulShellRoute].
 ///
-/// Owns the [Positioned] for the nav bar so that the animation wrappers
-/// ([AnimatedSlide], [AnimatedOpacity], [IgnorePointer]) live *inside* the
-/// Positioned rather than outside it — `Positioned` must always be a direct
-/// child of a [Stack].
+/// Handles responsive branching between a DesktopSideNav for large screens
+/// and a GlassBottomNav for smaller, mobile screens.
 class ShellScaffold extends ConsumerWidget {
   final StatefulNavigationShell shell;
 
@@ -21,7 +21,32 @@ class ShellScaffold extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isSearching = ref.watch(isSearchActiveProvider);
+    final isDesktop =
+        MediaQuery.of(context).size.width >= 800; // Desktop breakpoint
 
+    if (isDesktop) {
+      return Scaffold(
+        backgroundColor: AppColors.backgroundDark,
+        body: DesktopWindowFrame(
+          child: Row(
+            children: [
+              DesktopSideNav(
+                currentIndex: shell.currentIndex,
+                onTap: (index) => shell.goBranch(
+                  index,
+                  initialLocation: index == shell.currentIndex,
+                ),
+              ),
+              // Divider for visual separation
+              Container(width: 1, color: Colors.white.withOpacity(0.05)),
+              Expanded(child: shell),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Mobile Layout
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
       extendBody: true,

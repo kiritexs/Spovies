@@ -235,10 +235,7 @@ class _DiscoveryContent extends ConsumerWidget {
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
           SliverToBoxAdapter(
-            child: _GenreResults(
-              genreId: selectedGenreId!,
-              genreMap: genreMap,
-            ),
+            child: _GenreResults(genreId: selectedGenreId!, genreMap: genreMap),
           ),
         ] else ...[
           // ── Movies section ─────────────────────────────────────────
@@ -252,56 +249,60 @@ class _DiscoveryContent extends ConsumerWidget {
 
           // Popular Movies
           SliverToBoxAdapter(
-            child: ref.watch(popularMoviesProvider).when(
-              data: (movies) => MediaRow(
-                title: 'Popular',
-                movies: movies,
-                genreMap: genreMap,
-                onMovieTap: (m) => context.push('/details', extra: m),
-                onSeeAllTap: () => context.push(
-                  '/all-media',
-                  extra: AllMediaArgs(
-                    title: 'Popular Movies',
-                    category: BrowseCategory.popularMovies,
+            child: ref
+                .watch(popularMoviesProvider)
+                .when(
+                  data: (movies) => MediaRow(
+                    title: 'Popular',
+                    movies: movies,
                     genreMap: genreMap,
+                    onMovieTap: (m) => context.push('/details', extra: m),
+                    onSeeAllTap: () => context.push(
+                      '/all-media',
+                      extra: AllMediaArgs(
+                        title: 'Popular Movies',
+                        category: BrowseCategory.popularMovies,
+                        genreMap: genreMap,
+                      ),
+                    ),
                   ),
+                  loading: () => const MediaRow(
+                    title: 'Popular',
+                    movies: [],
+                    isLoading: true,
+                  ),
+                  error: (_, __) => const SizedBox.shrink(),
                 ),
-              ),
-              loading: () => const MediaRow(
-                title: 'Popular',
-                movies: [],
-                isLoading: true,
-              ),
-              error: (_, __) => const SizedBox.shrink(),
-            ),
           ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 28)),
 
           // Top Rated Movies
           SliverToBoxAdapter(
-            child: ref.watch(topRatedMoviesProvider).when(
-              data: (movies) => MediaRow(
-                title: 'Top Rated',
-                movies: movies,
-                genreMap: genreMap,
-                onMovieTap: (m) => context.push('/details', extra: m),
-                onSeeAllTap: () => context.push(
-                  '/all-media',
-                  extra: AllMediaArgs(
-                    title: 'Top Rated Movies',
-                    category: BrowseCategory.topRatedMovies,
+            child: ref
+                .watch(topRatedMoviesProvider)
+                .when(
+                  data: (movies) => MediaRow(
+                    title: 'Top Rated',
+                    movies: movies,
                     genreMap: genreMap,
+                    onMovieTap: (m) => context.push('/details', extra: m),
+                    onSeeAllTap: () => context.push(
+                      '/all-media',
+                      extra: AllMediaArgs(
+                        title: 'Top Rated Movies',
+                        category: BrowseCategory.topRatedMovies,
+                        genreMap: genreMap,
+                      ),
+                    ),
                   ),
+                  loading: () => const MediaRow(
+                    title: 'Top Rated',
+                    movies: [],
+                    isLoading: true,
+                  ),
+                  error: (_, __) => const SizedBox.shrink(),
                 ),
-              ),
-              loading: () => const MediaRow(
-                title: 'Top Rated',
-                movies: [],
-                isLoading: true,
-              ),
-              error: (_, __) => const SizedBox.shrink(),
-            ),
           ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 36)),
@@ -317,56 +318,60 @@ class _DiscoveryContent extends ConsumerWidget {
 
           // Popular TV
           SliverToBoxAdapter(
-            child: ref.watch(popularTvProvider).when(
-              data: (shows) => MediaRow(
-                title: 'Popular',
-                movies: shows,
-                genreMap: genreMap,
-                onMovieTap: (m) => context.push('/details', extra: m),
-                onSeeAllTap: () => context.push(
-                  '/all-media',
-                  extra: AllMediaArgs(
-                    title: 'Popular TV Shows',
-                    category: BrowseCategory.popularTv,
+            child: ref
+                .watch(popularTvProvider)
+                .when(
+                  data: (shows) => MediaRow(
+                    title: 'Popular',
+                    movies: shows,
                     genreMap: genreMap,
+                    onMovieTap: (m) => context.push('/details', extra: m),
+                    onSeeAllTap: () => context.push(
+                      '/all-media',
+                      extra: AllMediaArgs(
+                        title: 'Popular TV Shows',
+                        category: BrowseCategory.popularTv,
+                        genreMap: genreMap,
+                      ),
+                    ),
                   ),
+                  loading: () => const MediaRow(
+                    title: 'Popular',
+                    movies: [],
+                    isLoading: true,
+                  ),
+                  error: (_, __) => const SizedBox.shrink(),
                 ),
-              ),
-              loading: () => const MediaRow(
-                title: 'Popular',
-                movies: [],
-                isLoading: true,
-              ),
-              error: (_, __) => const SizedBox.shrink(),
-            ),
           ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 28)),
 
           // Top Rated TV
           SliverToBoxAdapter(
-            child: ref.watch(topRatedTvProvider).when(
-              data: (shows) => MediaRow(
-                title: 'Top Rated',
-                movies: shows,
-                genreMap: genreMap,
-                onMovieTap: (m) => context.push('/details', extra: m),
-                onSeeAllTap: () => context.push(
-                  '/all-media',
-                  extra: AllMediaArgs(
-                    title: 'Top Rated TV Shows',
-                    category: BrowseCategory.topRatedTv,
+            child: ref
+                .watch(topRatedTvProvider)
+                .when(
+                  data: (shows) => MediaRow(
+                    title: 'Top Rated',
+                    movies: shows,
                     genreMap: genreMap,
+                    onMovieTap: (m) => context.push('/details', extra: m),
+                    onSeeAllTap: () => context.push(
+                      '/all-media',
+                      extra: AllMediaArgs(
+                        title: 'Top Rated TV Shows',
+                        category: BrowseCategory.topRatedTv,
+                        genreMap: genreMap,
+                      ),
+                    ),
                   ),
+                  loading: () => const MediaRow(
+                    title: 'Top Rated',
+                    movies: [],
+                    isLoading: true,
+                  ),
+                  error: (_, __) => const SizedBox.shrink(),
                 ),
-              ),
-              loading: () => const MediaRow(
-                title: 'Top Rated',
-                movies: [],
-                isLoading: true,
-              ),
-              error: (_, __) => const SizedBox.shrink(),
-            ),
           ),
         ],
 
@@ -414,10 +419,7 @@ class _SectionDivider extends StatelessWidget {
               height: 1,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [
-                    AppColors.glassBorder,
-                    Colors.transparent,
-                  ],
+                  colors: [AppColors.glassBorder, Colors.transparent],
                 ),
               ),
             ),
@@ -502,8 +504,9 @@ class _TrendingSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final listAsync =
-        showMovies ? ref.watch(trendingMoviesProvider) : ref.watch(trendingTvProvider);
+    final listAsync = showMovies
+        ? ref.watch(trendingMoviesProvider)
+        : ref.watch(trendingTvProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -707,92 +710,115 @@ class _GenreGrid extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.sectionPaddingH,
               ),
-              child: GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  childAspectRatio: 1.45,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
-                ),
-                itemCount: genres.length,
-                itemBuilder: (_, i) {
-                  final g = genres[i];
-                  final isActive = selectedId == g.id;
-                  final colors = _genreColors[g.id] ?? _fallbackColors;
-                  final icon = _genreIcons[g.id] ?? Icons.movie_outlined;
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Determine columns based on available width
+                  int columns = 3; // mobile default
+                  if (constraints.maxWidth > 800) {
+                    columns = 6;
+                  } else if (constraints.maxWidth > 500) {
+                    columns = 4;
+                  }
 
-                  return GestureDetector(
-                    onTap: () => onSelect(g.id, g.name),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: isActive
-                              ? [
-                                  AppColors.primary,
-                                  AppColors.primary.withValues(alpha: 0.7),
-                                ]
-                              : colors,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        border: isActive
-                            ? Border.all(
-                                color: Colors.white.withValues(alpha: 0.6),
-                                width: 1.5,
-                              )
-                            : null,
-                        boxShadow: [
-                          BoxShadow(
-                            color: (isActive ? AppColors.primary : colors.first)
-                                .withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Stack(
-                        children: [
-                          Positioned(
-                            right: -8,
-                            bottom: -8,
-                            child: Icon(
-                              icon,
-                              size: 52,
-                              color: Colors.white.withValues(alpha: 0.12),
+                  return GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      childAspectRatio: 1.45,
+                      crossAxisSpacing: 10,
+                      mainAxisSpacing: 10,
+                    ),
+                    itemCount: genres.length,
+                    itemBuilder: (_, i) {
+                      final g = genres[i];
+                      final isActive = selectedId == g.id;
+                      final colors = _genreColors[g.id] ?? _fallbackColors;
+                      final icon = _genreIcons[g.id] ?? Icons.movie_outlined;
+
+                      return MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          onTap: () => onSelect(g.id, g.name),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: isActive
+                                    ? [
+                                        AppColors.primary,
+                                        AppColors.primary.withValues(
+                                          alpha: 0.7,
+                                        ),
+                                      ]
+                                    : colors,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              border: isActive
+                                  ? Border.all(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.6,
+                                      ),
+                                      width: 1.5,
+                                    )
+                                  : null,
+                              boxShadow: [
+                                BoxShadow(
+                                  color:
+                                      (isActive
+                                              ? AppColors.primary
+                                              : colors.first)
+                                          .withValues(alpha: 0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
                             ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 8,
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
+                            child: Stack(
                               children: [
-                                Icon(icon, size: 18, color: Colors.white),
-                                const SizedBox(height: 5),
-                                Text(
-                                  g.name,
-                                  style: AppTextStyles.labelSmall.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 12,
+                                Positioned(
+                                  right: -8,
+                                  bottom: -8,
+                                  child: Icon(
+                                    icon,
+                                    size: 52,
+                                    color: Colors.white.withValues(alpha: 0.12),
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(icon, size: 18, color: Colors.white),
+                                      const SizedBox(height: 5),
+                                      Text(
+                                        g.name,
+                                        style: AppTextStyles.labelSmall
+                                            .copyWith(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 12,
+                                            ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
+                      );
+                    },
                   );
                 },
               ),
@@ -818,9 +844,8 @@ class _GenreGrid extends ConsumerWidget {
           mainAxisSpacing: 10,
         ),
         itemCount: 12,
-        itemBuilder: (_, __) => ShimmerPlaceholder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        itemBuilder: (_, __) =>
+            ShimmerPlaceholder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -860,11 +885,8 @@ class _GenreResults extends ConsumerWidget {
                     ),
                   ),
                 ),
-          loading: () => const MediaRow(
-            title: 'Movies',
-            movies: [],
-            isLoading: true,
-          ),
+          loading: () =>
+              const MediaRow(title: 'Movies', movies: [], isLoading: true),
           error: (_, __) => const SizedBox.shrink(),
         ),
         const SizedBox(height: 28),
@@ -886,11 +908,8 @@ class _GenreResults extends ConsumerWidget {
                     ),
                   ),
                 ),
-          loading: () => const MediaRow(
-            title: 'TV Shows',
-            movies: [],
-            isLoading: true,
-          ),
+          loading: () =>
+              const MediaRow(title: 'TV Shows', movies: [], isLoading: true),
           error: (_, __) => const SizedBox.shrink(),
         ),
       ],
@@ -917,9 +936,7 @@ class _SearchResults extends ConsumerWidget {
         return Center(
           child: Text(
             'Search failed',
-            style: AppTextStyles.body.copyWith(
-              color: AppColors.textSecondary,
-            ),
+            style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
           ),
         );
       },

@@ -12,39 +12,40 @@ class AppHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width >= 800;
+
     return Container(
-      padding: const EdgeInsets.only(
+      padding: EdgeInsets.only(
         left: AppSpacing.sectionPaddingH,
         right: AppSpacing.sectionPaddingH,
-        top: AppSpacing.headerPaddingTop,
+        top: isDesktop ? 30 : AppSpacing.headerPaddingTop,
         bottom: 16,
       ),
       decoration: const BoxDecoration(gradient: AppColors.headerGradient),
-      child: SafeArea(
-        bottom: false,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            // Left: Welcome + App name
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Image.asset(
-                  'assets/Layer_8.png',
-                  height: 32,
-                  fit: BoxFit.contain,
-                ),
-                const SizedBox(height: 2),
-                Text('WELCOME BACK', style: AppTextStyles.welcomeLabel),
-              ],
-            ),
+      child: isDesktop
+          ? _buildHeaderRow()
+          : SafeArea(bottom: false, child: _buildHeaderRow()),
+    );
+  }
 
-            // Right: Search button
-            _buildSearchButton(),
+  Widget _buildHeaderRow() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        // Left: Welcome + App name
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset('assets/Layer_8.png', height: 32, fit: BoxFit.contain),
+            const SizedBox(height: 2),
+            Text('WELCOME BACK', style: AppTextStyles.welcomeLabel),
           ],
         ),
-      ),
+
+        // Right: Search button
+        _buildSearchButton(),
+      ],
     );
   }
 

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:flutter/material.dart';
 
 import '../../domain/entities/media_item.dart';
 import '../screens/details/details_screen.dart';

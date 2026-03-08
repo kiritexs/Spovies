@@ -41,12 +41,15 @@ class MediaRow extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(title, style: AppTextStyles.sectionTitle),
-                GestureDetector(
-                  onTap: onSeeAllTap,
-                  child: Text(
-                    'See All',
-                    style: AppTextStyles.labelSmall.copyWith(
-                      color: AppColors.primary,
+                MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: onSeeAllTap,
+                    child: Text(
+                      'See All',
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: AppColors.primary,
+                      ),
                     ),
                   ),
                 ),

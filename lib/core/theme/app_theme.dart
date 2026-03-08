@@ -37,6 +37,22 @@ abstract final class AppTheme {
       ),
       splashColor: AppColors.primary.withValues(alpha: 0.1),
       highlightColor: AppColors.primary.withValues(alpha: 0.05),
+      // Desktop Scrollbar
+      scrollbarTheme: ScrollbarThemeData(
+        thumbColor: WidgetStateProperty.all(
+          AppColors.textMuted.withOpacity(0.2),
+        ),
+        radius: const Radius.circular(8),
+        thickness: WidgetStateProperty.all(8),
+        thumbVisibility: WidgetStateProperty.all(false),
+        trackVisibility: WidgetStateProperty.all(false),
+      ),
+      // Smooth selection
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: AppColors.primary,
+        selectionColor: AppColors.primary.withOpacity(0.35),
+        selectionHandleColor: AppColors.primary,
+      ),
     );
   }
 }

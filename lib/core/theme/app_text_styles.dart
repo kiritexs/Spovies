@@ -44,6 +44,15 @@ abstract final class AppTextStyles {
     color: Colors.white,
   );
 
+  /// Larger body text — 16px regular.
+  static TextStyle get bodyLarge => TextStyle(
+    fontFamily: _fontFamily,
+    fontSize: 16,
+    fontWeight: FontWeight.w400,
+    height: 1.5,
+    color: Colors.white,
+  );
+
   // ─── Label ────────────────────────────────────────────────────────────
 
   /// Button text, nav labels — 14px semibold.

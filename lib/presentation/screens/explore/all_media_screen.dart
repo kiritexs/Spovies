@@ -106,43 +106,46 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
                 .map((m) => m.toEntity())
                 .toList();
           } else {
-            newItems = (await api.getPopularMovies(page: nextPage - 1))
-                .map((m) => m.toEntity())
-                .toList();
+            newItems = (await api.getPopularMovies(
+              page: nextPage - 1,
+            )).map((m) => m.toEntity()).toList();
           }
         case BrowseCategory.trendingTv:
           if (nextPage == 1) {
-            newItems =
-                (await api.getTrendingTv()).map((m) => m.toEntity()).toList();
-          } else {
-            newItems = (await api.getPopularTv(page: nextPage - 1))
+            newItems = (await api.getTrendingTv())
                 .map((m) => m.toEntity())
                 .toList();
+          } else {
+            newItems = (await api.getPopularTv(
+              page: nextPage - 1,
+            )).map((m) => m.toEntity()).toList();
           }
         case BrowseCategory.popularMovies:
-          newItems = (await api.getPopularMovies(page: nextPage))
-              .map((m) => m.toEntity())
-              .toList();
+          newItems = (await api.getPopularMovies(
+            page: nextPage,
+          )).map((m) => m.toEntity()).toList();
         case BrowseCategory.popularTv:
-          newItems = (await api.getPopularTv(page: nextPage))
-              .map((m) => m.toEntity())
-              .toList();
+          newItems = (await api.getPopularTv(
+            page: nextPage,
+          )).map((m) => m.toEntity()).toList();
         case BrowseCategory.topRatedMovies:
-          newItems = (await api.getTopRatedMovies(page: nextPage))
-              .map((m) => m.toEntity())
-              .toList();
+          newItems = (await api.getTopRatedMovies(
+            page: nextPage,
+          )).map((m) => m.toEntity()).toList();
         case BrowseCategory.topRatedTv:
-          newItems = (await api.getTopRatedTv(page: nextPage))
-              .map((m) => m.toEntity())
-              .toList();
+          newItems = (await api.getTopRatedTv(
+            page: nextPage,
+          )).map((m) => m.toEntity()).toList();
         case BrowseCategory.discoverMoviesByGenre:
-          newItems = (await api.discoverMoviesByGenre(genreId!, page: nextPage))
-              .map((m) => m.toEntity())
-              .toList();
+          newItems = (await api.discoverMoviesByGenre(
+            genreId!,
+            page: nextPage,
+          )).map((m) => m.toEntity()).toList();
         case BrowseCategory.discoverTvByGenre:
-          newItems = (await api.discoverTvByGenre(genreId!, page: nextPage))
-              .map((m) => m.toEntity())
-              .toList();
+          newItems = (await api.discoverTvByGenre(
+            genreId!,
+            page: nextPage,
+          )).map((m) => m.toEntity()).toList();
       }
 
       if (!mounted) return;
@@ -211,18 +214,26 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.sectionPaddingH,
               ),
-              sliver: SliverGrid(
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  childAspectRatio: 0.52,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                ),
-                delegate: SliverChildBuilderDelegate(
-                  (_, __) => const ShimmerPlaceholder(),
-                  childCount: 12,
-                ),
+              sliver: SliverLayoutBuilder(
+                builder: (context, constraints) {
+                  int columns = 3;
+                  if (constraints.crossAxisExtent > 800) {
+                    columns = 6;
+                  } else if (constraints.crossAxisExtent > 500)
+                    columns = 4;
+                  return SliverGrid(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      childAspectRatio: 0.52,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (_, __) => const ShimmerPlaceholder(),
+                      childCount: 12,
+                    ),
+                  );
+                },
               ),
             )
           else
@@ -233,30 +244,35 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
                 AppSpacing.sectionPaddingH,
                 0,
               ),
-              sliver: SliverGrid(
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  childAspectRatio: 0.52,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                ),
-                delegate: SliverChildBuilderDelegate(
-                  (context, i) {
-                    final item = _items[i];
-                    final genreText = item.metadata.genreIds
-                        .take(2)
-                        .map((id) => widget.args.genreMap[id] ?? '')
-                        .where((s) => s.isNotEmpty)
-                        .join(' • ');
-                    return MediaCard(
-                      movie: item,
-                      genreText: genreText,
-                      onTap: () => context.push('/details', extra: item),
-                    );
-                  },
-                  childCount: _items.length,
-                ),
+              sliver: SliverLayoutBuilder(
+                builder: (context, constraints) {
+                  int columns = 3;
+                  if (constraints.crossAxisExtent > 800) {
+                    columns = 6;
+                  } else if (constraints.crossAxisExtent > 500)
+                    columns = 4;
+                  return SliverGrid(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      childAspectRatio: 0.52,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                    ),
+                    delegate: SliverChildBuilderDelegate((context, i) {
+                      final item = _items[i];
+                      final genreText = item.metadata.genreIds
+                          .take(2)
+                          .map((id) => widget.args.genreMap[id] ?? '')
+                          .where((s) => s.isNotEmpty)
+                          .join(' • ');
+                      return MediaCard(
+                        movie: item,
+                        genreText: genreText,
+                        onTap: () => context.push('/details', extra: item),
+                      );
+                    }, childCount: _items.length),
+                  );
+                },
               ),
             ),
 

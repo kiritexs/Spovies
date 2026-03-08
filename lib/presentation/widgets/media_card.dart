@@ -55,53 +55,57 @@ class _MediaCardState extends State<MediaCard>
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: widget.onTap,
-      onLongPress: widget.onLongPress,
-      onTapDown: (_) => _scaleController.forward(),
-      onTapUp: (_) => _scaleController.reverse(),
-      onTapCancel: () => _scaleController.reverse(),
-      child: SizedBox(
-        width: AppSpacing.mediaCardWidth,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // ─── Poster (flexible so card fits grid cell) ─────────────────
-            Flexible(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final preferredHeight = AppSpacing.mediaCardWidth /
-                      AppSpacing.mediaCardAspectRatio;
-                  final h = constraints.maxHeight.isFinite
-                      ? preferredHeight.clamp(0.0, constraints.maxHeight)
-                      : preferredHeight;
-                  return SizedBox(
-                    height: h,
-                    width: AppSpacing.mediaCardWidth,
-                    child: _buildPosterContent(),
-                  );
-                },
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
+        onTapDown: (_) => _scaleController.forward(),
+        onTapUp: (_) => _scaleController.reverse(),
+        onTapCancel: () => _scaleController.reverse(),
+        child: SizedBox(
+          width: AppSpacing.mediaCardWidth,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ─── Poster (flexible so card fits grid cell) ─────────────────
+              Flexible(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final preferredHeight =
+                        AppSpacing.mediaCardWidth /
+                        AppSpacing.mediaCardAspectRatio;
+                    final h = constraints.maxHeight.isFinite
+                        ? preferredHeight.clamp(0.0, constraints.maxHeight)
+                        : preferredHeight;
+                    return SizedBox(
+                      height: h,
+                      width: AppSpacing.mediaCardWidth,
+                      child: _buildPosterContent(),
+                    );
+                  },
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            // ─── Info ────────────────────────────
-            Text(
-              widget.movie.title,
-              style: AppTextStyles.cardTitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              widget.genreText.isNotEmpty
-                  ? widget.genreText
-                  : widget.movie.type.displayName,
-              style: AppTextStyles.cardSubtitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+              const SizedBox(height: 8),
+              // ─── Info ────────────────────────────
+              Text(
+                widget.movie.title,
+                style: AppTextStyles.cardTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                widget.genreText.isNotEmpty
+                    ? widget.genreText
+                    : widget.movie.type.displayName,
+                style: AppTextStyles.cardSubtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -134,10 +138,8 @@ class _MediaCardState extends State<MediaCard>
           children: [
             AnimatedBuilder(
               animation: _scaleAnimation,
-              builder: (_, child) => Transform.scale(
-                scale: _scaleAnimation.value,
-                child: child,
-              ),
+              builder: (_, child) =>
+                  Transform.scale(scale: _scaleAnimation.value, child: child),
               child: _buildImage(),
             ),
             if (widget.movie.metadata.rating != null)

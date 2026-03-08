@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -9,7 +10,7 @@ import '../../core/config/app_config.dart';
 import '../../domain/entities/media_item.dart';
 import 'shimmer_placeholder.dart';
 
-/// Hero Featured Card — 4:5 cinematic poster with overlay, badge, and actions.
+/// Hero Featured Card — Cinematic wide layout for desktop, 4:5 poster for mobile.
 class HeroCard extends StatelessWidget {
   final MediaItem movie;
   final String genreText;
@@ -26,52 +27,84 @@ class HeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: AppSpacing.sectionPadding,
-      child: GestureDetector(
-        onTap: onTap,
-        child: AspectRatio(
-          aspectRatio: AppSpacing.heroAspectRatio,
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: AppSpacing.borderRadius2Xl,
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x40000000),
-                  blurRadius: 30,
-                  offset: Offset(0, 15),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isDesktop = constraints.maxWidth >= 800;
+
+        return Padding(
+          padding: AppSpacing.sectionPadding,
+          child: GestureDetector(
+            onTap: onTap,
+            child: AspectRatio(
+              aspectRatio: isDesktop ? 16 / 7 : AppSpacing.heroAspectRatio,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: AppSpacing.borderRadius2Xl,
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x40000000),
+                      blurRadius: 30,
+                      offset: Offset(0, 15),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: AppSpacing.borderRadius2Xl,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // ─── Poster Image ──────────────────
-                  _buildPosterImage(),
+                child: ClipRRect(
+                  borderRadius: AppSpacing.borderRadius2Xl,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // ─── Background (Backdrop for Desktop, Poster for Mobile) ──
+                      isDesktop ? _buildBackdropImage() : _buildPosterImage(),
 
-                  // ─── Gradient Overlay ──────────────
-                  DecoratedBox(
-                    decoration: BoxDecoration(gradient: AppColors.heroOverlay),
+                      // ─── Gradient Overlay ──────────────
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: isDesktop
+                              ? LinearGradient(
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                  colors: [
+                                    Colors.black.withOpacity(0.9),
+                                    Colors.black.withOpacity(0.4),
+                                    Colors.transparent,
+                                  ],
+                                  stops: const [0.0, 0.45, 1.0],
+                                )
+                              : AppColors.heroOverlay,
+                        ),
+                      ),
+
+                      // ─── Featured Badge ────────────────
+                      Positioned(
+                        top: isDesktop ? 24 : 16,
+                        left: isDesktop ? 32 : 16,
+                        child: _buildFeaturedBadge(),
+                      ),
+
+                      // ─── Content Overlay ────────────────
+                      if (isDesktop)
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          bottom: 0,
+                          width: constraints.maxWidth * 0.45,
+                          child: _buildDesktopContent(),
+                        )
+                      else
+                        Positioned(
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          child: _buildContentOverlay(),
+                        ),
+                    ],
                   ),
-
-                  // ─── Featured Badge ────────────────
-                  Positioned(top: 16, left: 16, child: _buildFeaturedBadge()),
-
-                  // ─── Content Overlay ────────────────
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: _buildContentOverlay(),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -88,6 +121,23 @@ class HeroCard extends StatelessWidget {
     );
   }
 
+  Widget _buildBackdropImage() {
+    final url = buildImageUrl(
+      movie.backdropPath ?? movie.posterPath,
+      AppConfig.backdropLarge,
+    );
+    if (url.isEmpty) {
+      return Container(color: AppColors.surfaceDark);
+    }
+    return CachedNetworkImage(
+      imageUrl: url,
+      fit: BoxFit.cover,
+      fadeInDuration: const Duration(milliseconds: 500),
+      placeholder: (_, __) => const ShimmerPlaceholder(),
+      errorWidget: (_, __, ___) => Container(color: AppColors.surfaceDark),
+    );
+  }
+
   Widget _buildFeaturedBadge() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -98,6 +148,128 @@ class HeroCard extends StatelessWidget {
         boxShadow: const [BoxShadow(color: Color(0x40000000), blurRadius: 8)],
       ),
       child: Text('Featured Premiere', style: AppTextStyles.tag),
+    );
+  }
+
+  Widget _buildDesktopContent() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Spacer(),
+          // Title
+          Text(
+            movie.title,
+            style: AppTextStyles.heroTitle.copyWith(
+              fontSize: 40,
+              height: 1.1,
+              shadows: [
+                const Shadow(
+                  color: Color(0x80000000),
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+
+          const SizedBox(height: 12),
+
+          // Metadata row: rating • genre • runtime
+          Row(
+            children: [
+              // Rating
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: AppColors.primary.withOpacity(0.5)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.star_rounded,
+                      color: AppColors.primary,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      movie.metadata.rating?.toStringAsFixed(1) ?? '—',
+                      style: AppTextStyles.metadata.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              _dot(),
+
+              // Genre
+              Text(
+                genreText.isNotEmpty ? genreText : 'Movie',
+                style: AppTextStyles.metadata.copyWith(fontSize: 14),
+              ),
+
+              if (movie.metadata.formattedRuntime.isNotEmpty) ...[
+                _dot(),
+                Text(
+                  movie.metadata.formattedRuntime,
+                  style: AppTextStyles.metadata.copyWith(fontSize: 14),
+                ),
+              ],
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Overview (only on desktop)
+          if (movie.overview != null && movie.overview!.isNotEmpty)
+            Flexible(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withOpacity(0.1)),
+                    ),
+                    child: Text(
+                      movie.overview!,
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: Colors.white.withOpacity(0.7),
+                        height: 1.4,
+                      ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          const SizedBox(height: 24),
+
+          // Action buttons
+          Row(
+            children: [
+              // Watch Button
+              SizedBox(width: 200, child: _buildWatchButton()),
+              const SizedBox(width: 16),
+              // Add button
+              _buildAddButton(),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

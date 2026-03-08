@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -262,6 +263,107 @@ const _kNoSelectCss = '''
 // from the DOM.  A MutationObserver ensures dynamically-injected ads are caught
 // throughout the page’s lifetime.
 
+// ─── AdGuard-style Request Interceptor — injected at document-start ──────────
+//
+// Patches the browser's networking APIs (fetch and XHR) to block requests
+// to known ad domains before they leave the WebView.  This mimics DNS-level
+// blocking without the overhead of platform channel communication.
+
+const String _kAdGuardJs = '''
+    (function() {
+      if (window.__spoviesAdGuard) return;
+      window.__spoviesAdGuard = true;
+
+      var blocked = ['doubleclick','googlesyndication','popads','popcash',
+                     'exoclick','trafficjunky','propellerads', 'adsterra',
+                     'onclkds','onclickmax','juicyads','gamerhit','trakzon',
+                     'goosebomb','etoro','gryphline','vid-news','best-video',
+                     'tr-video','host-c','dood','host-d','upstream','mixdrop',
+                     'voe','wolfstream','gounlimited','host-a','host-b'];
+
+      function isBlocked(url) {
+        if (!url) return false;
+        var s = url.toString().toLowerCase();
+        for (var i = 0; i < blocked.length; i++) {
+          if (s.indexOf(blocked[i]) !== -1) return true;
+        }
+        return false;
+      }
+
+      // 1. Patch Fetch API
+      var _origFetch = window.fetch;
+      window.fetch = function(input, init) {
+        var url = (typeof input === 'string') ? input : (input && input.url);
+        if (isBlocked(url)) {
+          return Promise.reject(new TypeError('Blocked by Spovies AdGuard'));
+        }
+        return _origFetch.apply(this, arguments);
+      };
+
+      // 2. Patch XMLHttpRequest
+      var _origOpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function(method, url) {
+        if (isBlocked(url)) {
+          this.__blocked = true;
+          return;
+        }
+        return _origOpen.apply(this, arguments);
+      };
+      var _origSend = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.send = function() {
+        if (this.__blocked) return;
+        return _origSend.apply(this, arguments);
+      };
+
+      // 3. Patch sendBeacon (tracking)
+      if (navigator.sendBeacon) {
+        var _origBeacon = navigator.sendBeacon;
+        navigator.sendBeacon = function(url, data) {
+          if (isBlocked(url)) return true; 
+          return _origBeacon.apply(this, arguments);
+        };
+      }
+
+      // 4. Patch WebSocket
+      var _origWS = window.WebSocket;
+      window.WebSocket = function(url, protocols) {
+        if (isBlocked(url)) {
+          throw new Error('Blocked by Spovies AdGuard');
+        }
+        return new _origWS(url, protocols);
+      };
+      window.WebSocket.prototype = _origWS.prototype;
+    })();
+''';
+
+const String _kConsoleKillerJs = '''
+    (function() {
+      // Brutally disable console functions to stop plugin event flood on Windows.
+      // Many streaming sites use console.clear() in loops to detect/prevent devtools.
+      var noOp = function() {};
+      var originalConsole = window.console;
+      if (originalConsole) {
+        window.console.log = noOp;
+        window.console.warn = noOp;
+        window.console.error = noOp;
+        window.console.debug = noOp;
+        window.console.info = noOp;
+        window.console.clear = noOp;
+        window.console.table = noOp;
+        window.console.count = noOp;
+        window.console.dir = noOp;
+      }
+      
+      // Attempt to bypass "DEVTOOL" detection by spoofing common checks.
+      // Sites often check if outerWidth/Height matches innerWidth/Height.
+      Object.defineProperty(window, 'outerWidth', { get: () => window.innerWidth });
+      Object.defineProperty(window, 'outerHeight', { get: () => window.innerHeight });
+      
+      // Spoof webdriver property.
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    })();
+  ''';
+
 const _kAdRemovalJs = '''
 (function() {
   if (window.__spoviesAdBlock) return;
@@ -346,7 +448,8 @@ const _kAdRemovalJs = '''
           set: function(v) {
             var blocked = ['ads','doubleclick','googlesyndication','popads',
                            'popcash','exoclick','trafficjunky','propellerads',
-                           'adsterra','onclkds','onclickmax','juicyads'];
+                           'adsterra','onclkds','onclickmax','juicyads',
+                           'gamerhit','trakzon','goosebomb','etoro'];
             for (var i = 0; i < blocked.length; i++) {
               if (v && v.indexOf(blocked[i]) !== -1) return;
             }
@@ -375,7 +478,8 @@ const _kAntiClickjackJs = '''
   var adDomains = ['doubleclick','googlesyndication','popads','popcash',
     'exoclick','trafficjunky','propellerads','adsterra','juicyads',
     'onclkds','onclickmax','pushame','hilltopads','adtng','adrunnr',
-    'adskeeper','clickadu','clickaine'];
+    'adskeeper','clickadu','clickaine','gamerhit','trakzon','goosebomb',
+    'etoro','gryphline'];
 
   function isAdUrl(url) {
     if (!url) return false;
@@ -466,6 +570,29 @@ const _kBlockedDomainFragments = [
   'richpush.co',
   'galaksion.com',
   'acint.net',
+  // New domains found in Windows logs (aggressive redirects)
+  'gamerhit.co',
+  'trakzon.com',
+  'goosebomb.com',
+  'etoro.com',
+  'gryphline.com',
+  'arknights.endfield',
+  'vid-news.com',
+  'best-video.net',
+  'tr-video.net',
+  'host-c.example.com',
+  'dood.re',
+  'dood.to',
+  'dood.li',
+  'host-d.example.com',
+  'upstream.to',
+  'mixdrop.to',
+  'voe.sx',
+  'upstream.to',
+  'wolfstream.tv',
+  'gounlimited.to',
+  'host-a.example.com',
+  'host-b.example.com',
   // URL shorteners / link monetization
   'adf.ly',
   'shorte.st',
@@ -527,7 +654,6 @@ class WebViewPlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
-  InAppWebViewController? _controller;
   late final EventBridge _eventBridge;
 
   int _loadProgress = 0;
@@ -541,16 +667,6 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   // NOTE: LongPressGestureRecognizer was intentionally removed — it causes
   // a ~500 ms delay in the gesture arena before taps are forwarded to the
   // WebView, making buttons appear to require a "double click".  The
-  // _kNoSelectCss script already disables the browser's long-press context
-  // menu, so there is no loss of functionality.
-  static final _webViewGestures = <Factory<OneSequenceGestureRecognizer>>{
-    Factory<VerticalDragGestureRecognizer>(VerticalDragGestureRecognizer.new),
-    Factory<HorizontalDragGestureRecognizer>(
-      HorizontalDragGestureRecognizer.new,
-    ),
-    Factory<ScaleGestureRecognizer>(ScaleGestureRecognizer.new),
-  };
-
   @override
   void initState() {
     super.initState();
@@ -610,6 +726,17 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   // ─── Settings ────────────────────────────────────────────────────────────
 
   InAppWebViewSettings get _settings => InAppWebViewSettings(
+    // User-Agent & Content Mode — Desktop for Windows, Mobile for Android/iOS.
+    userAgent: Platform.isWindows
+        ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+        : (Platform.isAndroid
+              ? 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36'
+              : 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'),
+
+    preferredContentMode: Platform.isWindows
+        ? UserPreferredContentMode.DESKTOP
+        : UserPreferredContentMode.MOBILE,
+
     // Playback — inline is required so iOS does not hand off to AVPlayer.
     mediaPlaybackRequiresUserGesture: false,
     allowsInlineMediaPlayback: true,
@@ -624,7 +751,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
 
     // ── Performance ──────────────────────────────────────────────────
     // GPU rendering on Android — biggest impact on scroll/video lag.
-    hardwareAcceleration: true,
+    // NOTE: Disabled on Android by default to prevent black screen rendering
+    // issues on specific GPUs (Xiaomi/Redmi) when using Impeller.
+    hardwareAcceleration: !Platform.isAndroid,
     // Skip expensive initial layout/zoom computations.
     useWideViewPort: false,
     loadWithOverviewMode: false,
@@ -644,13 +773,17 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     allowsBackForwardNavigationGestures: false,
 
     // Rendering
-    transparentBackground: false,
+    transparentBackground: true,
+
+    // Allow mixed content for maximal provider compatibility.
+    mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
 
     // Reduce unnecessary resource tracking
     useOnLoadResource: false,
 
     // Enable network-level ad blocking via shouldInterceptRequest.
-    useShouldInterceptRequest: true,
+    // Extremely slow on Windows due to platform channel overhead for every HLS video chunk.
+    useShouldInterceptRequest: !Platform.isWindows,
 
     // Enable multi-window support so onCreateWindow is called — we block
     // every popup attempt there.  Without this, some ad popups bypass the
@@ -673,8 +806,32 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   );
 
   List<UserScript> get _userScripts => [
-    // Must be AT_DOCUMENT_START so overrides are live before the streaming
-    // site's own scripts execute.
+    // 1. Spovies AdGuard (DNS-level block replacement).
+    UserScript(
+      source: _kAdGuardJs,
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+      forMainFrameOnly: false,
+    ),
+    // 2. Suppress console and spoof devtool checks ASAP.
+    if (Platform.isWindows)
+      UserScript(
+        source: _kConsoleKillerJs,
+        injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        forMainFrameOnly: false,
+      ),
+    // 2. Block ad scripts and popups.
+    UserScript(
+      source: _kAdRemovalJs,
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+      forMainFrameOnly: false,
+    ),
+    // 3. Block click-jacking.
+    UserScript(
+      source: _kAntiClickjackJs,
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+      forMainFrameOnly: false,
+    ),
+    // 4. Styling and general fixes.
     UserScript(
       source: _kSuppressFullscreenJs,
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
@@ -687,27 +844,14 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
       source: _kNoSelectCss,
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
     ),
+    // 5. App-specific bridge and progress tracking (at end).
     UserScript(
       source: _kBridgeJs,
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
     ),
-    // forMainFrameOnly: false — the <video> element is often inside a
-    // cross-origin iframe.  This script must run in EVERY frame.
     UserScript(
       source: _videoProgressJs(widget.resumeTimeSeconds),
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
-      forMainFrameOnly: false,
-    ),
-    UserScript(
-      source: _kAdRemovalJs,
-      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
-      forMainFrameOnly: false,
-    ),
-    // Anti click-jacking — must be AT_DOCUMENT_START to intercept
-    // click handlers before ad scripts register them.
-    UserScript(
-      source: _kAntiClickjackJs,
-      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
       forMainFrameOnly: false,
     ),
   ];
@@ -739,76 +883,118 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   // ─── WebView ─────────────────────────────────────────────────────────────
 
   Widget _buildWebView() {
-    return InAppWebView(
-      preventGestureDelay: true,
-      gestureRecognizers: _webViewGestures,
-      initialUrlRequest: URLRequest(url: WebUri(widget.url)),
-      initialSettings: _settings,
-      initialUserScripts: UnmodifiableListView(_userScripts),
-      onWebViewCreated: (controller) {
-        _controller = controller;
-        controller.addJavaScriptHandler(
-          handlerName: 'spoviesEventBridge',
-          callback: (args) {
-            if (args.isNotEmpty) {
-              _eventBridge.handleMessage(args[0].toString());
-            }
-          },
-        );
-      },
-      onProgressChanged: (controller, progress) {
-        if (!mounted) return;
-        setState(() {
-          _loadProgress = progress;
-          if (progress > 0 && _hasError) _hasError = false;
-        });
-      },
-      onReceivedError: (controller, request, error) {
-        if (request.isForMainFrame ?? false) {
+    return Focus(
+      // Intercept erratic key events from WebView2 on Windows
+      autofocus: true,
+      onKeyEvent: (node, event) => KeyEventResult.handled,
+      onKey: (node, event) => KeyEventResult.handled,
+      child: InAppWebView(
+        preventGestureDelay: true,
+        // Forward gestures so panning works on mobile.
+        // E.g. scrolling lists inside the video player UI or zooming.
+        // On Windows/Desktop, forwarding Flutter gestures (drag/scale) to the
+        // WebView2 control causes fatal C++ access violations during click-and-drag.
+        // We pass an empty set on Desktop to prevent crashes (clicks still work natively).
+        gestureRecognizers:
+            (!kIsWeb &&
+                (Platform.isWindows || Platform.isMacOS || Platform.isLinux))
+            ? const <Factory<OneSequenceGestureRecognizer>>{}
+            : <Factory<OneSequenceGestureRecognizer>>{
+                Factory<VerticalDragGestureRecognizer>(
+                  VerticalDragGestureRecognizer.new,
+                ),
+                Factory<HorizontalDragGestureRecognizer>(
+                  HorizontalDragGestureRecognizer.new,
+                ),
+                Factory<ScaleGestureRecognizer>(ScaleGestureRecognizer.new),
+              },
+        initialUrlRequest: URLRequest(url: WebUri(widget.url)),
+        initialSettings: _settings,
+        initialUserScripts: UnmodifiableListView(_userScripts),
+        onWebViewCreated: (controller) {
+          controller.addJavaScriptHandler(
+            handlerName: 'spoviesEventBridge',
+            callback: (args) {
+              if (args.isNotEmpty) {
+                _eventBridge.handleMessage(args[0].toString());
+              }
+            },
+          );
+        },
+        onProgressChanged: (controller, progress) {
           if (!mounted) return;
           setState(() {
-            _hasError = true;
-            _errorMsg = error.description;
+            _loadProgress = progress;
+            if (progress > 0 && _hasError) _hasError = false;
           });
-        }
-      },
-      onConsoleMessage: (controller, message) {
-        if (kDebugMode) {
-          // Filter out noisy streaming-site log spam.
-          final msg = message.message;
-          if (msg == 'undefined' || msg.startsWith('[object Object]')) return;
-          debugPrint('WebView: $msg');
-        }
-      },
-      // ── Block popup windows (ad popups) ────────────────────────────
-      onCreateWindow: (controller, createWindowAction) async {
-        // Return false to prevent ANY new window from opening.
-        // Streaming players don't need popups; only ad scripts do.
-        return false;
-      },
-      // ── Block navigation to ad domains ─────────────────────────────
-      shouldOverrideUrlLoading: (controller, navigationAction) async {
-        final url = navigationAction.request.url?.toString() ?? '';
-        for (final domain in _kBlockedDomainFragments) {
-          if (url.contains(domain)) {
-            return NavigationActionPolicy.CANCEL;
+        },
+        // ── Ignore platform-level connection errors safely ─────────────
+        onReceivedError: (controller, request, error) {
+          // Do nothing on receive error unless it's a critical main frame error.
+          // WebView2 often sends connection stopped/aborted errors during
+          // normal streaming site operations.
+          if (kDebugMode && (request.isForMainFrame ?? false)) {
+            debugPrint('WebView Error (${error.type}): ${error.description}');
           }
-        }
-        return NavigationActionPolicy.ALLOW;
-      },
-      // ── Block ad resource loads at the network level ───────────────
-      // Fires for every sub-resource (scripts, images, iframes).
-      // Returning null allows the request; returning an empty
-      // WebResourceResponse effectively blocks it.
-      shouldInterceptRequest: (controller, request) async {
-        final url = request.url.toString();
-        for (final domain in _kBlockedDomainFragments) {
-          if (url.contains(domain)) {
-            return WebResourceResponse(contentType: 'text/plain', data: null);
+        },
+        onConsoleMessage: Platform.isWindows
+            ? null
+            : (controller, message) {
+                if (kDebugMode) {
+                  // Filter out noisy streaming-site log spam.
+                  final msg = message.message;
+                  if (msg == 'undefined' ||
+                      msg.toLowerCase().contains('console.clear') ||
+                      msg.startsWith('[object Object]') ||
+                      msg.startsWith('Array')) {
+                    return;
+                  }
+                  debugPrint('WebView: $msg');
+                }
+              },
+        // ── Block popup windows (ad popups) ────────────────────────────
+        onCreateWindow: (controller, createWindowAction) async {
+          // Return false to prevent ANY new window from opening.
+          // Streaming players don't need popups; only ad scripts do.
+          return false;
+        },
+        // ── Block navigation to ad domains ─────────────────────────────
+        shouldOverrideUrlLoading: (controller, navigationAction) async {
+          final urlRequest = navigationAction.request;
+          final url = urlRequest.url?.toString() ?? '';
+          if (url.isEmpty) return NavigationActionPolicy.ALLOW;
+
+          // 1. Block known ad/malicious domains
+          for (final domain in _kBlockedDomainFragments) {
+            if (url.contains(domain)) {
+              if (kDebugMode) {
+                debugPrint('WebView: Blocked navigation to $url');
+              }
+              return NavigationActionPolicy.CANCEL;
+            }
           }
-        }
-        return null;
-      },
+
+          return NavigationActionPolicy.ALLOW;
+        },
+        // ── Block ad resource loads at the network level ───────────────
+        // Fires for every sub-resource (scripts, images, iframes).
+        // Returning null allows the request; returning an empty
+        // WebResourceResponse effectively blocks it.
+        shouldInterceptRequest: Platform.isWindows
+            ? null
+            : (controller, request) async {
+                final url = request.url.toString();
+                for (final domain in _kBlockedDomainFragments) {
+                  if (url.contains(domain)) {
+                    return WebResourceResponse(
+                      contentType: 'text/plain',
+                      data: null,
+                    );
+                  }
+                }
+                return null;
+              },
+      ),
     );
   }
 
@@ -935,6 +1121,5 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
       _hasError = false;
       _loadProgress = 0;
     });
-    _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(widget.url)));
   }
 }
