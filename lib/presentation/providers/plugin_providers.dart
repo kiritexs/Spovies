@@ -19,13 +19,15 @@ final _pluginDioProvider = Provider<Dio>((ref) {
       headers: {'accept': 'application/json'},
     ),
   );
-  dio.interceptors.add(
-    LogInterceptor(
-      requestHeader: false,
-      responseHeader: false,
-      responseBody: true,
-    ),
-  );
+  if (kDebugMode) {
+    dio.interceptors.add(
+      LogInterceptor(
+        requestHeader: false,
+        responseHeader: false,
+        responseBody: true,
+      ),
+    );
+  }
   return dio;
 });
 

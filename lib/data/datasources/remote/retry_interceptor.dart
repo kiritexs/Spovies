@@ -40,7 +40,7 @@ class RetryInterceptor extends Interceptor {
 
     final delay = initialDelay * (1 << retryCount); // 1s, 2s, 4s
     if (kDebugMode) {
-      print(
+      debugPrint(
         '[Retry] Attempt ${retryCount + 1}/$maxRetries '
         'for ${err.requestOptions.uri} after ${delay.inMilliseconds}ms',
       );

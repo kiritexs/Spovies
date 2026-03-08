@@ -588,7 +588,6 @@ const _kBlockedDomainFragments = [
   'upstream.to',
   'mixdrop.to',
   'voe.sx',
-  'upstream.to',
   'wolfstream.tv',
   'gounlimited.to',
   'host-a.example.com',
@@ -656,6 +655,9 @@ class WebViewPlayerScreen extends ConsumerStatefulWidget {
 class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   late final EventBridge _eventBridge;
 
+  // Stored so imperative operations (reload, goBack, etc.) are possible.
+  InAppWebViewController? _controller;
+
   int _loadProgress = 0;
   bool _hasError = false;
   String _errorMsg = '';
@@ -666,7 +668,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   // breakage in embedded lists.
   // NOTE: LongPressGestureRecognizer was intentionally removed — it causes
   // a ~500 ms delay in the gesture arena before taps are forwarded to the
-  // WebView, making buttons appear to require a "double click".  The
+  // WebView, making buttons appear to require a "double click" to interact.
   @override
   void initState() {
     super.initState();
@@ -683,7 +685,12 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   // ─── Orientation ─────────────────────────────────────────────────────────
 
   void _lockLandscape() {
-    // Works on Android and iOS (Info.plist already allows landscape).
+    // Orientation lock and immersive mode are mobile-only APIs.
+    // Calling them on Windows/macOS/Linux is a no-op at best and can
+    // cause assertion errors on some platform channel implementations.
+    if (kIsWeb || Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+      return;
+    }
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
@@ -693,6 +700,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   }
 
   void _restorePortrait() {
+    if (kIsWeb || Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+      return;
+    }
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -706,6 +716,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   // ─── Progress Tracking ───────────────────────────────────────────────────
 
   void _onProgressUpdate(PlayerEvent event) {
+    if (!mounted) return;
     if (event.duration <= 0) return;
     final progress = UserProgress(
       mediaId: widget.media.tmdbId.toString(),
@@ -832,13 +843,18 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
       forMainFrameOnly: false,
     ),
     // 4. Styling and general fixes.
+    // forMainFrameOnly: false — streaming sites embed their <video> in
+    // cross-origin iframes; fullscreen suppression and inline-video fixes
+    // must run inside those frames to be effective.
     UserScript(
       source: _kSuppressFullscreenJs,
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+      forMainFrameOnly: false,
     ),
     UserScript(
       source: _kIosInlineVideoFix,
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+      forMainFrameOnly: false,
     ),
     UserScript(
       source: _kNoSelectCss,
@@ -912,6 +928,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
         initialSettings: _settings,
         initialUserScripts: UnmodifiableListView(_userScripts),
         onWebViewCreated: (controller) {
+          _controller = controller;
           controller.addJavaScriptHandler(
             handlerName: 'spoviesEventBridge',
             callback: (args) {
@@ -928,13 +945,34 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
             if (progress > 0 && _hasError) _hasError = false;
           });
         },
-        // ── Ignore platform-level connection errors safely ─────────────
+        // ── Surface fatal main-frame errors; ignore sub-resource noise ──
         onReceivedError: (controller, request, error) {
-          // Do nothing on receive error unless it's a critical main frame error.
-          // WebView2 often sends connection stopped/aborted errors during
-          // normal streaming site operations.
-          if (kDebugMode && (request.isForMainFrame ?? false)) {
+          final isMainFrame = request.isForMainFrame ?? false;
+          if (kDebugMode && isMainFrame) {
             debugPrint('WebView Error (${error.type}): ${error.description}');
+          }
+          // WebView2 and mobile WebViews emit connection-reset / cancelled
+          // errors constantly during HLS streaming. Only surface an error UI
+          // when the main frame itself fails before anything has loaded.
+          if (isMainFrame && _loadProgress < 10 && mounted) {
+            setState(() {
+              _hasError = true;
+              _errorMsg = error.description;
+            });
+          }
+        },
+        // ── Surface HTTP-level main-frame failures (5xx) ────────────────
+        onReceivedHttpError: (controller, request, errorResponse) {
+          final isMainFrame = request.isForMainFrame ?? false;
+          final statusCode = errorResponse.statusCode ?? 0;
+          if (kDebugMode && isMainFrame) {
+            debugPrint('WebView HTTP $statusCode: ${request.url}');
+          }
+          if (isMainFrame && statusCode >= 500 && mounted) {
+            setState(() {
+              _hasError = true;
+              _errorMsg = 'Server error ($statusCode)';
+            });
           }
         },
         onConsoleMessage: Platform.isWindows

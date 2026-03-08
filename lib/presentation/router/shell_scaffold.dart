@@ -38,7 +38,7 @@ class ShellScaffold extends ConsumerWidget {
                 ),
               ),
               // Divider for visual separation
-              Container(width: 1, color: Colors.white.withOpacity(0.05)),
+              Container(width: 1, color: Colors.white.withValues(alpha: 0.05)),
               Expanded(child: shell),
             ],
           ),

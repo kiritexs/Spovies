@@ -41,6 +41,18 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!--
+	  NSAllowsArbitraryLoadsInWebContent: permits the WKWebView (flutter_inappwebview)
+	  to load HTTP URLs (streaming player pages). Without this, iOS App Transport
+	  Security blocks any non-HTTPS URL inside a WebView, which silently breaks
+	  many streaming embed pages. This key applies ONLY to WebView content —
+	  native network calls (Dio → TMDB) remain under strict ATS.
+	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+	</dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

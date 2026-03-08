@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../core/errors/plugin_exception.dart';
 import '../../domain/entities/plugin_manifest.dart';
 import '../../domain/repositories/plugin_repository.dart';
@@ -48,7 +50,7 @@ class PluginRepositoryImpl implements PluginRepository {
         manifests.add(PluginManifestModel.fromJson(map));
       } catch (e) {
         // Log corruption so we can debug "show nothing" issues
-        print('Error parsing plugin manifest from Hive: $e');
+        debugPrint('Error parsing plugin manifest from Hive: $e');
       }
     }
     return manifests;

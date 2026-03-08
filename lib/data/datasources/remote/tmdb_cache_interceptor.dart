@@ -44,7 +44,7 @@ class TmdbCacheInterceptor extends Interceptor {
       if (now < expiresAt) {
         // Cache hit — return cached response
         if (kDebugMode) {
-          print('[Cache] HIT: ${options.uri.path}');
+          debugPrint('[Cache] HIT: ${options.uri.path}');
         }
         final data = jsonDecode(cached['body'] as String);
         handler.resolve(
@@ -87,9 +87,9 @@ class TmdbCacheInterceptor extends Interceptor {
       final cached = _box.get(key);
 
       if (cached != null) {
-        if (kDebugMode) {
-          print('[Cache] STALE fallback: ${err.requestOptions.uri.path}');
-        }
+      if (kDebugMode) {
+        debugPrint('[Cache] STALE fallback: ${err.requestOptions.uri.path}');
+      }
         final data = jsonDecode(cached['body'] as String);
         handler.resolve(
           Response(

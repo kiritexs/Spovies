@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
@@ -45,7 +44,9 @@ class ExportImportService {
 
   /// Pick a `.spovies` file and merge its data into the local database.
   ///
-  /// Returns `true` if import succeeded, `false` if cancelled or failed.
+  /// Returns `true` if import succeeded, `false` if the user cancelled.
+  /// Throws on any real error (corrupt file, version mismatch, IO error)
+  /// so the caller can show a meaningful message rather than a generic one.
   static Future<bool> importData() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.any,
@@ -57,39 +58,27 @@ class ExportImportService {
     final path = result.files.single.path;
     if (path == null) return false;
 
-    try {
-      final file = File(path);
-      final compressed = await file.readAsBytes();
-      final jsonBytes = gzip.decode(compressed);
-      final jsonStr = utf8.decode(Uint8List.fromList(jsonBytes));
-      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+    final file = File(path);
+    final compressed = await file.readAsBytes();
+    final jsonBytes = gzip.decode(compressed);
+    // gzip.decode returns List<int>; utf8.decode accepts it directly.
+    final jsonStr = utf8.decode(jsonBytes);
+    final data = jsonDecode(jsonStr) as Map<String, dynamic>;
 
-      // Validate schema
-      final version = data['schemaVersion'] as int? ?? 0;
-      if (version > _schemaVersion) {
-        throw FormatException(
-          'Backup file is from a newer version (v$version). '
-          'Please update the app.',
-        );
-      }
-
-      // Merge watch history (keep latest per key)
-      await _mergeWatchHistory(data['watchHistory'] as List<dynamic>?);
-
-      // Merge watchlist (union)
-      await _mergeWatchlist(data['watchlist'] as List<dynamic>?);
-
-      // Merge plugins (union by pluginId)
-      await _mergePlugins(data['plugins'] as List<dynamic>?);
-
-      // Import settings (overwrite)
-      await _importSettings(data['settings'] as Map<String, dynamic>?);
-
-      return true;
-    } catch (e) {
-      if (kDebugMode) print('Import error: $e');
-      return false;
+    final version = data['schemaVersion'] as int? ?? 0;
+    if (version > _schemaVersion) {
+      throw FormatException(
+        'Backup file is from a newer version (v$version). '
+        'Please update the app.',
+      );
     }
+
+    await _mergeWatchHistory(data['watchHistory'] as List<dynamic>?);
+    await _mergeWatchlist(data['watchlist'] as List<dynamic>?);
+    await _mergePlugins(data['plugins'] as List<dynamic>?);
+    await _importSettings(data['settings'] as Map<String, dynamic>?);
+
+    return true;
   }
 
   // ─── Helpers ────────────────────────────────────────────────────────
@@ -139,10 +128,20 @@ class ExportImportService {
 
       final existing = HiveService.watchHistoryBox.get(key);
       if (existing != null) {
-        // Keep the one with the more recent lastPlayedAt
-        final existingTime = existing['lastPlayedAt'] as int? ?? 0;
-        final importTime = map['lastPlayedAt'] as int? ?? 0;
-        if (importTime <= existingTime) continue;
+        // Keep the entry with the more recent lastPlayedDate.
+        // UserProgress.toMap() stores the date as an ISO-8601 string
+        // under 'lastPlayedDate', NOT as an integer 'lastPlayedAt'.
+        final existingDateStr = existing['lastPlayedDate'] as String?;
+        final importDateStr = map['lastPlayedDate'] as String?;
+        if (existingDateStr != null && importDateStr != null) {
+          final existingDate = DateTime.tryParse(existingDateStr);
+          final importDate = DateTime.tryParse(importDateStr);
+          if (existingDate != null &&
+              importDate != null &&
+              !importDate.isAfter(existingDate)) {
+            continue;
+          }
+        }
       }
       await HiveService.watchHistoryBox.put(key, map);
     }

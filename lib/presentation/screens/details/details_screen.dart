@@ -350,6 +350,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     String? preferredId,
   ) {
     final activePlugin = _resolvePlugin(plugins, preferredId);
+    final isTV = details.type == MediaType.tv;
     final isInWatchlist = ref.watch(
       watchlistProvider.select(
         (list) => list.any((m) => m.tmdbId == details.tmdbId),
@@ -371,7 +372,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 onPressed: () => _executePlugin(context, activePlugin, details),
                 icon: const Icon(Icons.play_arrow_rounded, size: 28),
                 label: Text(
-                  'Watch Movie',
+                  isTV ? 'Watch Series' : 'Watch Movie',
                   style: AppTextStyles.label.copyWith(fontSize: 18),
                 ),
                 style: ElevatedButton.styleFrom(
@@ -400,12 +401,18 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         if (details.metadata.trailerKey != null)
           _buildCircularDesktopAction(
             icon: Icons.movie_outlined,
-            onPressed: () => launchUrl(
-              Uri.parse(
+            onPressed: () async {
+              final uri = Uri.parse(
                 'https://www.youtube.com/watch?v=${details.metadata.trailerKey}',
-              ),
-              mode: LaunchMode.externalApplication,
-            ),
+              );
+              if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Could not open trailer')),
+                  );
+                }
+              }
+            },
           ),
       ],
     );
@@ -841,7 +848,15 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
     switch (plugin.actionType) {
       case ActionType.externalLink:
-        launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        final launched = await launchUrl(
+          Uri.parse(url),
+          mode: LaunchMode.externalApplication,
+        );
+        if (!launched && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not open link')),
+          );
+        }
         break;
       case ActionType.webview:
         // Look up saved progress to auto-resume from last position.
@@ -878,7 +893,15 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     final url = Uri.parse('https://www.youtube.com/watch?v=$key');
 
     return OutlinedButton.icon(
-      onPressed: () => launchUrl(url, mode: LaunchMode.externalApplication),
+      onPressed: () async {
+        if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Could not open trailer')),
+            );
+          }
+        }
+      },
       icon: const Icon(Icons.play_circle_outline, size: 20),
       label: Text('Watch Trailer', style: AppTextStyles.labelSmall),
       style: OutlinedButton.styleFrom(
