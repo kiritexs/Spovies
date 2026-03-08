@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "Kiritex" "\0"
-            VALUE "FileDescription", "spovies" "\0"
+            VALUE "FileDescription", "Spovies" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "spovies" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 Kiritex. All rights reserved." "\0"
             VALUE "OriginalFilename", "spovies.exe" "\0"
-            VALUE "ProductName", "spovies" "\0"
+            VALUE "ProductName", "Spovies" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

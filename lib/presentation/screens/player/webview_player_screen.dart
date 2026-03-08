@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -779,6 +780,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
 
   // Stored so imperative operations (reload, goBack, etc.) are possible.
   InAppWebViewController? _controller;
+  WebViewEnvironment? _webViewEnvironment;
 
   int _loadProgress = 0;
   bool _hasError = false;
@@ -796,6 +798,30 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     super.initState();
     _lockLandscape();
     _eventBridge = EventBridge(onProgressUpdate: _onProgressUpdate);
+    if (Platform.isWindows) {
+      _initWebViewEnvironment();
+    }
+  }
+
+  Future<void> _initWebViewEnvironment() async {
+    try {
+      final supportDir = await getApplicationSupportDirectory();
+      _webViewEnvironment = await WebViewEnvironment.create(
+        settings: WebViewEnvironmentSettings(
+          userDataFolder: '${supportDir.path}\\Spovies_WebView2',
+        ),
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('WebViewEnvironment.create error: $e');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMsg =
+              'WebView initialization failed. Please ensure WebView2 Runtime is installed.';
+        });
+      }
+    }
+    if (mounted) setState(() {});
   }
 
   @override
@@ -972,11 +998,12 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
         forMainFrameOnly: false,
       ),
     // 2. Block ad scripts and popups.
-    UserScript(
-      source: _kAdRemovalJs,
-      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-      forMainFrameOnly: false,
-    ),
+    if (Platform.isWindows)
+      UserScript(
+        source: _kAdRemovalJs,
+        injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        forMainFrameOnly: false,
+      ),
     // 3. Block click-jacking.
     UserScript(
       source: _kAntiClickjackJs,
@@ -1027,7 +1054,12 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
         // No GestureDetector wrapper — touch events go directly to WebView.
         body: Stack(
           children: [
-            _hasError ? _buildErrorState() : _buildWebView(),
+            if (Platform.isWindows && _webViewEnvironment == null)
+              const Center(
+                child: CircularProgressIndicator(color: AppColors.primary),
+              )
+            else
+              _hasError ? _buildErrorState() : _buildWebView(),
             _buildLoadingOverlay(),
             _buildProgressBar(),
             _buildCloseButton(),
@@ -1046,6 +1078,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
       onKeyEvent: (node, event) => KeyEventResult.handled,
       onKey: (node, event) => KeyEventResult.handled,
       child: InAppWebView(
+        webViewEnvironment: _webViewEnvironment,
         preventGestureDelay: true,
         // Forward gestures so panning works on mobile.
         // E.g. scrolling lists inside the video player UI or zooming.
@@ -1169,7 +1202,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
               scheme != 'about' &&
               scheme != 'javascript') {
             if (kDebugMode) {
-              debugPrint('WebView: Blocked non-standard scheme "$scheme": $url');
+              debugPrint(
+                'WebView: Blocked non-standard scheme "$scheme": $url',
+              );
             }
             return NavigationActionPolicy.CANCEL;
           }
