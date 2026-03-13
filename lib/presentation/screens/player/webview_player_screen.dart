@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -741,6 +742,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   int _loadProgress = 0;
   bool _hasError = false;
   String _errorMsg = '';
+  bool _isFullScreen = false;
 
   // ─── Gesture recognizers — transferred to the WebView ────────────────────
   // Giving explicit ownership of these gestures to the WebView prevents the
@@ -756,7 +758,13 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     _eventBridge = EventBridge(onProgressUpdate: _onProgressUpdate);
     if (Platform.isWindows) {
       _initWebViewEnvironment();
+      _checkFullScreen();
     }
+  }
+
+  Future<void> _checkFullScreen() async {
+    final isFullscreen = await windowManager.isFullScreen();
+    if (mounted) setState(() => _isFullScreen = isFullscreen);
   }
 
   Future<void> _initWebViewEnvironment() async {
@@ -1023,7 +1031,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
               _hasError ? _buildErrorState() : _buildWebView(),
             _buildLoadingOverlay(),
             _buildProgressBar(),
-            _buildCloseButton(),
+            _buildWindowActions(),
           ],
         ),
       ),
@@ -1321,32 +1329,89 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     );
   }
 
-  // ─── Close Button ─────────────────────────────────────────────────────────
+  // ─── Window Actions ───────────────────────────────────────────────────────
 
-  Widget _buildCloseButton() {
+  Widget _buildWindowActions() {
     return Positioned(
-      top: 12,
-      right: 16,
-      child: SafeArea(
-        child: Material(
-          color: Colors.black54,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-            onTap: _dismiss,
-            child: const Padding(
-              padding: EdgeInsets.all(10),
-              child: Icon(Icons.close_rounded, color: Colors.white, size: 20),
+      top: 30,
+      left: 0,
+      right: 0,
+      child: Row(
+        children: [
+          // Drag area
+          if (Platform.isWindows)
+            Expanded(
+              child: DragToMoveArea(
+                child: Container(
+                  height:
+                      60, // Tall enough for dragging but don't block controls
+                  color: Colors.transparent,
+                ),
+              ),
+            )
+          else
+            const Spacer(),
+
+          // Buttons
+          Padding(
+            padding: const EdgeInsets.only(top: 12, right: 16),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (Platform.isWindows) ...[
+                  _buildActionButton(
+                    icon: _isFullScreen
+                        ? Icons.fullscreen_exit_rounded
+                        : Icons.fullscreen_rounded,
+                    onTap: _toggleFullScreen,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                _buildActionButton(icon: Icons.close_rounded, onTap: _dismiss),
+              ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return SafeArea(
+      child: Material(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Icon(icon, color: Colors.white, size: 20),
           ),
         ),
       ),
     );
   }
 
+  Future<void> _toggleFullScreen() async {
+    final isFull = await windowManager.isFullScreen();
+    await windowManager.setFullScreen(!isFull);
+    if (mounted) {
+      setState(() {
+        _isFullScreen = !isFull;
+      });
+    }
+  }
+
   // ─── Actions ──────────────────────────────────────────────────────────────
 
-  void _dismiss() {
+  void _dismiss() async {
+    if (Platform.isWindows) {
+      await windowManager.setFullScreen(false);
+    }
     if (mounted) Navigator.pop(context);
   }
 
