@@ -52,18 +52,23 @@ class UserProgress {
   };
 
   /// Create from Hive Map.
+  ///
+  /// All casts are null-safe so that old stored entries (written by a
+  /// previous app version with a different schema) never crash the app.
   factory UserProgress.fromMap(Map<dynamic, dynamic> map) {
     return UserProgress(
-      mediaId: map['mediaId'] as String,
-      mediaType: map['mediaType'] as String,
-      title: map['title'] as String,
+      mediaId: (map['mediaId'] as String?) ?? '',
+      mediaType: (map['mediaType'] as String?) ?? 'movie',
+      title: (map['title'] as String?) ?? 'Unknown',
       posterPath: map['posterPath'] as String?,
-      percentage: (map['percentage'] as num).toDouble(),
-      currentTime: (map['currentTime'] as num).toDouble(),
-      duration: (map['duration'] as num).toDouble(),
+      percentage: (map['percentage'] as num?)?.toDouble() ?? 0,
+      currentTime: (map['currentTime'] as num?)?.toDouble() ?? 0,
+      duration: (map['duration'] as num?)?.toDouble() ?? 0,
       season: map['season'] as int?,
       episode: map['episode'] as int?,
-      lastPlayedDate: DateTime.parse(map['lastPlayedDate'] as String),
+      lastPlayedDate: map['lastPlayedDate'] != null
+          ? DateTime.tryParse(map['lastPlayedDate'] as String) ?? DateTime.now()
+          : DateTime.now(),
     );
   }
 }

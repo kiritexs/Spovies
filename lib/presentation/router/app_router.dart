@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-
 import '../../domain/entities/media_item.dart';
 import '../screens/details/details_screen.dart';
 import '../screens/explore/all_media_screen.dart';
@@ -150,7 +149,9 @@ class _RouteErrorScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (kDebugMode) {
-      debugPrint('Router: navigated to "$routeName" with invalid or null extra');
+      debugPrint(
+        'Router: navigated to "$routeName" with invalid or null extra',
+      );
     }
     return Scaffold(
       backgroundColor: Colors.black,
@@ -167,7 +168,10 @@ class _RouteErrorScreen extends StatelessWidget {
             const SizedBox(height: 24),
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Go Back', style: TextStyle(color: Colors.white70)),
+              child: const Text(
+                'Go Back',
+                style: TextStyle(color: Colors.white70),
+              ),
             ),
           ],
         ),
@@ -188,10 +192,18 @@ class PlayerArgs {
   /// position (in seconds) once playback starts.
   final double resumeTimeSeconds;
 
+  /// For TV episodes — used as the authoritative Hive key source so that
+  /// the universal JS tracker (which never sends season/episode) still
+  /// saves progress under the correct per-episode key.
+  final int? season;
+  final int? episode;
+
   const PlayerArgs({
     required this.url,
     required this.media,
     required this.pluginName,
     this.resumeTimeSeconds = 0,
+    this.season,
+    this.episode,
   });
 }

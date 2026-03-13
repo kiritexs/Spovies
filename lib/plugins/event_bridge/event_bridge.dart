@@ -2,6 +2,16 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+/// Safely casts a JSON value to int?.
+/// Returns null if the value is not a number (e.g. `false` sent by plugins
+/// for movie season/episode fields).
+int? _toIntOrNull(dynamic v) {
+  if (v == null || v is bool) return null;
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  return null;
+}
+
 /// Parsed event from a plugin's WebView postMessage.
 class PlayerEvent {
   final String eventType; // timeupdate, play, pause, ended, seeked
@@ -58,8 +68,8 @@ class PlayerEvent {
         progress: (data['progress'] as num?)?.toDouble() ?? 0,
         mediaId: data['id']?.toString() ?? '',
         mediaType: data['mediaType'] as String? ?? 'movie',
-        season: data['season'] as int?,
-        episode: data['episode'] as int?,
+        season: _toIntOrNull(data['season']),
+        episode: _toIntOrNull(data['episode']),
       );
     } catch (e) {
       debugPrint('EventBridge: Failed to parse postMessage: $e');
@@ -88,13 +98,22 @@ class EventBridge {
     final event = PlayerEvent.tryParse(rawMessage);
     if (event == null) return;
 
-    // For critical events (pause, ended, seeked), always save
-    if (event.eventType != 'timeupdate') {
+    // Only 'ended' and 'pause' skip the throttle — they are the only events
+    // where an immediate save is critical (user stopped or finished watching).
+    //
+    // 'seeked' is intentionally throttled: scrubbing fires it dozens of times
+    // per second, and writing on every one causes unnecessary Hive I/O with
+    // no UX benefit (the final resting currentTime is already captured by the
+    // next throttled timeupdate or by a subsequent pause/ended).
+    //
+    // 'play' is also throttled — it carries the same time value as the
+    // preceding timeupdate and adds nothing.
+    if (event.eventType == 'ended' || event.eventType == 'pause') {
       onProgressUpdate(event);
       return;
     }
 
-    // Throttle timeupdate events to 1 write per 5 seconds
+    // Throttle everything else (timeupdate, seeked, play) to 1 write per 5 s.
     final now = DateTime.now();
     if (_lastWrite == null ||
         now.difference(_lastWrite!) >= _throttleDuration) {

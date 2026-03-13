@@ -15,6 +15,7 @@ import '../../../domain/entities/media_item.dart';
 import '../../../domain/entities/user_progress.dart';
 import '../../../plugins/event_bridge/event_bridge.dart';
 import '../../providers/watch_history_providers.dart';
+import '../../../data/services/remote_blocklist.dart';
 
 // ─── Bridge JS — injected at document-end, guarded by flag ───────────────────
 //
@@ -330,26 +331,40 @@ const _kNoSelectCss = '''
 // to known ad domains before they leave the WebView.  This mimics DNS-level
 // blocking without the overhead of platform channel communication.
 
+const String _kSpoviesIsAdJs = '''
+  (function() {
+    if (window.__spoviesIsAdReady) return;
+    window.__spoviesIsAdReady = true;
+    
+    // Quick heuristic blocklist for JS-level instant blocking.
+    // Full blocklist (~35k+) is handled at the native layer.
+    var quickAds = [
+      'doubleclick', 'googlesyndication', 'adservice', 'popads', 'popcash',
+      'juicyads', 'exoclick', 'trafficjunky', 'propellerads', 'adsterra',
+      'onclkds', 'onclickmax', 'pushame', 'gamerhit', 'trakzon', 'goosebomb',
+      'etoro', 'gryphline', 'ads', 'hilltopads', 'adtng', 'adrunnr',
+      'adskeeper', 'clickadu', 'clickaine', 'vid-news', 'best-video',
+      'tr-video', 'host-c', 'dood', 'host-d', 'upstream', 'mixdrop',
+      'voe', 'wolfstream', 'gounlimited', 'host-a', 'host-b'
+    ];
+
+    window.__spoviesIsAd = function(url) {
+      if (!url) return false;
+      var s = url.toString().toLowerCase();
+      for (var i = 0; i < quickAds.length; i++) {
+        if (s.indexOf(quickAds[i]) !== -1) return true;
+      }
+      return false;
+    };
+  })();
+''';
+
 const String _kAdGuardJs = '''
     (function() {
       if (window.__spoviesAdGuard) return;
       window.__spoviesAdGuard = true;
 
-      var blocked = ['doubleclick','googlesyndication','popads','popcash',
-                     'exoclick','trafficjunky','propellerads', 'adsterra',
-                     'onclkds','onclickmax','juicyads','gamerhit','trakzon',
-                     'goosebomb','etoro','gryphline','vid-news','best-video',
-                     'tr-video','host-c','dood','host-d','upstream','mixdrop',
-                     'voe','wolfstream','gounlimited','host-a','host-b'];
-
-      function isBlocked(url) {
-        if (!url) return false;
-        var s = url.toString().toLowerCase();
-        for (var i = 0; i < blocked.length; i++) {
-          if (s.indexOf(blocked[i]) !== -1) return true;
-        }
-        return false;
-      }
+      var isBlocked = window.__spoviesIsAd || function() { return false; };
 
       // 1. Patch Fetch API
       var _origFetch = window.fetch;
@@ -467,17 +482,24 @@ const _kAdRemovalJs = '''
   ].join(',');
 
   function removeAds() {
+    var style = 'display:none!important;visibility:hidden!important;pointer-events:none!important;opacity:0!important;width:0px!important;height:0px!important;';
+    
     document.querySelectorAll(adSelectors).forEach(function(el) {
-      el.remove();
+      if (el.style.display !== 'none') {
+        el.setAttribute('style', style);
+      }
     });
-    // Remove fixed-position overlays that cover the entire viewport
+
+    // Hide fixed-position overlays that cover the entire viewport
     // (common click-jacker pattern) but skip the actual video player.
     document.querySelectorAll('div, section, aside').forEach(function(el) {
+      if (el.getAttribute('id') === 'spovies-handled') return;
       var cs = window.getComputedStyle(el);
-      if (cs.position === 'fixed' && cs.zIndex && parseInt(cs.zIndex) > 999) {
+      if (cs.position === 'fixed' && cs.zIndex && parseInt(cs.zIndex) > 99) {
         // Skip if it contains a video element (it's the actual player).
         if (!el.querySelector('video') && !el.querySelector('iframe[src*="embed"]')) {
-          el.remove();
+          el.setAttribute('style', style);
+          el.setAttribute('id', 'spovies-handled');
         }
       }
     });
@@ -507,13 +529,8 @@ const _kAdRemovalJs = '''
         var origSet = _origSrc.set;
         Object.defineProperty(el, 'src', {
           set: function(v) {
-            var blocked = ['ads','doubleclick','googlesyndication','popads',
-                           'popcash','exoclick','trafficjunky','propellerads',
-                           'adsterra','onclkds','onclickmax','juicyads',
-                           'gamerhit','trakzon','goosebomb','etoro'];
-            for (var i = 0; i < blocked.length; i++) {
-              if (v && v.indexOf(blocked[i]) !== -1) return;
-            }
+            var isBlocked = window.__spoviesIsAd || function() { return false; };
+            if (isBlocked(v)) return;
             origSet.call(this, v);
           },
           get: function() { return _origSrc.get ? _origSrc.get.call(this) : ''; }
@@ -535,21 +552,7 @@ const _kAntiClickjackJs = '''
   if (window.__spoviesAntiCJ) return;
   window.__spoviesAntiCJ = true;
 
-  // Ad domain fragments used by all interceptors below.
-  var adDomains = ['doubleclick','googlesyndication','popads','popcash',
-    'exoclick','trafficjunky','propellerads','adsterra','juicyads',
-    'onclkds','onclickmax','pushame','hilltopads','adtng','adrunnr',
-    'adskeeper','clickadu','clickaine','gamerhit','trakzon','goosebomb',
-    'etoro','gryphline'];
-
-  function isAdUrl(url) {
-    if (!url) return false;
-    var s = url.toString().toLowerCase();
-    for (var i = 0; i < adDomains.length; i++) {
-      if (s.indexOf(adDomains[i]) !== -1) return true;
-    }
-    return false;
-  }
+  var isAdUrl = window.__spoviesIsAd || function() { return false; };
 
   // ── 1. Block <a> clicks to known ad domains ──────────────────────────
   document.addEventListener('click', function(e) {
@@ -605,7 +608,34 @@ const _kAntiClickjackJs = '''
         scheme !== 'about' && scheme !== 'javascript') {
       return true;
     }
-    return isAdUrl(s);
+    
+    // Check known ad domains quickly
+    if (isAdUrl(s)) return true;
+
+    // Aggressive click-hijack prevention:
+    // If JS is trying to navigate the main frame to a completely different domain,
+    // block it. The player should never navigate away from itself programmatically.
+    try {
+      var newUrl = new URL(s, window.location.href);
+      if (newUrl.protocol === 'about:' || newUrl.protocol === 'data:') {
+         return true; // Programmatic navigation to about:blank or data: is blocked
+      }
+
+      var currentHost = window.location.hostname;
+      var newHost = newUrl.hostname;
+      
+      var getBase = function(h) {
+        var p = h.split('.');
+        if (p.length < 2) return h;
+        return p[p.length - 2] + '.' + p[p.length - 1];
+      };
+      
+      if (currentHost && newHost && getBase(currentHost) !== getBase(newHost)) {
+         return true; // Block cross-domain hijack!
+      }
+    } catch(e) {}
+
+    return false;
   }
 
   var _origAssign = Location.prototype.assign;
@@ -644,97 +674,23 @@ const _kAntiClickjackJs = '''
   } catch(e) {
     // Location.prototype may not be patchable on all WebView versions; safe to ignore.
   }
+
+  // ── 5. Neuter programmatic clicks on unattached links and forms ──
+  var _origAnchorClick = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function() {
+    var target = (this.getAttribute('target') || '').toLowerCase();
+    if (target === '_blank' || isAdUrl(this.href) || isSuspiciousNavigation(this.href)) return;
+    return _origAnchorClick.apply(this, arguments);
+  };
+  
+  var _origFormSubmit = HTMLFormElement.prototype.submit;
+  HTMLFormElement.prototype.submit = function() {
+    var target = (this.getAttribute('target') || '').toLowerCase();
+    if (target === '_blank' || isAdUrl(this.action) || isSuspiciousNavigation(this.action)) return;
+    return _origFormSubmit.apply(this, arguments);
+  };
 })();
 ''';
-
-// Domain fragments used by shouldOverrideUrlLoading and
-// shouldInterceptRequest to reject ad navigations and resource loads.
-const _kBlockedDomainFragments = [
-  // Google ads & tracking
-  'doubleclick.net',
-  'googlesyndication.com',
-  'googleadservices.com',
-  'adservice.google.',
-  'pagead2.googlesyndication.com',
-  'google-analytics.com',
-  'analytics.google.com',
-  // Yahoo / Oath
-  'ads.yahoo.com',
-  'advertising.com',
-  // Major ad exchanges
-  'adnxs.com',
-  'adsrvr.org',
-  'outbrain.com',
-  'taboola.com',
-  // Pop / redirect ad networks
-  'popads.net',
-  'popcash.net',
-  'juicyads.com',
-  'exoclick.com',
-  'trafficjunky.com',
-  'propellerads.com',
-  'hilltopads.net',
-  'adsterra.com',
-  'revenuehits.com',
-  'onclkds.com',
-  'onclickmax.com',
-  'pushame.com',
-  'clickadu.com',
-  'clickaine.com',
-  'adtng.com',
-  'adrunnr.com',
-  'adskeeper.co.uk',
-  'a-ads.com',
-  'ad-maven.com',
-  'admaven.co',
-  'revcontent.com',
-  'mgid.com',
-  'bidvertiser.com',
-  'richpush.co',
-  'galaksion.com',
-  'acint.net',
-  // New domains found in Windows logs (aggressive redirects)
-  'gamerhit.co',
-  'trakzon.com',
-  'goosebomb.com',
-  'etoro.com',
-  'gryphline.com',
-  'arknights.endfield',
-  'vid-news.com',
-  'best-video.net',
-  'tr-video.net',
-  'host-c.example.com',
-  'dood.re',
-  'dood.to',
-  'dood.li',
-  'host-d.example.com',
-  'upstream.to',
-  'mixdrop.to',
-  'voe.sx',
-  'wolfstream.tv',
-  'gounlimited.to',
-  'host-a.example.com',
-  'host-b.example.com',
-  // URL shorteners / link monetization
-  'adf.ly',
-  'shorte.st',
-  'linkvertise.com',
-  'bc.vc',
-  'ouo.io',
-  'sh.st',
-  // Social trackers
-  'facebook.net/tr',
-  'connect.facebook.net',
-  // Analytics / heatmaps
-  'hotjar.com',
-  'cdn.mouseflow.com',
-  'clarity.ms',
-  // Common streaming-site ad domains
-  'betrad.com',
-  'serving-sys.com',
-  'yieldmanager.com',
-  'cpmstar.com',
-];
 
 /// Full-screen WebView player.
 ///
@@ -974,7 +930,13 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   );
 
   List<UserScript> get _userScripts => [
-    // 0. Android: Spoof navigator.userAgentData ASAP so any inline scripts that
+    // 0. Inject instant block heuristic for JS level blocking.
+    UserScript(
+      source: _kSpoviesIsAdJs,
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+      forMainFrameOnly: false,
+    ),
+    // 1. Android: Spoof navigator.userAgentData ASAP so any inline scripts that
     //    run at document-start see a regular Chrome identity, not "Android WebView".
     //    Applied before all other scripts so site feature-detection runs against
     //    the spoofed data.
@@ -984,26 +946,25 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
         injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         forMainFrameOnly: false,
       ),
-    // 1. Spovies AdGuard (DNS-level block replacement).
+    // 2. Spovies AdGuard (DNS-level block replacement).
     UserScript(
       source: _kAdGuardJs,
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
       forMainFrameOnly: false,
     ),
-    // 2. Suppress console and spoof devtool checks ASAP.
+    // 3. Suppress console and spoof devtool checks ASAP.
     if (Platform.isWindows)
       UserScript(
         source: _kConsoleKillerJs,
         injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         forMainFrameOnly: false,
       ),
-    // 2. Block ad scripts and popups.
-    if (Platform.isWindows)
-      UserScript(
-        source: _kAdRemovalJs,
-        injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-        forMainFrameOnly: false,
-      ),
+    // 4. Block ad scripts and popups (Cross-platform).
+    UserScript(
+      source: _kAdRemovalJs,
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+      forMainFrameOnly: false,
+    ),
     // 3. Block click-jacking.
     UserScript(
       source: _kAntiClickjackJs,
@@ -1209,13 +1170,40 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
             return NavigationActionPolicy.CANCEL;
           }
 
-          // 2. Block known ad/malicious domains
-          for (final domain in _kBlockedDomainFragments) {
-            if (url.contains(domain)) {
-              if (kDebugMode) {
-                debugPrint('WebView: Blocked navigation to $url');
+          // 2. Block known ad/malicious domains using the Remote Blocklist
+          final blocklist =
+              ref.read(adBlocklistProvider).value ??
+              ref.read(adBlocklistFallbackProvider);
+          if (blocklist?.isBlocked(url) ?? false) {
+            if (kDebugMode) {
+              debugPrint('WebView: Blocked navigation to $url');
+            }
+            return NavigationActionPolicy.CANCEL;
+          }
+
+          // 3. Main Frame Navigation Lock
+          // Streaming players never legitimately navigate the top-level window
+          // to completely different domains after loading.
+          if (navigationAction.isForMainFrame && _loadProgress == 100) {
+            final newHost = urlRequest.url?.host.toLowerCase() ?? '';
+            final initialHost =
+                Uri.tryParse(widget.url)?.host.toLowerCase() ?? '';
+
+            if (newHost.isNotEmpty && initialHost.isNotEmpty) {
+              String getBase(String h) {
+                final p = h.split('.');
+                if (p.length < 2) return h;
+                return '${p[p.length - 2]}.${p[p.length - 1]}';
               }
-              return NavigationActionPolicy.CANCEL;
+
+              if (getBase(newHost) != getBase(initialHost)) {
+                if (kDebugMode) {
+                  debugPrint(
+                    'WebView: Blocked main frame hijack to $newHost (started on $initialHost)',
+                  );
+                }
+                return NavigationActionPolicy.CANCEL;
+              }
             }
           }
 
@@ -1229,13 +1217,14 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
             ? null
             : (controller, request) async {
                 final url = request.url.toString();
-                for (final domain in _kBlockedDomainFragments) {
-                  if (url.contains(domain)) {
-                    return WebResourceResponse(
-                      contentType: 'text/plain',
-                      data: null,
-                    );
-                  }
+                final blocklist =
+                    ref.read(adBlocklistProvider).value ??
+                    ref.read(adBlocklistFallbackProvider);
+                if (blocklist?.isBlocked(url) ?? false) {
+                  return WebResourceResponse(
+                    contentType: 'text/plain',
+                    data: null,
+                  );
                 }
                 return null;
               },
