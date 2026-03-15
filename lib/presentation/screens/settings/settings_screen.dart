@@ -143,7 +143,7 @@ class SettingsScreen extends ConsumerWidget {
                   context,
                   icon: Icons.info_outline_rounded,
                   title: 'Spovies',
-                  subtitle: 'v0.1.1 • A KIRITEX PROJECT',
+                  subtitle: 'v0.1.2 • A KIRITEX PROJECT',
                 ),
                 const SizedBox(height: 8),
                 _buildGlassTile(

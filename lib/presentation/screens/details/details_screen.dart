@@ -106,7 +106,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 preferredId,
                 isDesktop,
                 continueProgress: continueProgress,
-                nextEpisode: continueProgress != null &&
+                nextEpisode:
+                    continueProgress != null &&
                         continueProgress.percentage >= 95 &&
                         details.type == MediaType.tv
                     ? nextEpisode
@@ -420,10 +421,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   }) {
     final activePlugin = _resolvePlugin(plugins, preferredId);
     final isTV = details.type == MediaType.tv;
-    final showResume = continueProgress != null &&
+    final showResume =
+        continueProgress != null &&
         continueProgress.percentage < 95 &&
         plugins.isNotEmpty;
-    final showNextEp = continueProgress != null &&
+    final showNextEp =
+        continueProgress != null &&
         continueProgress.percentage >= 95 &&
         isTV &&
         nextEpisode != null &&
@@ -432,30 +435,32 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     return Row(
       children: [
         if (showResume) ...[
-          SizedBox(
-            width: 280,
-            height: 56,
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: AppColors.primaryGlowShadow,
-              ),
-              child: ElevatedButton.icon(
-                onPressed: () =>
-                    _openContinue(context, details, continueProgress!),
-                icon: const Icon(Icons.play_circle_rounded, size: 28),
-                label: Text(
-                  'Continue (${continueProgress.remainingTime})',
-                  style: AppTextStyles.label.copyWith(fontSize: 16),
-                  overflow: TextOverflow.ellipsis,
+          Flexible(
+            child: SizedBox(
+              width: 280,
+              height: 56,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: AppColors.primaryGlowShadow,
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                child: ElevatedButton.icon(
+                  onPressed: () =>
+                      _openContinue(context, details, continueProgress!),
+                  icon: const Icon(Icons.play_circle_rounded, size: 28),
+                  label: Text(
+                    'Continue (${continueProgress.remainingTime})',
+                    style: AppTextStyles.label.copyWith(fontSize: 16),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  elevation: 0,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 0,
+                  ),
                 ),
               ),
             ),
@@ -762,10 +767,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     ({int season, int episode})? nextEpisode,
   }) {
     final activePlugin = _resolvePlugin(plugins, preferredId);
-    final showResume = continueProgress != null &&
+    final showResume =
+        continueProgress != null &&
         continueProgress.percentage < 95 &&
         plugins.isNotEmpty;
-    final showNextEp = continueProgress != null &&
+    final showNextEp =
+        continueProgress != null &&
         continueProgress.percentage >= 95 &&
         details.type == MediaType.tv &&
         nextEpisode != null &&
@@ -953,7 +960,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                       current?.status.displayName ?? 'Add to Library',
                       style: AppTextStyles.labelSmall.copyWith(
                         color: isInLibrary ? AppColors.primary : Colors.white70,
-                        fontWeight: isInLibrary ? FontWeight.w600 : FontWeight.normal,
+                        fontWeight: isInLibrary
+                            ? FontWeight.w600
+                            : FontWeight.normal,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1100,7 +1109,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                       ref
                           .read(watchStatusNotifierProvider.notifier)
                           .deleteAllStatusesForMedia(details.tmdbId.toString());
-                      ref.read(watchlistProvider.notifier).remove(details.tmdbId);
+                      ref
+                          .read(watchlistProvider.notifier)
+                          .remove(details.tmdbId);
                       Navigator.pop(context);
                     },
                     icon: const Icon(
@@ -1658,7 +1669,9 @@ class _EpisodeRow extends ConsumerWidget {
                     behavior: SnackBarBehavior.floating,
                     backgroundColor: AppColors.surfaceDark,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+                      borderRadius: BorderRadius.circular(
+                        AppSpacing.radiusBase,
+                      ),
                     ),
                   ),
                 );
@@ -1961,8 +1974,8 @@ class _EpisodeStatusPicker extends ConsumerWidget {
                         s == null
                             ? 'Reset Status'
                             : s == WatchStatus.completed
-                                ? 'Mark Watched'
-                                : s.displayName,
+                            ? 'Mark Watched'
+                            : s.displayName,
                         style: AppTextStyles.labelSmall.copyWith(
                           color: s == currentStatus
                               ? AppColors.primary
