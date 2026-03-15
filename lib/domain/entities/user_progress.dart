@@ -10,6 +10,8 @@ class UserProgress {
   final int? season;
   final int? episode;
   final DateTime lastPlayedDate;
+  /// Plugin ID used when this progress was last saved (for "Continue" to reuse).
+  final String? lastPluginId;
 
   const UserProgress({
     required this.mediaId,
@@ -22,6 +24,7 @@ class UserProgress {
     this.season,
     this.episode,
     required this.lastPlayedDate,
+    this.lastPluginId,
   });
 
   /// Remaining time in human-readable format.
@@ -49,6 +52,7 @@ class UserProgress {
     'season': season,
     'episode': episode,
     'lastPlayedDate': lastPlayedDate.toIso8601String(),
+    'lastPluginId': lastPluginId,
   };
 
   /// Create from Hive Map.
@@ -69,6 +73,7 @@ class UserProgress {
       lastPlayedDate: map['lastPlayedDate'] != null
           ? DateTime.tryParse(map['lastPlayedDate'] as String) ?? DateTime.now()
           : DateTime.now(),
+      lastPluginId: map['lastPluginId'] as String?,
     );
   }
 }

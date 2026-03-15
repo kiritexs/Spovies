@@ -715,16 +715,26 @@ class WebViewPlayerScreen extends ConsumerStatefulWidget {
   final MediaItem media;
   final String pluginName;
 
+  /// Plugin ID for saving as [UserProgress.lastPluginId] when progress is saved.
+  final String? pluginId;
+
   /// If > 0, the player will attempt to seek the <video> to this position
   /// (in seconds) once the page finishes loading.
   final double resumeTimeSeconds;
+
+  /// For TV episodes — used when the bridge event has null season/episode.
+  final int? season;
+  final int? episode;
 
   const WebViewPlayerScreen({
     super.key,
     required this.url,
     required this.media,
     required this.pluginName,
+    this.pluginId,
     this.resumeTimeSeconds = 0,
+    this.season,
+    this.episode,
   });
 
   @override
@@ -838,12 +848,14 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
       percentage: event.progress,
       currentTime: event.currentTime,
       duration: event.duration,
-      season: event.season,
-      episode: event.episode,
+      season: event.season ?? widget.season,
+      episode: event.episode ?? widget.episode,
       lastPlayedDate: DateTime.now(),
+      lastPluginId: widget.pluginId,
     );
     ref.read(watchHistoryRepositoryProvider).saveProgress(progress);
     ref.invalidate(continueWatchingProvider);
+    ref.invalidate(episodeProgressProvider);
   }
 
   // ─── Settings ────────────────────────────────────────────────────────────
@@ -1333,9 +1345,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
 
   Widget _buildWindowActions() {
     return Positioned(
-      top: 30,
-      left: 0,
-      right: 0,
+      top: 0,
+      left: 50,
+      right: 100,
       child: Row(
         children: [
           // Drag area
@@ -1352,7 +1364,6 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
           else
             const Spacer(),
 
-          // Buttons
           Padding(
             padding: const EdgeInsets.only(top: 12, right: 16),
             child: Row(
@@ -1371,6 +1382,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
               ],
             ),
           ),
+          // Buttons
         ],
       ),
     );

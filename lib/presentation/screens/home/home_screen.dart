@@ -9,8 +9,15 @@ import 'package:spovies/core/theme/app_text_styles.dart';
 import 'package:spovies/core/utils/tmdb_image_url.dart';
 import 'package:spovies/domain/entities/media_item.dart';
 import 'package:spovies/domain/entities/media_type.dart';
+import 'package:spovies/domain/entities/user_progress.dart';
+import 'package:spovies/plugins/protocol/plugin_url_resolver.dart';
+import 'package:spovies/plugins/protocol/trigger_hook.dart';
+import 'package:spovies/presentation/providers/details_providers.dart';
 import 'package:spovies/presentation/providers/media_providers.dart';
+import 'package:spovies/presentation/providers/plugin_providers.dart';
+import 'package:spovies/presentation/providers/settings_providers.dart';
 import 'package:spovies/presentation/providers/watch_history_providers.dart';
+import 'package:spovies/presentation/router/app_router.dart';
 import 'package:spovies/presentation/widgets/app_header.dart';
 import 'package:spovies/presentation/widgets/continue_watching_card.dart';
 import 'package:spovies/presentation/widgets/hero_card.dart';
@@ -154,6 +161,78 @@ class _HomeContent extends ConsumerWidget {
   }
 }
 
+// ─── Continue Watching (open player at resume position) ─────────────────────
+
+Future<void> _continueWatching(
+  BuildContext context,
+  WidgetRef ref,
+  UserProgress item,
+) async {
+  final tmdbId = int.tryParse(item.mediaId);
+  if (tmdbId == null || tmdbId == 0) return;
+
+  final mediaType = MediaType.fromString(item.mediaType);
+  final detailsAsync = ref.read(
+    mediaDetailsProvider((tmdbId: tmdbId, type: mediaType)).future,
+  );
+
+  MediaItem media;
+  try {
+    media = await detailsAsync;
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not load: $e'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    }
+    return;
+  }
+
+  final plugins = await ref.read(
+    pluginsForHookProvider(TriggerHook.mediaHeader).future,
+  );
+  if (plugins.isEmpty && context.mounted) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('No watch plugin available')));
+    return;
+  }
+
+  final preferredId = ref.read(preferredPluginProvider);
+  var activePlugin = plugins.first;
+  if (item.lastPluginId != null) {
+    final match = plugins.where((p) => p.pluginId == item.lastPluginId);
+    if (match.isNotEmpty) activePlugin = match.first;
+  } else if (preferredId != null) {
+    final match = plugins.where((p) => p.pluginId == preferredId);
+    if (match.isNotEmpty) activePlugin = match.first;
+  }
+
+  final url = PluginUrlResolver.resolve(
+    activePlugin,
+    media,
+    season: item.season ?? 1,
+    episode: item.episode ?? 1,
+  );
+
+  if (!context.mounted) return;
+  context.push(
+    '/player',
+    extra: PlayerArgs(
+      url: url,
+      media: media,
+      pluginName: activePlugin.name,
+      pluginId: activePlugin.pluginId,
+      resumeTimeSeconds: item.currentTime,
+      season: item.season,
+      episode: item.episode,
+    ),
+  );
+}
+
 // ─── Continue Watching Section ────────────────────────────────────────────────
 
 class _ContinueWatchingSection extends ConsumerWidget {
@@ -186,34 +265,77 @@ class _ContinueWatchingSection extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 16),
-              ...items.map((item) {
-                final thumbUrl = buildImageUrl(
-                  item.posterPath,
-                  AppConfig.posterSmall,
-                );
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: ContinueWatchingCard(
-                    title: item.title,
-                    remainingTime: item.remainingTime,
-                    progress: (item.percentage / 100).clamp(0.0, 1.0),
-                    thumbnailUrl: thumbUrl,
-                    episodeLabel: (item.season != null && item.episode != null)
-                        ? 'S${item.season} E${item.episode}'
-                        : null,
-                    onTap: () => context.push(
-                      '/details',
-                      extra: MediaItem(
-                        id: item.mediaId,
-                        tmdbId: int.tryParse(item.mediaId) ?? 0,
-                        type: MediaType.fromString(item.mediaType),
-                        title: item.title,
-                        posterPath: item.posterPath,
-                      ),
-                    ),
+              if (MediaQuery.of(context).size.width > 600)
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: items.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisExtent: AppSpacing.continueWatchingHeight,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 12,
                   ),
-                );
-              }),
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    final thumbUrl = buildImageUrl(
+                      item.posterPath,
+                      AppConfig.posterSmall,
+                    );
+                    return ContinueWatchingCard(
+                      title: item.title,
+                      remainingTime: item.remainingTime,
+                      progress: (item.percentage / 100).clamp(0.0, 1.0),
+                      thumbnailUrl: thumbUrl,
+                      episodeLabel: (item.season != null && item.episode != null)
+                          ? 'S${item.season} E${item.episode}'
+                          : null,
+                      onTap: () => context.push(
+                        '/details',
+                        extra: MediaItem(
+                          id: item.mediaId,
+                          tmdbId: int.tryParse(item.mediaId) ?? 0,
+                          type: MediaType.fromString(item.mediaType),
+                          title: item.title,
+                          posterPath: item.posterPath,
+                        ),
+                      ),
+                      onContinueTap: () => _continueWatching(context, ref, item),
+                    );
+                  },
+                )
+              else
+                ...items.map((item) {
+                  final thumbUrl = buildImageUrl(
+                    item.posterPath,
+                    AppConfig.posterSmall,
+                  );
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: ContinueWatchingCard(
+                      title: item.title,
+                      remainingTime: item.remainingTime,
+                      progress: (item.percentage / 100).clamp(0.0, 1.0),
+                      thumbnailUrl: thumbUrl,
+                      episodeLabel:
+                          (item.season != null && item.episode != null)
+                              ? 'S${item.season} E${item.episode}'
+                              : null,
+                      onTap: () => context.push(
+                        '/details',
+                        extra: MediaItem(
+                          id: item.mediaId,
+                          tmdbId: int.tryParse(item.mediaId) ?? 0,
+                          type: MediaType.fromString(item.mediaType),
+                          title: item.title,
+                          posterPath: item.posterPath,
+                        ),
+                      ),
+                      onContinueTap: () =>
+                          _continueWatching(context, ref, item),
+                    ),
+                  );
+                }),
             ],
           ),
         );

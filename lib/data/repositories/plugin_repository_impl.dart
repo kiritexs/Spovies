@@ -37,6 +37,19 @@ class PluginRepositoryImpl implements PluginRepository {
   }
 
   @override
+  Future<List<PluginManifest>> installFromRegistry(String url) async {
+    final manifests = await _discoveryService.fetchRegistry(url);
+    final installed = <PluginManifest>[];
+    for (final manifest in manifests) {
+      if (HiveService.pluginsBox.containsKey(manifest.pluginId)) continue;
+      final json = PluginManifestModel.toJson(manifest);
+      await HiveService.pluginsBox.put(manifest.pluginId, json);
+      installed.add(manifest);
+    }
+    return installed;
+  }
+
+  @override
   Future<void> uninstall(String pluginId) async {
     await HiveService.pluginsBox.delete(pluginId);
   }

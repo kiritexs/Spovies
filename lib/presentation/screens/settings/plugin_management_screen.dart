@@ -79,7 +79,7 @@ class PluginManagementScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Tap + to add a plugin by URL',
+            'Tap + to add a plugin or a registry URL (one link for multiple plugins)',
             style: AppTextStyles.cardSubtitle,
           ),
         ],
@@ -393,7 +393,7 @@ class _AddPluginSheetState extends ConsumerState<_AddPluginSheet> {
                 Text('Add Plugin', style: AppTextStyles.sectionTitle),
                 const SizedBox(height: 8),
                 Text(
-                  'Enter the HTTPS URL of a Spovies plugin manifest',
+                  'Enter one link: a single plugin manifest URL, or a registry URL that returns multiple plugins (JSON array or object with "plugins" array).',
                   style: AppTextStyles.cardSubtitle,
                 ),
                 const SizedBox(height: 20),
@@ -405,7 +405,7 @@ class _AddPluginSheetState extends ConsumerState<_AddPluginSheet> {
                   style: AppTextStyles.body,
                   keyboardType: TextInputType.url,
                   decoration: InputDecoration(
-                    hintText: 'https://example.com/plugin.json',
+                    hintText: 'https://.../plugin.json or .../plugins.json',
                     hintStyle: AppTextStyles.body.copyWith(
                       color: AppColors.textMuted,
                     ),
@@ -496,14 +496,21 @@ class _AddPluginSheetState extends ConsumerState<_AddPluginSheet> {
     });
 
     try {
-      final manifest = await ref
+      final installed = await ref
           .read(pluginInstallProvider.notifier)
-          .install(url);
+          .installFromRegistry(url);
       if (mounted) {
         Navigator.pop(context);
+        final count = installed.length;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${manifest.name} installed successfully!'),
+            content: Text(
+              count == 0
+                  ? 'No new plugins to install (all already installed).'
+                  : count == 1
+                      ? '${installed.single.name} installed successfully!'
+                      : '$count plugins installed successfully!',
+            ),
             backgroundColor: AppColors.primary,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(

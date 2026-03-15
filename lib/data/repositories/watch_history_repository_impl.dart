@@ -45,8 +45,8 @@ class WatchHistoryRepositoryImpl implements WatchHistoryRepository {
       final data = _box.get(key);
       if (data != null) {
         final progress = UserProgress.fromMap(data);
-        // Only include items watched less than 90%
-        if (progress.percentage < 90) {
+        // Only include items watched less than 95% (consistent with "Watched" threshold)
+        if (progress.percentage < 95) {
           entries.add(progress);
         }
       }

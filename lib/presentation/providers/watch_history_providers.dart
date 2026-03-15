@@ -20,3 +20,17 @@ final continueWatchingProvider = FutureProvider<List<UserProgress>>((
   final repo = ref.watch(watchHistoryRepositoryProvider);
   return repo.getContinueWatching();
 });
+
+/// Progress for a single episode.
+final episodeProgressProvider = FutureProvider.family<UserProgress?, ({
+  String mediaId,
+  int? season,
+  int? episode,
+})>((ref, args) async {
+  final repo = ref.watch(watchHistoryRepositoryProvider);
+  return repo.getProgress(
+    args.mediaId,
+    season: args.season,
+    episode: args.episode,
+  );
+});

@@ -125,10 +125,25 @@ class PluginInstallNotifier extends AsyncNotifier<void> {
       final repo = ref.read(pluginRepositoryProvider);
       final manifest = await repo.install(url);
       state = const AsyncData(null);
-      // Invalidate the whole installed list; pluginsForHookProvider
-      // depends on it and will cascade-refresh automatically.
       ref.invalidate(installedPluginsProvider);
       return manifest;
+    } catch (e, st) {
+      state = AsyncError(e, st);
+      rethrow;
+    }
+  }
+
+  /// Install one or more plugins from a single URL (registry).
+  /// The URL may return a single manifest, an array of manifest URLs or inline
+  /// manifests, or an object with a "plugins" array.
+  Future<List<PluginManifest>> installFromRegistry(String url) async {
+    state = const AsyncLoading();
+    try {
+      final repo = ref.read(pluginRepositoryProvider);
+      final installed = await repo.installFromRegistry(url);
+      state = const AsyncData(null);
+      ref.invalidate(installedPluginsProvider);
+      return installed;
     } catch (e, st) {
       state = AsyncError(e, st);
       rethrow;

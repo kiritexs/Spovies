@@ -17,6 +17,7 @@ import '../../../domain/entities/episode.dart';
 import '../../../domain/entities/media_item.dart';
 import '../../../domain/entities/media_type.dart';
 import '../../../domain/entities/plugin_manifest.dart';
+import '../../../domain/entities/user_progress.dart';
 import '../../../plugins/protocol/action_type.dart';
 import '../../../plugins/protocol/plugin_url_resolver.dart';
 import 'package:go_router/go_router.dart';
@@ -26,8 +27,10 @@ import '../../providers/details_providers.dart';
 import '../../providers/plugin_providers.dart';
 import '../../providers/settings_providers.dart';
 import '../../providers/watch_history_providers.dart';
+import '../../providers/watch_status_providers.dart';
 import '../../providers/watchlist_providers.dart';
 import '../../router/app_router.dart';
+import '../../../domain/entities/watch_status.dart';
 import '../../widgets/shimmer_placeholder.dart';
 
 /// Cinematic full-screen movie/TV details page.
@@ -65,18 +68,37 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       body: detailsAsync.when(
         loading: () => _buildLoading(context),
         error: (e, _) => _buildError(context, e.toString()),
-        data: (details) => LayoutBuilder(
-          builder: (context, constraints) {
-            final isDesktop = constraints.maxWidth >= 900;
-            return _buildContent(
-              context,
-              details,
-              pluginsAsync.value ?? [],
-              preferredId,
-              isDesktop,
-            );
-          },
-        ),
+        data: (details) {
+          final cwList =
+              ref
+                  .watch(continueWatchingProvider)
+                  .whenOrNull(data: (list) => list) ??
+              [];
+          UserProgress? continueProgress;
+          for (final p in cwList) {
+            if (p.mediaId == details.tmdbId.toString() &&
+                (details.type != MediaType.tv || p.season == _selectedSeason)) {
+              continueProgress = p;
+              break;
+            }
+          }
+          if (continueProgress != null && continueProgress.percentage >= 95) {
+            continueProgress = null;
+          }
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final isDesktop = constraints.maxWidth >= 900;
+              return _buildContent(
+                context,
+                details,
+                pluginsAsync.value ?? [],
+                preferredId,
+                isDesktop,
+                continueProgress: continueProgress,
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -127,10 +149,17 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     MediaItem details,
     List<PluginManifest> plugins,
     String? preferredId,
-    bool isDesktop,
-  ) {
+    bool isDesktop, {
+    UserProgress? continueProgress,
+  }) {
     if (isDesktop) {
-      return _buildDesktopContent(context, details, plugins, preferredId);
+      return _buildDesktopContent(
+        context,
+        details,
+        plugins,
+        preferredId,
+        continueProgress: continueProgress,
+      );
     }
 
     final isTV = details.type == MediaType.tv;
@@ -165,7 +194,13 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               const SizedBox(height: 20),
 
               // Action buttons row
-              _buildActionRow(context, details, plugins, preferredId),
+              _buildActionRow(
+                context,
+                details,
+                plugins,
+                preferredId,
+                continueProgress: continueProgress,
+              ),
               const SizedBox(height: 8),
 
               // Trailer chip
@@ -200,8 +235,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     BuildContext context,
     MediaItem details,
     List<PluginManifest> plugins,
-    String? preferredId,
-  ) {
+    String? preferredId, {
+    UserProgress? continueProgress,
+  }) {
     final isTV = details.type == MediaType.tv;
     final backdropUrl = buildImageUrl(
       details.backdropPath ?? details.posterPath,
@@ -224,7 +260,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         Positioned.fill(
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
-            child: Container(color: Colors.black.withOpacity(0.4)),
+            child: Container(color: Colors.black.withValues(alpha: 0.4)),
           ),
         ),
 
@@ -306,6 +342,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                         details,
                         plugins,
                         preferredId,
+                        continueProgress: continueProgress,
                       ),
                       const SizedBox(height: 32),
 
@@ -343,11 +380,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             top: 0,
             left: 0,
             right: 0,
-            child: DragToMoveArea(
-              child: SizedBox(
-                height: 80,
-              ),
-            ),
+            child: DragToMoveArea(child: SizedBox(height: 80)),
           ),
 
         // Back Button
@@ -360,19 +393,14 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     BuildContext context,
     MediaItem details,
     List<PluginManifest> plugins,
-    String? preferredId,
-  ) {
+    String? preferredId, {
+    UserProgress? continueProgress,
+  }) {
     final activePlugin = _resolvePlugin(plugins, preferredId);
     final isTV = details.type == MediaType.tv;
-    final isInWatchlist = ref.watch(
-      watchlistProvider.select(
-        (list) => list.any((m) => m.tmdbId == details.tmdbId),
-      ),
-    );
-
     return Row(
       children: [
-        if (activePlugin != null)
+        if (continueProgress != null && plugins.isNotEmpty) ...[
           SizedBox(
             width: 280,
             height: 56,
@@ -382,11 +410,13 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 boxShadow: AppColors.primaryGlowShadow,
               ),
               child: ElevatedButton.icon(
-                onPressed: () => _executePlugin(context, activePlugin, details),
-                icon: const Icon(Icons.play_arrow_rounded, size: 28),
+                onPressed: () =>
+                    _openContinue(context, details, continueProgress),
+                icon: const Icon(Icons.play_circle_rounded, size: 28),
                 label: Text(
-                  isTV ? 'Watch Series' : 'Watch Movie',
-                  style: AppTextStyles.label.copyWith(fontSize: 18),
+                  'Continue (${continueProgress.remainingTime})',
+                  style: AppTextStyles.label.copyWith(fontSize: 16),
+                  overflow: TextOverflow.ellipsis,
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
@@ -399,16 +429,35 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               ),
             ),
           ),
-        const SizedBox(width: 16),
-        // Watchlist
-        _buildCircularDesktopAction(
-          icon: isInWatchlist
-              ? Icons.bookmark_rounded
-              : Icons.bookmark_border_rounded,
-          color: isInWatchlist ? AppColors.primary : Colors.white,
-          onPressed: () => ref.read(watchlistProvider.notifier).toggle(details),
-          isActive: isInWatchlist,
-        ),
+          const SizedBox(width: 12),
+        ],
+        // Watch series / movie (only if NO progress)
+        if (continueProgress == null && activePlugin != null) ...[
+          SizedBox(
+            width: 220,
+            height: 56,
+            child: OutlinedButton.icon(
+              onPressed: () => _executePlugin(context, activePlugin, details),
+              icon: const Icon(Icons.play_arrow_rounded, size: 24),
+              label: Text(
+                isTV ? 'Watch Series' : 'Watch Movie',
+                style: AppTextStyles.label.copyWith(fontSize: 16),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: AppColors.glassBorder),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+        ],
+
+        // Status dropdown (consolidated Library action)
+        _buildLibraryAction(context, details),
+
         const SizedBox(width: 12),
         // Trailer
         if (details.metadata.trailerKey != null)
@@ -507,11 +556,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             top: 0,
             left: 0,
             right: 0,
-            child: DragToMoveArea(
-              child: SizedBox(
-                height: 80,
-              ),
-            ),
+            child: DragToMoveArea(child: SizedBox(height: 80)),
           ),
       ],
     );
@@ -664,19 +709,15 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     BuildContext context,
     MediaItem details,
     List<PluginManifest> plugins,
-    String? preferredId,
-  ) {
+    String? preferredId, {
+    UserProgress? continueProgress,
+  }) {
     final activePlugin = _resolvePlugin(plugins, preferredId);
-    final isInWatchlist = ref.watch(
-      watchlistProvider.select(
-        (list) => list.any((m) => m.tmdbId == details.tmdbId),
-      ),
-    );
 
     return Row(
       children: [
-        // Watch button (if plugin available)
-        if (activePlugin != null)
+        // Continue button (when progress exists and < 90%)
+        if (continueProgress != null && plugins.isNotEmpty)
           Expanded(
             child: Container(
               height: AppSpacing.buttonHeight,
@@ -685,10 +726,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 boxShadow: AppColors.primaryGlowShadow,
               ),
               child: ElevatedButton.icon(
-                onPressed: () => _executePlugin(context, activePlugin, details),
-                icon: const Icon(Icons.play_arrow_rounded, size: 24),
+                onPressed: () =>
+                    _openContinue(context, details, continueProgress),
+                icon: const Icon(Icons.play_circle_rounded, size: 24),
                 label: Text(
-                  'Watch with ${activePlugin.name}',
+                  'Continue (${continueProgress.remainingTime})',
                   style: AppTextStyles.label,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -704,47 +746,263 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             ),
           ),
 
-        if (activePlugin != null) const SizedBox(width: 12),
-
-        // Watchlist toggle button
-        ClipRRect(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        // Watch button (only if NO progress exists)
+        if (continueProgress == null && activePlugin != null)
+          Expanded(
             child: Container(
               height: AppSpacing.buttonHeight,
-              width: AppSpacing.buttonHeight,
               decoration: BoxDecoration(
-                color: isInWatchlist
-                    ? AppColors.primary.withValues(alpha: 0.2)
-                    : AppColors.glass,
                 borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-                border: Border.all(
-                  color: isInWatchlist
-                      ? AppColors.primary
-                      : AppColors.glassBorder,
-                ),
+                border: Border.all(color: AppColors.glassBorder),
               ),
-              child: IconButton(
-                icon: Icon(
-                  isInWatchlist
-                      ? Icons.bookmark_rounded
-                      : Icons.bookmark_border_rounded,
-                  color: isInWatchlist ? AppColors.primary : Colors.white,
-                  size: 20,
+              child: OutlinedButton.icon(
+                onPressed: () => _executePlugin(context, activePlugin, details),
+                icon: const Icon(Icons.play_arrow_rounded, size: 24),
+                label: Text(
+                  details.type == MediaType.tv ? 'Watch Series' : 'Watch Movie',
+                  style: AppTextStyles.label,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                onPressed: () =>
-                    ref.read(watchlistProvider.notifier).toggle(details),
-                tooltip: isInWatchlist
-                    ? 'Remove from Watchlist'
-                    : 'Add to Watchlist',
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: AppColors.glassBorder),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
+
+        if (plugins.isNotEmpty) const SizedBox(width: 12),
+
+        // Consolidated Library/Status Button
+        Expanded(child: _buildLibraryAction(context, details)),
       ],
     );
   }
+
+  Widget _buildLibraryAction(BuildContext context, MediaItem details) {
+    final statusAsync = ref.watch(
+      mediaStatusProvider((
+        mediaId: details.tmdbId.toString(),
+        season: null,
+        episode: null,
+      )),
+    );
+
+    return statusAsync.when(
+      data: (current) {
+        final isInLibrary = current != null;
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            child: InkWell(
+              onTap: () => _showLibraryStatusModal(context, details, current),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+              child: Container(
+                height: AppSpacing.buttonHeight,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: isInLibrary
+                      ? AppColors.primary.withValues(alpha: 0.2)
+                      : AppColors.glass,
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+                  border: Border.all(
+                    color: isInLibrary
+                        ? AppColors.primary
+                        : AppColors.glassBorder,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      current?.status.icon ?? Icons.playlist_add_rounded,
+                      color: isInLibrary ? AppColors.primary : Colors.white,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        current?.status.displayName ?? 'Add to Library',
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: isInLibrary ? AppColors.primary : Colors.white,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      loading: () =>
+          const SizedBox(width: 120, height: AppSpacing.buttonHeight),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
+  void _showLibraryStatusModal(
+    BuildContext context,
+    MediaItem details,
+    MediaStatus? current,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
+      isScrollControlled: true,
+      builder: (context) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppColors.backgroundDark.withValues(alpha: 0.8),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(AppSpacing.radiusXl),
+              ),
+              border: Border.all(color: AppColors.glassBorder),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Row(
+                  children: [
+                    Icon(
+                      Icons.library_add_rounded,
+                      color: AppColors.primary,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Update Library Status',
+                      style: AppTextStyles.sectionTitle.copyWith(fontSize: 18),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white70,
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                // Status List
+                ...WatchStatus.values.map((s) {
+                  final isSelected = current?.status == s;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: InkWell(
+                      onTap: () {
+                        ref
+                            .read(watchStatusNotifierProvider.notifier)
+                            .setStatus(
+                              MediaStatus(
+                                mediaId: details.tmdbId.toString(),
+                                mediaType: details.type.name,
+                                status: s,
+                                season: null,
+                                episode: null,
+                                updatedAt: DateTime.now(),
+                              ),
+                              mediaItem: details,
+                            );
+                        Navigator.pop(context);
+                      },
+                      borderRadius: BorderRadius.circular(
+                        AppSpacing.radiusBase,
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? AppColors.primary.withValues(alpha: 0.15)
+                              : AppColors.glass,
+                          borderRadius: BorderRadius.circular(
+                            AppSpacing.radiusBase,
+                          ),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppColors.primary
+                                : AppColors.glassBorder,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              s.icon,
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : Colors.white70,
+                              size: 24,
+                            ),
+                            const SizedBox(width: 16),
+                            Text(
+                              s.displayName,
+                              style: AppTextStyles.label.copyWith(
+                                color: isSelected
+                                    ? AppColors.primary
+                                    : Colors.white,
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                            const Spacer(),
+                            if (isSelected)
+                              const Icon(
+                                Icons.check_circle_rounded,
+                                color: AppColors.primary,
+                                size: 20,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                const SizedBox(height: 8),
+                // Remove from library (if exists)
+                if (current != null)
+                  TextButton.icon(
+                    onPressed: () {
+                      ref
+                          .read(watchlistProvider.notifier)
+                          .remove(details.tmdbId);
+                      // Also clear status? Usually users want both.
+                      // For now just remove from watchlist.
+                      Navigator.pop(context);
+                    },
+                    icon: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Colors.redAccent,
+                    ),
+                    label: Text(
+                      'Remove from Library',
+                      style: AppTextStyles.label.copyWith(
+                        color: Colors.redAccent,
+                      ),
+                    ),
+                  ),
+                SizedBox(height: MediaQuery.of(context).padding.bottom),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // (Removed _buildStatusDropdown as it is replaced by _buildLibraryAction)
 
   // ─── Episode Section (TV) ──────────────────────────────────────────────
 
@@ -820,6 +1078,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             children: episodes.map((ep) {
               final epPlugin = _resolvePlugin(episodePlugins, preferredId);
               return _EpisodeRow(
+                mediaId: details.tmdbId.toString(),
                 episode: ep,
                 plugins: episodePlugins,
                 onPlay: epPlugin == null
@@ -837,6 +1096,47 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         ),
         const SizedBox(height: 16),
       ],
+    );
+  }
+
+  /// Opens the player at the resume position for [progress].
+  void _openContinue(
+    BuildContext context,
+    MediaItem details,
+    UserProgress progress,
+  ) {
+    final plugins =
+        ref
+            .read(pluginsForHookProvider(TriggerHook.mediaHeader))
+            .whenOrNull(data: (list) => list) ??
+        [];
+    if (plugins.isEmpty) return;
+    final preferredId = ref.read(preferredPluginProvider);
+    var activePlugin = plugins.first;
+    if (progress.lastPluginId != null) {
+      final match = plugins.where((p) => p.pluginId == progress.lastPluginId);
+      if (match.isNotEmpty) activePlugin = match.first;
+    } else if (preferredId != null) {
+      final match = plugins.where((p) => p.pluginId == preferredId);
+      if (match.isNotEmpty) activePlugin = match.first;
+    }
+    final url = PluginUrlResolver.resolve(
+      activePlugin,
+      details,
+      season: progress.season ?? 1,
+      episode: progress.episode ?? 1,
+    );
+    context.push(
+      '/player',
+      extra: PlayerArgs(
+        url: url,
+        media: details,
+        pluginName: activePlugin.name,
+        pluginId: activePlugin.pluginId,
+        resumeTimeSeconds: progress.currentTime,
+        season: progress.season,
+        episode: progress.episode,
+      ),
     );
   }
 
@@ -877,9 +1177,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           mode: LaunchMode.externalApplication,
         );
         if (!launched && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not open link')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Could not open link')));
         }
         break;
       case ActionType.webview:
@@ -890,8 +1190,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           season: season,
           episode: episode,
         );
-        // Only resume if the user hasn't finished the content (< 90%).
-        final resumeTime = (saved != null && saved.percentage < 90)
+        // Only resume if the user hasn't finished the content (< 95%).
+        final resumeTime = (saved != null && saved.percentage < 95)
             ? saved.currentTime
             : 0.0;
 
@@ -902,7 +1202,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             url: url,
             media: media,
             pluginName: plugin.name,
+            pluginId: plugin.pluginId,
             resumeTimeSeconds: resumeTime,
+            season: season,
+            episode: episode,
           ),
         );
         break;
@@ -1073,105 +1376,386 @@ class _ExpandableOverviewState extends State<_ExpandableOverview> {
 
 // ─── Episode Row ──────────────────────────────────────────────────────────────
 
-class _EpisodeRow extends StatelessWidget {
+class _EpisodeRow extends ConsumerWidget {
+  final String mediaId;
   final Episode episode;
   final List<PluginManifest> plugins;
   final VoidCallback? onPlay;
 
   const _EpisodeRow({
+    required this.mediaId,
     required this.episode,
     required this.plugins,
     this.onPlay,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final stillUrl = buildImageUrl(episode.stillPath, AppConfig.backdropSmall);
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Episode thumbnail
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-            child: SizedBox(
-              width: 120,
-              height: 68,
-              child: stillUrl.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: stillUrl,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) =>
-                          Container(color: AppColors.surfaceDark),
-                      errorWidget: (_, __, ___) =>
-                          Container(color: AppColors.surfaceDark),
-                    )
-                  : Container(
-                      color: AppColors.surfaceDark,
-                      child: const Icon(
-                        Icons.tv_rounded,
-                        color: AppColors.textMuted,
-                        size: 24,
+    final statusAsync = ref.watch(
+      mediaStatusProvider((
+        mediaId: mediaId,
+        season: episode.seasonNumber,
+        episode: episode.episodeNumber,
+      )),
+    );
+
+    final progressAsync = ref.watch(
+      episodeProgressProvider((
+        mediaId: mediaId,
+        season: episode.seasonNumber,
+        episode: episode.episodeNumber,
+      )),
+    );
+
+    return progressAsync.when(
+      loading: () => const SizedBox(height: 100),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (progress) {
+        final status = statusAsync.value?.status;
+        final bool isWatched =
+            (progress != null && progress.percentage >= 95) ||
+            status == WatchStatus.completed;
+        final bool isWatching =
+            !isWatched && progress != null && progress.percentage > 0;
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: InkWell(
+            onTap: () {
+              if (!isWatched && !isWatching) {
+                ref
+                    .read(watchStatusNotifierProvider.notifier)
+                    .setStatus(
+                      MediaStatus(
+                        mediaId: mediaId,
+                        mediaType: 'tv',
+                        status: WatchStatus.watching,
+                        season: episode.seasonNumber,
+                        episode: episode.episodeNumber,
+                        updatedAt: DateTime.now(),
+                      ),
+                    );
+              }
+              onPlay?.call();
+            },
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isWatching
+                      ? AppColors.primary.withValues(alpha: 0.3)
+                      : AppColors.glassBorder,
+                ),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    isWatching
+                        ? AppColors.primary.withValues(alpha: 0.1)
+                        : Colors.white.withValues(alpha: 0.03),
+                    Colors.white.withValues(alpha: 0.01),
+                  ],
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // --- 1. Thumbnail + Play Overlay ---
+                    Stack(
+                      children: [
+                        SizedBox(
+                          width: 140,
+                          height: 120,
+                          child: stillUrl.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl: stillUrl,
+                                  fit: BoxFit.cover,
+                                  placeholder: (_, _) =>
+                                      const ShimmerPlaceholder(),
+                                  errorWidget: (_, _, _) =>
+                                      Container(color: AppColors.surfaceDark),
+                                )
+                              : Container(
+                                  color: AppColors.surfaceDark,
+                                  child: const Icon(
+                                    Icons.tv_rounded,
+                                    color: Colors.white24,
+                                    size: 32,
+                                  ),
+                                ),
+                        ),
+                        // Watched Overlay
+                        if (isWatched)
+                          Positioned.fill(
+                            child: Container(
+                              color: Colors.black54,
+                              child: const Center(
+                                child: Icon(
+                                  Icons.check_circle_rounded,
+                                  color: AppColors.primary,
+                                  size: 32,
+                                ),
+                              ),
+                            ),
+                          ),
+                        // Simple Play hint if unwatched
+                        if (!isWatched)
+                          Positioned.fill(
+                            child: Center(
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.black26,
+                                  border: Border.all(
+                                    color: Colors.white30,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Icon(
+                                  isWatching
+                                      ? Icons.play_arrow_rounded
+                                      : Icons.play_arrow_outlined,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ),
+                        // Progress Bar (Slim at the bottom)
+                        if (isWatching)
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            child: Container(
+                              height: 3,
+                              color: Colors.white10,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: FractionallySizedBox(
+                                  widthFactor: (progress.percentage / 100)
+                                      .clamp(0.0, 1.0),
+                                  child: Container(
+                                    decoration: const BoxDecoration(
+                                      color: AppColors.primary,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: AppColors.primary,
+                                          blurRadius: 4,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+
+                    // --- 2. Content Info ---
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  episode.label,
+                                  style: AppTextStyles.tag.copyWith(
+                                    color: isWatched
+                                        ? AppColors.textMuted
+                                        : AppColors.primary,
+                                    letterSpacing: 1,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                if (isWatching) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      '${progress.percentage.toInt()}%',
+                                      style: AppTextStyles.tag.copyWith(
+                                        color: AppColors.primary,
+                                        fontSize: 9,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                const Spacer(),
+                                _EpisodeStatusPicker(
+                                  mediaId: mediaId,
+                                  episode: episode,
+                                  currentStatus: status,
+                                  isWatchedByDefault:
+                                      isWatched &&
+                                      status != WatchStatus.completed,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              episode.name,
+                              style: AppTextStyles.cardTitle.copyWith(
+                                fontSize: 15,
+                                color: isWatched
+                                    ? Colors.white70
+                                    : Colors.white,
+                                fontWeight: isWatching
+                                    ? FontWeight.bold
+                                    : FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (episode.overview != null &&
+                                episode.overview!.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                episode.overview!,
+                                style: AppTextStyles.body.copyWith(
+                                  fontSize: 11,
+                                  color: AppColors.textMuted,
+                                  height: 1.3,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
-            ),
-          ),
-
-          const SizedBox(width: 12),
-
-          // Episode info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  episode.label,
-                  style: AppTextStyles.tag.copyWith(
-                    color: AppColors.primary,
-                    fontSize: 11,
-                  ),
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  episode.name,
-                  style: AppTextStyles.cardTitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (episode.formattedRuntime.isNotEmpty)
-                  Text(
-                    episode.formattedRuntime,
-                    style: AppTextStyles.cardSubtitle,
-                  ),
-                if (episode.overview != null &&
-                    episode.overview!.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    episode.overview!,
-                    style: AppTextStyles.cardSubtitle.copyWith(fontSize: 11),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
-            ),
-          ),
-
-          // Play button
-          if (onPlay != null)
-            IconButton(
-              onPressed: onPlay,
-              icon: const Icon(
-                Icons.play_circle_outline_rounded,
-                color: AppColors.primary,
-                size: 28,
               ),
-              tooltip: 'Play ${episode.label}',
             ),
-        ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _EpisodeStatusPicker extends ConsumerWidget {
+  final String mediaId;
+  final Episode episode;
+  final WatchStatus? currentStatus;
+  final bool isWatchedByDefault;
+
+  const _EpisodeStatusPicker({
+    required this.mediaId,
+    required this.episode,
+    this.currentStatus,
+    this.isWatchedByDefault = false,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<WatchStatus?>(
+      icon: Icon(
+        Icons.more_vert_rounded,
+        size: 18,
+        color: (currentStatus != null || isWatchedByDefault)
+            ? AppColors.primary
+            : AppColors.textMuted,
       ),
+      tooltip: 'Set status',
+      padding: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+      ),
+      color: AppColors.surfaceDark,
+      onSelected: (status) {
+        if (status == null) {
+          ref
+              .read(watchStatusNotifierProvider.notifier)
+              .deleteStatus(
+                mediaId,
+                season: episode.seasonNumber,
+                episode: episode.episodeNumber,
+              );
+          return;
+        }
+
+        ref
+            .read(watchStatusNotifierProvider.notifier)
+            .setStatus(
+              MediaStatus(
+                mediaId: mediaId,
+                mediaType: 'tv',
+                status: status,
+                season: episode.seasonNumber,
+                episode: episode.episodeNumber,
+                updatedAt: DateTime.now(),
+              ),
+            );
+      },
+      itemBuilder: (context) =>
+          [
+                null, // Clear status
+                WatchStatus.watching,
+                WatchStatus.completed,
+                WatchStatus.onHold,
+                WatchStatus.dropped,
+              ]
+              .map(
+                (s) => PopupMenuItem<WatchStatus?>(
+                  value: s,
+                  child: Row(
+                    children: [
+                      Icon(
+                        s?.icon ?? Icons.delete_outline_rounded,
+                        size: 18,
+                        color: s == currentStatus
+                            ? AppColors.primary
+                            : Colors.white70,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        s == null
+                            ? 'Reset Status'
+                            : s == WatchStatus.completed
+                            ? 'Mark Watched'
+                            : s.displayName,
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: s == currentStatus
+                              ? AppColors.primary
+                              : Colors.white,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (s == currentStatus && s != null)
+                        const Icon(
+                          Icons.check,
+                          color: AppColors.primary,
+                          size: 16,
+                        ),
+                    ],
+                  ),
+                ),
+              )
+              .toList(),
     );
   }
 }

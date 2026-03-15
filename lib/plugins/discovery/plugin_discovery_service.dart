@@ -75,6 +75,100 @@ class PluginDiscoveryService {
     return PluginManifestModel.fromJson(json);
   }
 
+  /// Fetches a URL that may be a single manifest or a registry (multiple plugins).
+  ///
+  /// - If the response is a JSON object with required manifest fields, returns
+  ///   a list of one manifest.
+  /// - If the response is a JSON array, each element is either:
+  ///   - a string (URL of a manifest to fetch), or
+  ///   - an inline manifest object.
+  /// - If the response is an object with a "plugins" array, same handling as array.
+  ///
+  /// Returns the list of manifests (one or many). Skips invalid entries in arrays.
+  Future<List<PluginManifest>> fetchRegistry(String url) async {
+    final urlError = UrlValidator.validate(url);
+    if (urlError != null) {
+      throw PluginUrlValidationException(urlError);
+    }
+
+    final dynamic data = await _fetchJson(url);
+
+    if (data is Map<String, dynamic>) {
+      if (data['plugins'] is List) {
+        return _parseManifestList(data['plugins'] as List<dynamic>, url);
+      }
+      if (data['pluginId'] != null && data['urlTemplate'] != null) {
+        _validateSchema(data);
+        return [PluginManifestModel.fromJson(data)];
+      }
+      throw const InvalidManifestException(
+        'Expected a plugin manifest or an object with "plugins" array',
+      );
+    }
+
+    if (data is List) {
+      return _parseManifestList(data, url);
+    }
+
+    throw const InvalidManifestException(
+      'Expected a JSON object (manifest or registry) or array of plugins',
+    );
+  }
+
+  Future<dynamic> _fetchJson(String url) async {
+    try {
+      final response = await _dio.get<dynamic>(
+        url.trim(),
+        options: Options(
+          receiveTimeout: const Duration(seconds: 15),
+          responseType: ResponseType.json,
+        ),
+      );
+      final raw = response.data;
+      if (raw is Map<String, dynamic>) return raw;
+      if (raw is List) return raw;
+      if (raw is String) return jsonDecode(raw);
+      throw const InvalidManifestException('Invalid response format');
+    } on DioException catch (e) {
+      final message = switch (e.type) {
+        DioExceptionType.connectionTimeout => 'Connection timed out',
+        DioExceptionType.receiveTimeout => 'Server took too long to respond',
+        DioExceptionType.badResponse =>
+          'Server returned error: ${e.response?.statusCode}',
+        DioExceptionType.connectionError =>
+          'Connection failed. Check your internet or if the URL is accessible.',
+        _ => e.message ?? 'Unknown network error',
+      };
+      throw PluginNetworkException(
+        'Failed to fetch: $message',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<List<PluginManifest>> _parseManifestList(
+    List<dynamic> items,
+    String registryUrl,
+  ) async {
+    final manifests = <PluginManifest>[];
+    for (var i = 0; i < items.length; i++) {
+      final item = items[i];
+      try {
+        if (item is String) {
+          final m = await fetchAndValidate(item.trim());
+          manifests.add(m);
+        } else if (item is Map) {
+          final map = Map<String, dynamic>.from(item as Map);
+          _validateSchema(map);
+          manifests.add(PluginManifestModel.fromJson(map));
+        }
+      } catch (e) {
+        debugPrint('PluginDiscoveryService: skip item $i: $e');
+      }
+    }
+    return manifests;
+  }
+
   /// Validates that a JSON manifest has all required fields.
   void _validateSchema(Map<String, dynamic> json) {
     final requiredFields = ['pluginId', 'name', 'urlTemplate'];

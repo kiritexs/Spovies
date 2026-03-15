@@ -20,6 +20,9 @@ class ContinueWatchingCard extends StatelessWidget {
   final String? thumbnailUrl;
   final VoidCallback? onTap;
 
+  /// When set, a play icon button is shown on the left to continue playback directly.
+  final VoidCallback? onContinueTap;
+
   /// Optional episode label, e.g. "S2 E4". Shown below the title for TV shows.
   final String? episodeLabel;
 
@@ -30,6 +33,7 @@ class ContinueWatchingCard extends StatelessWidget {
     required this.progress,
     this.thumbnailUrl,
     this.onTap,
+    this.onContinueTap,
     this.episodeLabel,
   });
 
@@ -42,6 +46,7 @@ class ContinueWatchingCard extends StatelessWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
           child: Container(
+            width: double.infinity,
             height: AppSpacing.continueWatchingHeight,
             decoration: BoxDecoration(
               gradient: AppColors.glassGradient,
@@ -78,10 +83,14 @@ class ContinueWatchingCard extends StatelessWidget {
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(alpha: 0.15),
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.15,
+                                  ),
                                   borderRadius: BorderRadius.circular(4),
                                   border: Border.all(
-                                    color: AppColors.primary.withValues(alpha: 0.35),
+                                    color: AppColors.primary.withValues(
+                                      alpha: 0.35,
+                                    ),
                                   ),
                                 ),
                                 child: Text(
@@ -95,16 +104,36 @@ class ContinueWatchingCard extends StatelessWidget {
                               ),
                             ],
                             const SizedBox(height: 4),
-                            Text(remainingTime, style: AppTextStyles.cardSubtitle),
+                            Text(
+                              remainingTime,
+                              style: AppTextStyles.cardSubtitle,
+                            ),
                           ],
                         ),
                       ),
+                      if (onContinueTap != null) ...[
+                        IconButton(
+                          onPressed: onContinueTap,
+                          icon: const Icon(
+                            Icons.play_circle_filled_rounded,
+                            color: AppColors.primary,
+                            size: 36,
+                          ),
+                          style: IconButton.styleFrom(
+                            padding: const EdgeInsets.all(4),
+                            minimumSize: const Size(44, 44),
+                          ),
+                          tooltip: 'Continue',
+                        ),
+                        const SizedBox(width: 8),
+                      ],
                       const SizedBox(width: 8),
-                      const Icon(
-                        Icons.play_circle_filled_rounded,
-                        color: AppColors.primary,
-                        size: 28,
-                      ),
+                      if (onContinueTap == null)
+                        const Icon(
+                          Icons.play_circle_filled_rounded,
+                          color: AppColors.primary,
+                          size: 28,
+                        ),
                     ],
                   ),
                 ),
@@ -152,7 +181,11 @@ class ContinueWatchingCard extends StatelessWidget {
 
   Widget _thumbPlaceholder() {
     return const Center(
-      child: Icon(Icons.movie_outlined, color: AppColors.textSecondary, size: 28),
+      child: Icon(
+        Icons.movie_outlined,
+        color: AppColors.textSecondary,
+        size: 28,
+      ),
     );
   }
 

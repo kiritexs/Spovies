@@ -12,25 +12,45 @@ import '../../../domain/entities/media_item.dart';
 import '../../providers/watchlist_providers.dart';
 import '../../widgets/shimmer_placeholder.dart';
 
-/// Watchlist screen — grid of saved media items with remove option.
-class WatchlistScreen extends ConsumerWidget {
+import '../../../domain/entities/watch_status.dart';
+import '../../providers/watch_status_providers.dart';
+
+class WatchlistScreen extends ConsumerStatefulWidget {
   const WatchlistScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final items = ref.watch(watchlistProvider);
+  ConsumerState<WatchlistScreen> createState() => _WatchlistScreenState();
+}
+
+class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
+  WatchStatus? _selectedStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final allItems = ref.watch(watchlistProvider);
+    
+    // Filter items based on selected status
+    final filteredItems = _selectedStatus == null
+        ? allItems
+        : allItems.where((item) {
+            // We need to check if this item has the selected status.
+            // Since we can't easily wait for 100 futures here, 
+            // we use the entriesByStatusProvider to get the IDs.
+            final statusEntries = ref.watch(entriesByStatusProvider(_selectedStatus!)).value ?? [];
+            return statusEntries.any((e) => e.mediaId == item.tmdbId.toString());
+          }).toList();
 
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
       appBar: AppBar(
         backgroundColor: AppColors.backgroundDark,
         surfaceTintColor: Colors.transparent,
-        title: Text('My Watchlist', style: AppTextStyles.appTitle),
+        title: Text('My Library', style: AppTextStyles.appTitle),
         centerTitle: false,
         actions: [
-          if (items.isNotEmpty)
+          if (allItems.isNotEmpty)
             TextButton(
-              onPressed: () => _confirmClearAll(context, ref),
+              onPressed: () => _confirmClearAll(context),
               child: Text(
                 'Clear All',
                 style: AppTextStyles.labelSmall.copyWith(
@@ -39,8 +59,39 @@ class WatchlistScreen extends ConsumerWidget {
               ),
             ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(50),
+          child: _buildFilterBar(),
+        ),
       ),
-      body: items.isEmpty ? _buildEmpty() : _buildGrid(context, ref, items),
+      body: filteredItems.isEmpty 
+          ? _buildEmpty() 
+          : _buildGrid(context, filteredItems),
+    );
+  }
+
+  Widget _buildFilterBar() {
+    return Container(
+      height: 50,
+      padding: const EdgeInsets.only(bottom: 8),
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sectionPaddingH),
+        children: [
+          _StatusFilterChip(
+            label: 'All',
+            isSelected: _selectedStatus == null,
+            onTap: () => setState(() => _selectedStatus = null),
+          ),
+          ...WatchStatus.values.map((status) {
+            return _StatusFilterChip(
+              label: status.displayName,
+              isSelected: _selectedStatus == status,
+              onTap: () => setState(() => _selectedStatus = status),
+            );
+          }),
+        ],
+      ),
     );
   }
 
@@ -52,13 +103,15 @@ class WatchlistScreen extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            Icons.bookmark_border_rounded,
+            _selectedStatus == null 
+                ? Icons.bookmark_border_rounded 
+                : Icons.filter_list_off_rounded,
             size: 72,
             color: AppColors.textSecondary.withValues(alpha: 0.4),
           ),
           const SizedBox(height: 16),
           Text(
-            'No saved titles',
+            _selectedStatus == null ? 'No saved titles' : 'No titles found',
             style: AppTextStyles.cardTitle.copyWith(
               color: AppColors.textSecondary,
               fontSize: 18,
@@ -66,7 +119,9 @@ class WatchlistScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Tap the bookmark icon on any title\nto save it here',
+            _selectedStatus == null 
+                ? 'Tap the bookmark icon on any title\nto save it here'
+                : 'Try selecting a different category',
             style: AppTextStyles.cardSubtitle,
             textAlign: TextAlign.center,
           ),
@@ -77,38 +132,46 @@ class WatchlistScreen extends ConsumerWidget {
 
   // ─── Grid ──────────────────────────────────────────────────────────────────
 
-  Widget _buildGrid(
-    BuildContext context,
-    WidgetRef ref,
-    List<MediaItem> items,
-  ) {
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sectionPaddingH,
-        AppSpacing.lg,
-        AppSpacing.sectionPaddingH,
-        120,
-      ),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        childAspectRatio: 0.58,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 16,
-      ),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        return _WatchlistItem(
-          item: item,
-          onTap: () => context.push('/details', extra: item),
-          onRemove: () =>
-              ref.read(watchlistProvider.notifier).remove(item.tmdbId),
+  Widget _buildGrid(BuildContext context, List<MediaItem> items) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Dynamic column count for Windows/Desktop improvement
+        int crossAxisCount = 3;
+        if (constraints.maxWidth > 1200) {
+          crossAxisCount = 6;
+        } else if (constraints.maxWidth > 800) {
+          crossAxisCount = 4;
+        }
+
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sectionPaddingH,
+            AppSpacing.lg,
+            AppSpacing.sectionPaddingH,
+            120,
+          ),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            childAspectRatio: 0.58,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 16,
+          ),
+          itemCount: items.length,
+          itemBuilder: (context, index) {
+            final item = items[index];
+            return _WatchlistItem(
+              item: item,
+              onTap: () => context.push('/details', extra: item),
+              onRemove: () =>
+                  ref.read(watchlistProvider.notifier).remove(item.tmdbId),
+            );
+          },
         );
       },
     );
   }
 
-  Future<void> _confirmClearAll(BuildContext context, WidgetRef ref) async {
+  Future<void> _confirmClearAll(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -116,9 +179,9 @@ class WatchlistScreen extends ConsumerWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
         ),
-        title: Text('Clear Watchlist', style: AppTextStyles.sectionTitle),
+        title: Text('Clear Library', style: AppTextStyles.sectionTitle),
         content: Text(
-          'Remove all saved titles?',
+          'Remove all saved titles from your library?',
           style: AppTextStyles.body.copyWith(
             color: AppColors.textSecondary,
           ),
@@ -146,6 +209,43 @@ class WatchlistScreen extends ConsumerWidget {
     if (confirmed == true) {
       ref.read(watchlistProvider.notifier).clearAll();
     }
+  }
+}
+
+class _StatusFilterChip extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _StatusFilterChip({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: isSelected,
+        onSelected: (_) => onTap(),
+        backgroundColor: AppColors.surfaceDark,
+        selectedColor: AppColors.primary.withValues(alpha: 0.2),
+        labelStyle: AppTextStyles.labelSmall.copyWith(
+          color: isSelected ? AppColors.primary : Colors.white70,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+          side: BorderSide(
+            color: isSelected ? AppColors.primary : Colors.transparent,
+          ),
+        ),
+        showCheckmark: false,
+      ),
+    );
   }
 }
 

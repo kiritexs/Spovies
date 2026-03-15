@@ -101,7 +101,10 @@ final appRouter = GoRouter(
           url: args.url,
           media: args.media,
           pluginName: args.pluginName,
+          pluginId: args.pluginId,
           resumeTimeSeconds: args.resumeTimeSeconds,
+          season: args.season,
+          episode: args.episode,
         );
       },
     ),
@@ -188,6 +191,9 @@ class PlayerArgs {
   final MediaItem media;
   final String pluginName;
 
+  /// Plugin ID for saving as [UserProgress.lastPluginId] when progress is saved.
+  final String? pluginId;
+
   /// If > 0, the player will attempt to seek the <video> element to this
   /// position (in seconds) once playback starts.
   final double resumeTimeSeconds;
@@ -202,6 +208,7 @@ class PlayerArgs {
     required this.url,
     required this.media,
     required this.pluginName,
+    this.pluginId,
     this.resumeTimeSeconds = 0,
     this.season,
     this.episode,
