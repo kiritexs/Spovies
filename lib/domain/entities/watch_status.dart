@@ -71,14 +71,21 @@ class MediaStatus {
 
   factory MediaStatus.fromMap(Map<dynamic, dynamic> map) {
     return MediaStatus(
-      mediaId: (map['mediaId'] as String?) ?? '',
+      mediaId: (map['mediaId']?.toString()) ?? '',
       mediaType: (map['mediaType'] as String?) ?? 'movie',
       status: WatchStatus.fromString(map['status'] as String?),
-      season: map['season'] as int?,
-      episode: map['episode'] as int?,
+      season: _toIntOrNull(map['season']),
+      episode: _toIntOrNull(map['episode']),
       updatedAt: map['updatedAt'] != null
           ? DateTime.tryParse(map['updatedAt'] as String) ?? DateTime.now()
           : DateTime.now(),
     );
   }
+}
+
+int? _toIntOrNull(dynamic v) {
+  if (v == null || v is bool) return null;
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  return null;
 }

@@ -70,6 +70,7 @@ class WatchStatusNotifier extends Notifier<void> {
     ref.invalidate(mediaStatusProvider);
     ref.invalidate(mediaStatusesForShowProvider);
     ref.invalidate(entriesByStatusProvider);
+    ref.invalidate(libraryEntriesByStatusProvider);
   }
 
   Future<void> deleteStatus(String mediaId, {int? season, int? episode}) async {
