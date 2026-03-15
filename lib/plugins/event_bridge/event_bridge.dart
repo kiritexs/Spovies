@@ -36,41 +36,60 @@ class PlayerEvent {
 
   /// Parse from the plugin's postMessage JSON payload.
   ///
-  /// Expected format (from Provider A docs):
-  /// ```json
-  /// {
-  ///   "type": "PLAYER_EVENT",
-  ///   "data": {
-  ///     "event": "timeupdate",
-  ///     "currentTime": 120.5,
-  ///     "duration": 7200,
-  ///     "progress": 1.6,
-  ///     "id": "299534",
-  ///     "mediaType": "movie",
-  ///     "season": 1,
-  ///     "episode": 8
-  ///   }
-  /// }
-  /// ```
+  /// Supports:
+  /// 1. Provider A/standard format: type "PLAYER_EVENT" with nested "data".
+  /// 2. Provider D format: flat object with "channel", "event":"time",
+  ///    "time", "duration", "percent" (used when the embed sends progress
+  ///    via spoviesEventBridge with channel e.g. "example-channel").
   static PlayerEvent? tryParse(String rawMessage) {
     try {
-      final json = jsonDecode(rawMessage) as Map<String, dynamic>;
+      final decoded = jsonDecode(rawMessage);
+      final json = decoded is List && decoded.isNotEmpty && decoded.first is Map<String, dynamic>
+          ? decoded.first as Map<String, dynamic>
+          : decoded is Map<String, dynamic>
+              ? decoded
+              : null;
+      if (json == null) return null;
+
+      // 1) Standard PLAYER_EVENT format (Provider A, etc.)
       final type = json['type'] as String?;
+      if (type == 'PLAYER_EVENT') {
+        final data = json['data'] as Map<String, dynamic>?;
+        if (data == null) return null;
+        return PlayerEvent(
+          eventType: data['event'] as String? ?? 'unknown',
+          currentTime: (data['currentTime'] as num?)?.toDouble() ?? 0,
+          duration: (data['duration'] as num?)?.toDouble() ?? 0,
+          progress: (data['progress'] as num?)?.toDouble() ?? 0,
+          mediaId: data['id']?.toString() ?? '',
+          mediaType: data['mediaType'] as String? ?? 'movie',
+          season: _toIntOrNull(data['season']),
+          episode: _toIntOrNull(data['episode']),
+        );
+      }
 
-      if (type != 'PLAYER_EVENT') return null;
+      // 2) Provider D format: {"channel":"example-channel","event":"time","time":...,"duration":...,"percent":...}
+      final channel = json['channel'];
+      final event = json['event'];
+      if (channel != null && event != null) {
+        final currentTime = (json['time'] as num?)?.toDouble();
+        final duration = (json['duration'] as num?)?.toDouble();
+        final percent = (json['percent'] as num?)?.toDouble() ?? (json['progress'] as num?)?.toDouble();
+        if (currentTime != null && duration != null && duration > 0 && percent != null) {
+          return PlayerEvent(
+            eventType: event == 'time' ? 'timeupdate' : event.toString(),
+            currentTime: currentTime,
+            duration: duration,
+            progress: percent,
+            mediaId: '',
+            mediaType: '',
+            season: null,
+            episode: null,
+          );
+        }
+      }
 
-      final data = json['data'] as Map<String, dynamic>;
-
-      return PlayerEvent(
-        eventType: data['event'] as String? ?? 'unknown',
-        currentTime: (data['currentTime'] as num?)?.toDouble() ?? 0,
-        duration: (data['duration'] as num?)?.toDouble() ?? 0,
-        progress: (data['progress'] as num?)?.toDouble() ?? 0,
-        mediaId: data['id']?.toString() ?? '',
-        mediaType: data['mediaType'] as String? ?? 'movie',
-        season: _toIntOrNull(data['season']),
-        episode: _toIntOrNull(data['episode']),
-      );
+      return null;
     } catch (e) {
       debugPrint('EventBridge: Failed to parse postMessage: $e');
       return null;
