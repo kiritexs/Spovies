@@ -127,13 +127,6 @@ class ContinueWatchingCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                       ],
-                      const SizedBox(width: 8),
-                      if (onContinueTap == null)
-                        const Icon(
-                          Icons.play_circle_filled_rounded,
-                          color: AppColors.primary,
-                          size: 28,
-                        ),
                     ],
                   ),
                 ),

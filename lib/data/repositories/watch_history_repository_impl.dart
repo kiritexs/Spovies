@@ -40,18 +40,21 @@ class WatchHistoryRepositoryImpl implements WatchHistoryRepository {
 
   @override
   Future<List<UserProgress>> getContinueWatching({int limit = 10}) async {
-    final entries = <UserProgress>[];
+    final all = <UserProgress>[];
     for (final key in _box.keys) {
       final data = _box.get(key);
-      if (data != null) {
-        final progress = UserProgress.fromMap(data);
-        // Only include items watched less than 95% (consistent with "Watched" threshold)
-        if (progress.percentage < 95) {
-          entries.add(progress);
-        }
+      if (data != null) all.add(UserProgress.fromMap(data));
+    }
+    // One entry per media: keep the most recently played progress per mediaId
+    final byMedia = <String, UserProgress>{};
+    for (final p in all) {
+      final existing = byMedia[p.mediaId];
+      if (existing == null ||
+          p.lastPlayedDate.isAfter(existing.lastPlayedDate)) {
+        byMedia[p.mediaId] = p;
       }
     }
-    // Sort by last played (newest first)
+    final entries = byMedia.values.toList();
     entries.sort((a, b) => b.lastPlayedDate.compareTo(a.lastPlayedDate));
     return entries.take(limit).toList();
   }

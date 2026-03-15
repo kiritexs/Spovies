@@ -233,6 +233,122 @@ Future<void> _continueWatching(
   );
 }
 
+/// Opens player for the next episode (used when current ep is >= 95%).
+Future<void> _openNextEpisode(
+  BuildContext context,
+  WidgetRef ref,
+  UserProgress item,
+  int nextSeason,
+  int nextEpisode,
+) async {
+  final tmdbId = int.tryParse(item.mediaId);
+  if (tmdbId == null || tmdbId == 0) return;
+  final detailsAsync = ref.read(
+    mediaDetailsProvider((tmdbId: tmdbId, type: MediaType.tv)).future,
+  );
+  MediaItem media;
+  try {
+    media = await detailsAsync;
+  } catch (_) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not load show')),
+      );
+    }
+    return;
+  }
+  final plugins = await ref.read(
+    pluginsForHookProvider(TriggerHook.mediaHeader).future,
+  );
+  if (plugins.isEmpty && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('No watch plugin available')),
+    );
+    return;
+  }
+  final preferredId = ref.read(preferredPluginProvider);
+  var activePlugin = plugins.first;
+  if (preferredId != null) {
+    final match = plugins.where((p) => p.pluginId == preferredId);
+    if (match.isNotEmpty) activePlugin = match.first;
+  }
+  final url = PluginUrlResolver.resolve(
+    activePlugin,
+    media,
+    season: nextSeason,
+    episode: nextEpisode,
+  );
+  if (!context.mounted) return;
+  context.push(
+    '/player',
+    extra: PlayerArgs(
+      url: url,
+      media: media,
+      pluginName: activePlugin.name,
+      pluginId: activePlugin.pluginId,
+      resumeTimeSeconds: 0,
+      season: nextSeason,
+      episode: nextEpisode,
+    ),
+  );
+}
+
+// ─── Single Continue Watching card (resolves next-episode for completed TV) ───
+
+class _ContinueWatchingCardItem extends ConsumerWidget {
+  final UserProgress item;
+
+  const _ContinueWatchingCardItem({required this.item});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nextEpisodeAsync = ref.watch(nextEpisodeForProgressProvider(item));
+    final nextEpisode = nextEpisodeAsync.valueOrNull;
+    final isCompleted = item.percentage >= 95;
+    final isTV = item.mediaType == 'tv';
+
+    String remainingTime;
+    VoidCallback? onContinueTap;
+    if (!isCompleted) {
+      remainingTime = item.remainingTime;
+      onContinueTap = () => _continueWatching(context, ref, item);
+    } else if (isTV && nextEpisode != null) {
+      remainingTime = 'Next: S${nextEpisode.season} E${nextEpisode.episode}';
+      onContinueTap = () => _openNextEpisode(
+            context,
+            ref,
+            item,
+            nextEpisode.season,
+            nextEpisode.episode,
+          );
+    } else {
+      remainingTime = isTV ? 'Up to date' : 'Finished';
+      onContinueTap = null;
+    }
+
+    final thumbUrl = buildImageUrl(item.posterPath, AppConfig.posterSmall);
+    final mediaItem = MediaItem(
+      id: item.mediaId,
+      tmdbId: int.tryParse(item.mediaId) ?? 0,
+      type: MediaType.fromString(item.mediaType),
+      title: item.title,
+      posterPath: item.posterPath,
+    );
+
+    return ContinueWatchingCard(
+      title: item.title,
+      remainingTime: remainingTime,
+      progress: (item.percentage / 100).clamp(0.0, 1.0),
+      thumbnailUrl: thumbUrl,
+      episodeLabel: (item.season != null && item.episode != null)
+          ? 'S${item.season} E${item.episode}'
+          : null,
+      onTap: () => context.push('/details', extra: mediaItem),
+      onContinueTap: onContinueTap,
+    );
+  }
+}
+
 // ─── Continue Watching Section ────────────────────────────────────────────────
 
 class _ContinueWatchingSection extends ConsumerWidget {
@@ -276,66 +392,15 @@ class _ContinueWatchingSection extends ConsumerWidget {
                     crossAxisSpacing: 16,
                     mainAxisSpacing: 12,
                   ),
-                  itemBuilder: (context, index) {
-                    final item = items[index];
-                    final thumbUrl = buildImageUrl(
-                      item.posterPath,
-                      AppConfig.posterSmall,
-                    );
-                    return ContinueWatchingCard(
-                      title: item.title,
-                      remainingTime: item.remainingTime,
-                      progress: (item.percentage / 100).clamp(0.0, 1.0),
-                      thumbnailUrl: thumbUrl,
-                      episodeLabel: (item.season != null && item.episode != null)
-                          ? 'S${item.season} E${item.episode}'
-                          : null,
-                      onTap: () => context.push(
-                        '/details',
-                        extra: MediaItem(
-                          id: item.mediaId,
-                          tmdbId: int.tryParse(item.mediaId) ?? 0,
-                          type: MediaType.fromString(item.mediaType),
-                          title: item.title,
-                          posterPath: item.posterPath,
-                        ),
-                      ),
-                      onContinueTap: () => _continueWatching(context, ref, item),
-                    );
-                  },
+                  itemBuilder: (context, index) => _ContinueWatchingCardItem(
+                    item: items[index],
+                  ),
                 )
               else
-                ...items.map((item) {
-                  final thumbUrl = buildImageUrl(
-                    item.posterPath,
-                    AppConfig.posterSmall,
-                  );
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: ContinueWatchingCard(
-                      title: item.title,
-                      remainingTime: item.remainingTime,
-                      progress: (item.percentage / 100).clamp(0.0, 1.0),
-                      thumbnailUrl: thumbUrl,
-                      episodeLabel:
-                          (item.season != null && item.episode != null)
-                              ? 'S${item.season} E${item.episode}'
-                              : null,
-                      onTap: () => context.push(
-                        '/details',
-                        extra: MediaItem(
-                          id: item.mediaId,
-                          tmdbId: int.tryParse(item.mediaId) ?? 0,
-                          type: MediaType.fromString(item.mediaType),
-                          title: item.title,
-                          posterPath: item.posterPath,
-                        ),
-                      ),
-                      onContinueTap: () =>
-                          _continueWatching(context, ref, item),
-                    ),
-                  );
-                }),
+                ...items.map((item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _ContinueWatchingCardItem(item: item),
+                    )),
             ],
           ),
         );

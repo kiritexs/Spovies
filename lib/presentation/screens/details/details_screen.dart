@@ -27,6 +27,17 @@ import '../../providers/details_providers.dart';
 import '../../providers/plugin_providers.dart';
 import '../../providers/settings_providers.dart';
 import '../../providers/watch_history_providers.dart';
+
+/// Sentinel for next-episode provider when there is no progress.
+const _noProgressSentinel = UserProgress(
+  mediaId: '',
+  mediaType: 'movie',
+  title: '',
+  percentage: 0,
+  currentTime: 0,
+  duration: 0,
+  lastPlayedDate: DateTime(0),
+);
 import '../../providers/watch_status_providers.dart';
 import '../../providers/watchlist_providers.dart';
 import '../../router/app_router.dart';
@@ -81,9 +92,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               break;
             }
           }
-          if (continueProgress != null && continueProgress.percentage >= 95) {
-            continueProgress = null;
-          }
+          final progressForNext = continueProgress ?? _noProgressSentinel;
+          final nextEpisode = ref
+              .watch(nextEpisodeForProgressProvider(progressForNext))
+              .valueOrNull;
           return LayoutBuilder(
             builder: (context, constraints) {
               final isDesktop = constraints.maxWidth >= 900;
@@ -94,6 +106,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 preferredId,
                 isDesktop,
                 continueProgress: continueProgress,
+                nextEpisode: continueProgress != null &&
+                        continueProgress.percentage >= 95 &&
+                        details.type == MediaType.tv
+                    ? nextEpisode
+                    : null,
               );
             },
           );
@@ -150,6 +167,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     String? preferredId,
     bool isDesktop, {
     UserProgress? continueProgress,
+    ({int season, int episode})? nextEpisode,
   }) {
     if (isDesktop) {
       return _buildDesktopContent(
@@ -158,6 +176,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         plugins,
         preferredId,
         continueProgress: continueProgress,
+        nextEpisode: nextEpisode,
       );
     }
 
@@ -199,6 +218,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 plugins,
                 preferredId,
                 continueProgress: continueProgress,
+                nextEpisode: nextEpisode,
               ),
               const SizedBox(height: 8),
 
@@ -236,6 +256,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     List<PluginManifest> plugins,
     String? preferredId, {
     UserProgress? continueProgress,
+    ({int season, int episode})? nextEpisode,
   }) {
     final isTV = details.type == MediaType.tv;
     final backdropUrl = buildImageUrl(
@@ -342,6 +363,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                         plugins,
                         preferredId,
                         continueProgress: continueProgress,
+                        nextEpisode: nextEpisode,
                       ),
                       const SizedBox(height: 32),
 
@@ -394,12 +416,22 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     List<PluginManifest> plugins,
     String? preferredId, {
     UserProgress? continueProgress,
+    ({int season, int episode})? nextEpisode,
   }) {
     final activePlugin = _resolvePlugin(plugins, preferredId);
     final isTV = details.type == MediaType.tv;
+    final showResume = continueProgress != null &&
+        continueProgress.percentage < 95 &&
+        plugins.isNotEmpty;
+    final showNextEp = continueProgress != null &&
+        continueProgress.percentage >= 95 &&
+        isTV &&
+        nextEpisode != null &&
+        plugins.isNotEmpty;
+
     return Row(
       children: [
-        if (continueProgress != null && plugins.isNotEmpty) ...[
+        if (showResume) ...[
           SizedBox(
             width: 280,
             height: 56,
@@ -410,7 +442,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               ),
               child: ElevatedButton.icon(
                 onPressed: () =>
-                    _openContinue(context, details, continueProgress),
+                    _openContinue(context, details, continueProgress!),
                 icon: const Icon(Icons.play_circle_rounded, size: 28),
                 label: Text(
                   'Continue (${continueProgress.remainingTime})',
@@ -430,15 +462,51 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           ),
           if (activePlugin != null) ...[
             const SizedBox(width: 12),
-            _buildCircularDesktopAction(
-              icon: Icons.replay_rounded,
+            OutlinedButton.icon(
               onPressed: () => _openFromStart(context, details, activePlugin),
-              color: AppColors.textSecondary,
+              icon: const Icon(Icons.replay_rounded, size: 20),
+              label: Text('Start over', style: AppTextStyles.labelSmall),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.textSecondary,
+                side: const BorderSide(color: AppColors.glassBorder),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
             ),
           ],
           const SizedBox(width: 12),
         ],
-        if (continueProgress == null && activePlugin != null) ...[
+        if (showNextEp) ...[
+          SizedBox(
+            width: 260,
+            height: 56,
+            child: ElevatedButton.icon(
+              onPressed: () => _openNextEpisode(
+                context,
+                details,
+                nextEpisode!.season,
+                nextEpisode.episode,
+              ),
+              icon: const Icon(Icons.skip_next_rounded, size: 24),
+              label: Text(
+                'Start next (S${nextEpisode.season} E${nextEpisode.episode})',
+                style: AppTextStyles.label.copyWith(fontSize: 16),
+                overflow: TextOverflow.ellipsis,
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                elevation: 0,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+        ],
+        if (!showResume && !showNextEp && activePlugin != null) ...[
           SizedBox(
             width: 220,
             height: 56,
@@ -461,14 +529,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           const SizedBox(width: 16),
         ],
 
-        // Status dropdown (consolidated Library action)
         _buildLibraryAction(context, details),
 
-        const SizedBox(width: 12),
-        // Trailer
-        if (details.metadata.trailerKey != null)
-          _buildCircularDesktopAction(
-            icon: Icons.movie_outlined,
+        if (details.metadata.trailerKey != null) ...[
+          const SizedBox(width: 12),
+          IconButton(
             onPressed: () async {
               final uri = Uri.parse(
                 'https://www.youtube.com/watch?v=${details.metadata.trailerKey}',
@@ -481,34 +546,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 }
               }
             },
+            icon: const Icon(Icons.movie_outlined, size: 24),
+            tooltip: 'Watch trailer',
           ),
+        ],
       ],
-    );
-  }
-
-  Widget _buildCircularDesktopAction({
-    required IconData icon,
-    required VoidCallback onPressed,
-    Color color = Colors.white,
-    bool isActive = false,
-  }) {
-    return Container(
-      width: 56,
-      height: 56,
-      decoration: BoxDecoration(
-        color: isActive
-            ? AppColors.primary.withValues(alpha: 0.15)
-            : Colors.white.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isActive ? AppColors.primary : Colors.white.withValues(alpha: 0.15),
-          width: 1.5,
-        ),
-      ),
-      child: IconButton(
-        icon: Icon(icon, color: color, size: 24),
-        onPressed: onPressed,
-      ),
     );
   }
 
@@ -717,12 +759,21 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     List<PluginManifest> plugins,
     String? preferredId, {
     UserProgress? continueProgress,
+    ({int season, int episode})? nextEpisode,
   }) {
     final activePlugin = _resolvePlugin(plugins, preferredId);
+    final showResume = continueProgress != null &&
+        continueProgress.percentage < 95 &&
+        plugins.isNotEmpty;
+    final showNextEp = continueProgress != null &&
+        continueProgress.percentage >= 95 &&
+        details.type == MediaType.tv &&
+        nextEpisode != null &&
+        plugins.isNotEmpty;
 
     return Row(
       children: [
-        if (continueProgress != null && plugins.isNotEmpty) ...[
+        if (showResume) ...[
           Expanded(
             child: Container(
               height: AppSpacing.buttonHeight,
@@ -732,7 +783,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               ),
               child: ElevatedButton.icon(
                 onPressed: () =>
-                    _openContinue(context, details, continueProgress),
+                    _openContinue(context, details, continueProgress!),
                 icon: const Icon(Icons.play_circle_rounded, size: 24),
                 label: Text(
                   'Continue (${continueProgress.remainingTime})',
@@ -766,8 +817,41 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             ),
           ],
         ],
+        if (showNextEp) ...[
+          Expanded(
+            child: Container(
+              height: AppSpacing.buttonHeight,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+                boxShadow: AppColors.primaryGlowShadow,
+              ),
+              child: ElevatedButton.icon(
+                onPressed: () => _openNextEpisode(
+                  context,
+                  details,
+                  nextEpisode!.season,
+                  nextEpisode.episode,
+                ),
+                icon: const Icon(Icons.skip_next_rounded, size: 24),
+                label: Text(
+                  'Start next (S${nextEpisode.season} E${nextEpisode.episode})',
+                  style: AppTextStyles.label,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+                  ),
+                  elevation: 0,
+                ),
+              ),
+            ),
+          ),
+        ],
 
-        if (continueProgress == null && activePlugin != null)
+        if (!showResume && !showNextEp && activePlugin != null)
           Expanded(
             child: Container(
               height: AppSpacing.buttonHeight,
@@ -814,55 +898,73 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     return statusAsync.when(
       data: (current) {
         final isInLibrary = current != null;
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-            child: InkWell(
-              onTap: () => _showLibraryStatusModal(context, details, current),
-              borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-              child: Container(
-                height: AppSpacing.buttonHeight,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _showLibraryStatusModal(context, details, current),
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              height: 56,
+              constraints: const BoxConstraints(minWidth: 56),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
                   color: isInLibrary
-                      ? AppColors.primary.withValues(alpha: 0.2)
-                      : AppColors.glass,
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-                  border: Border.all(
-                    color: isInLibrary
-                        ? AppColors.primary
-                        : AppColors.glassBorder,
-                  ),
+                      ? AppColors.primary.withValues(alpha: 0.6)
+                      : Colors.white.withValues(alpha: 0.15),
+                  width: 1.5,
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      current?.status.icon ?? Icons.playlist_add_rounded,
-                      color: isInLibrary ? AppColors.primary : Colors.white,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        current?.status.displayName ?? 'Add to Library',
-                        style: AppTextStyles.labelSmall.copyWith(
-                          color: isInLibrary ? AppColors.primary : Colors.white,
+                boxShadow: isInLibrary
+                    ? [
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.2),
+                          blurRadius: 12,
+                          spreadRadius: 0,
                         ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
+                      ]
+                    : null,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: isInLibrary
+                      ? [
+                          AppColors.primary.withValues(alpha: 0.18),
+                          AppColors.primary.withValues(alpha: 0.08),
+                        ]
+                      : [
+                          Colors.white.withValues(alpha: 0.08),
+                          Colors.white.withValues(alpha: 0.03),
+                        ],
                 ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    current?.status.icon ?? Icons.playlist_add_rounded,
+                    color: isInLibrary ? AppColors.primary : Colors.white70,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      current?.status.displayName ?? 'Add to Library',
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: isInLibrary ? AppColors.primary : Colors.white70,
+                        fontWeight: isInLibrary ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         );
       },
-      loading: () =>
-          const SizedBox(width: 120, height: AppSpacing.buttonHeight),
+      loading: () => const SizedBox(width: 56, height: 56),
       error: (_, __) => const SizedBox.shrink(),
     );
   }
@@ -1115,6 +1217,43 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         ),
         const SizedBox(height: 16),
       ],
+    );
+  }
+
+  /// Opens the player for the next episode (e.g. after current ep is >= 95%).
+  void _openNextEpisode(
+    BuildContext context,
+    MediaItem details,
+    int season,
+    int episode,
+  ) {
+    final plugins =
+        ref
+            .read(pluginsForHookProvider(TriggerHook.mediaHeader))
+            .whenOrNull(data: (list) => list) ??
+        [];
+    if (plugins.isEmpty) return;
+    final preferredId = ref.read(preferredPluginProvider);
+    final plugin = _resolvePlugin(plugins, preferredId);
+    if (plugin == null) return;
+    final url = PluginUrlResolver.resolve(
+      plugin,
+      details,
+      season: season,
+      episode: episode,
+    );
+    if (!context.mounted) return;
+    context.push(
+      '/player',
+      extra: PlayerArgs(
+        url: url,
+        media: details,
+        pluginName: plugin.name,
+        pluginId: plugin.pluginId,
+        resumeTimeSeconds: 0,
+        season: season,
+        episode: episode,
+      ),
     );
   }
 
@@ -1765,7 +1904,7 @@ class _EpisodeStatusPicker extends ConsumerWidget {
             ? AppColors.primary
             : AppColors.textMuted,
       ),
-      tooltip: 'Set status',
+      tooltip: 'Change status (always editable)',
       padding: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
