@@ -303,7 +303,7 @@ class _ContinueWatchingCardItem extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final nextEpisodeAsync = ref.watch(nextEpisodeForProgressProvider(item));
-    final nextEpisode = nextEpisodeAsync.valueOrNull;
+    final nextEpisode = nextEpisodeAsync.value;
     final isCompleted = item.percentage >= 95;
     final isTV = item.mediaType == 'tv';
 
