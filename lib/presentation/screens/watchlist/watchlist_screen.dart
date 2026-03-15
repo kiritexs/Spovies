@@ -279,7 +279,7 @@ class _WatchlistItem extends ConsumerWidget {
         episode: null,
       )),
     );
-    final status = statusAsync.valueOrNull;
+    final status = statusAsync.value;
 
     return GestureDetector(
       onTap: onTap,

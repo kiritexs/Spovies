@@ -27,9 +27,14 @@ import '../../providers/details_providers.dart';
 import '../../providers/plugin_providers.dart';
 import '../../providers/settings_providers.dart';
 import '../../providers/watch_history_providers.dart';
+import '../../providers/watch_status_providers.dart';
+import '../../providers/watchlist_providers.dart';
+import '../../router/app_router.dart';
+import '../../../domain/entities/watch_status.dart';
+import '../../widgets/shimmer_placeholder.dart';
 
 /// Sentinel for next-episode provider when there is no progress.
-const _noProgressSentinel = UserProgress(
+final _noProgressSentinel = UserProgress(
   mediaId: '',
   mediaType: 'movie',
   title: '',
@@ -38,11 +43,6 @@ const _noProgressSentinel = UserProgress(
   duration: 0,
   lastPlayedDate: DateTime(0),
 );
-import '../../providers/watch_status_providers.dart';
-import '../../providers/watchlist_providers.dart';
-import '../../router/app_router.dart';
-import '../../../domain/entities/watch_status.dart';
-import '../../widgets/shimmer_placeholder.dart';
 
 /// Cinematic full-screen movie/TV details page.
 ///
@@ -95,7 +95,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           final progressForNext = continueProgress ?? _noProgressSentinel;
           final nextEpisode = ref
               .watch(nextEpisodeForProgressProvider(progressForNext))
-              .valueOrNull;
+              .value;
           return LayoutBuilder(
             builder: (context, constraints) {
               final isDesktop = constraints.maxWidth >= 900;
@@ -1763,7 +1763,7 @@ class _EpisodeRow extends ConsumerWidget {
                               child: Align(
                                 alignment: Alignment.centerLeft,
                                 child: FractionallySizedBox(
-                                  widthFactor: (progress.percentage / 100)
+                                  widthFactor: (progress?.percentage ?? 0 / 100)
                                       .clamp(0.0, 1.0),
                                   child: Container(
                                     decoration: const BoxDecoration(
@@ -1818,7 +1818,7 @@ class _EpisodeRow extends ConsumerWidget {
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
-                                      '${progress.percentage.toInt()}%',
+                                      '${progress?.percentage.toInt()}%',
                                       style: AppTextStyles.tag.copyWith(
                                         color: AppColors.primary,
                                         fontSize: 9,
