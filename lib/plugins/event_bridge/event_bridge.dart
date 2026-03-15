@@ -51,16 +51,25 @@ class PlayerEvent {
               : null;
       if (json == null) return null;
 
-      // 1) Standard PLAYER_EVENT format (Provider A, etc.)
+      final eventValue = json['event'];
+
+      // 1) Standard PLAYER_EVENT format (Provider A, Provider C, etc.)
+      //    Provider C omits "progress" and sends tmdbId:"false" — compute progress from currentTime/duration.
       final type = json['type'] as String?;
       if (type == 'PLAYER_EVENT') {
         final data = json['data'] as Map<String, dynamic>?;
         if (data == null) return null;
+        final currentTime = (data['currentTime'] as num?)?.toDouble() ?? 0;
+        final duration = (data['duration'] as num?)?.toDouble() ?? 0;
+        var progress = (data['progress'] as num?)?.toDouble();
+        if (progress == null || (progress == 0 && duration > 0)) {
+          progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+        }
         return PlayerEvent(
           eventType: data['event'] as String? ?? 'unknown',
-          currentTime: (data['currentTime'] as num?)?.toDouble() ?? 0,
-          duration: (data['duration'] as num?)?.toDouble() ?? 0,
-          progress: (data['progress'] as num?)?.toDouble() ?? 0,
+          currentTime: currentTime,
+          duration: duration,
+          progress: progress,
           mediaId: data['id']?.toString() ?? '',
           mediaType: data['mediaType'] as String? ?? 'movie',
           season: _toIntOrNull(data['season']),
@@ -70,8 +79,8 @@ class PlayerEvent {
 
       // 2) Provider D format: {"channel":"example-channel","event":"time","time":...,"duration":...,"percent":...}
       final channel = json['channel'];
-      final event = json['event'];
-      if (channel != null && event != null) {
+      if (channel != null && eventValue != null) {
+        final event = eventValue;
         final currentTime = (json['time'] as num?)?.toDouble();
         final duration = (json['duration'] as num?)?.toDouble();
         final percent = (json['percent'] as num?)?.toDouble() ?? (json['progress'] as num?)?.toDouble();
@@ -81,6 +90,27 @@ class PlayerEvent {
             currentTime: currentTime,
             duration: duration,
             progress: percent,
+            mediaId: '',
+            mediaType: '',
+            season: null,
+            episode: null,
+          );
+        }
+      }
+
+      // 3) Provider C native format: {"event":"time"|"pause"|"paused"|"userpause","time":...,"data":...,"duration":...}
+      //    No "type" or "channel"; current time in "time" or "data". Progress bar was 0 because we never parsed these.
+      final durationVal = (json['duration'] as num?)?.toDouble();
+      final timeVal = (json['time'] as num?)?.toDouble() ?? (json['data'] as num?)?.toDouble();
+      if (eventValue != null && durationVal != null && durationVal > 0 && timeVal != null) {
+        final eventStr = eventValue.toString();
+        if (eventStr == 'time' || eventStr == 'pause' || eventStr == 'userpause' || eventStr == 'paused') {
+          final progressPct = (timeVal / durationVal) * 100;
+          return PlayerEvent(
+            eventType: eventStr == 'time' ? 'timeupdate' : 'pause',
+            currentTime: timeVal,
+            duration: durationVal,
+            progress: progressPct,
             mediaId: '',
             mediaType: '',
             season: null,
