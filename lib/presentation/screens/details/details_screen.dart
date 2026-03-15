@@ -76,8 +76,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               [];
           UserProgress? continueProgress;
           for (final p in cwList) {
-            if (p.mediaId == details.tmdbId.toString() &&
-                (details.type != MediaType.tv || p.season == _selectedSeason)) {
+            if (p.mediaId == details.tmdbId.toString()) {
               continueProgress = p;
               break;
             }
@@ -429,9 +428,16 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               ),
             ),
           ),
+          if (activePlugin != null) ...[
+            const SizedBox(width: 12),
+            _buildCircularDesktopAction(
+              icon: Icons.replay_rounded,
+              onPressed: () => _openFromStart(context, details, activePlugin),
+              color: AppColors.textSecondary,
+            ),
+          ],
           const SizedBox(width: 12),
         ],
-        // Watch series / movie (only if NO progress)
         if (continueProgress == null && activePlugin != null) ...[
           SizedBox(
             width: 220,
@@ -491,11 +497,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       height: 56,
       decoration: BoxDecoration(
         color: isActive
-            ? AppColors.primary.withOpacity(0.15)
-            : Colors.white.withOpacity(0.08),
+            ? AppColors.primary.withValues(alpha: 0.15)
+            : Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isActive ? AppColors.primary : Colors.white.withOpacity(0.15),
+          color: isActive ? AppColors.primary : Colors.white.withValues(alpha: 0.15),
           width: 1.5,
         ),
       ),
@@ -716,8 +722,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
     return Row(
       children: [
-        // Continue button (when progress exists and < 90%)
-        if (continueProgress != null && plugins.isNotEmpty)
+        if (continueProgress != null && plugins.isNotEmpty) ...[
           Expanded(
             child: Container(
               height: AppSpacing.buttonHeight,
@@ -745,8 +750,23 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               ),
             ),
           ),
+          if (activePlugin != null) ...[
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: () => _openFromStart(context, details, activePlugin),
+              icon: const Icon(Icons.replay_rounded, size: 20),
+              label: Text('Start over', style: AppTextStyles.labelSmall),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.textSecondary,
+                side: const BorderSide(color: AppColors.glassBorder),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+                ),
+              ),
+            ),
+          ],
+        ],
 
-        // Watch button (only if NO progress exists)
         if (continueProgress == null && activePlugin != null)
           Expanded(
             child: Container(
@@ -976,10 +996,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                   TextButton.icon(
                     onPressed: () {
                       ref
-                          .read(watchlistProvider.notifier)
-                          .remove(details.tmdbId);
-                      // Also clear status? Usually users want both.
-                      // For now just remove from watchlist.
+                          .read(watchStatusNotifierProvider.notifier)
+                          .deleteAllStatusesForMedia(details.tmdbId.toString());
+                      ref.read(watchlistProvider.notifier).remove(details.tmdbId);
                       Navigator.pop(context);
                     },
                     icon: const Icon(
@@ -1096,6 +1115,34 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         ),
         const SizedBox(height: 16),
       ],
+    );
+  }
+
+  /// Opens the player from the beginning (season 1 episode 1 for TV).
+  void _openFromStart(
+    BuildContext context,
+    MediaItem details,
+    PluginManifest plugin,
+  ) {
+    final isTV = details.type == MediaType.tv;
+    final url = PluginUrlResolver.resolve(
+      plugin,
+      details,
+      season: isTV ? 1 : null,
+      episode: isTV ? 1 : null,
+    );
+    if (!context.mounted) return;
+    context.push(
+      '/player',
+      extra: PlayerArgs(
+        url: url,
+        media: details,
+        pluginName: plugin.name,
+        pluginId: plugin.pluginId,
+        resumeTimeSeconds: 0,
+        season: isTV ? 1 : null,
+        episode: isTV ? 1 : null,
+      ),
     );
   }
 
@@ -1410,35 +1457,73 @@ class _EpisodeRow extends ConsumerWidget {
     );
 
     return progressAsync.when(
-      loading: () => const SizedBox(height: 100),
+      loading: () => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            ShimmerPlaceholder(
+              width: 140,
+              height: 120,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const ShimmerPlaceholder(height: 14, width: 60),
+                  const SizedBox(height: 8),
+                  const ShimmerPlaceholder(height: 16, width: 120),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
       error: (_, __) => const SizedBox.shrink(),
       data: (progress) {
         final status = statusAsync.value?.status;
         final bool isWatched =
-            (progress != null && progress.percentage >= 95) ||
-            status == WatchStatus.completed;
+            status == WatchStatus.completed ||
+            (progress != null && progress.percentage >= 95);
         final bool isWatching =
-            !isWatched && progress != null && progress.percentage > 0;
+            !isWatched &&
+            (status == WatchStatus.watching ||
+                (progress != null && progress.percentage > 0));
 
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: InkWell(
             onTap: () {
-              if (!isWatched && !isWatching) {
-                ref
-                    .read(watchStatusNotifierProvider.notifier)
-                    .setStatus(
-                      MediaStatus(
-                        mediaId: mediaId,
-                        mediaType: 'tv',
-                        status: WatchStatus.watching,
-                        season: episode.seasonNumber,
-                        episode: episode.episodeNumber,
-                        updatedAt: DateTime.now(),
-                      ),
-                    );
+              if (onPlay != null) {
+                if (!isWatched && status != WatchStatus.watching) {
+                  ref
+                      .read(watchStatusNotifierProvider.notifier)
+                      .setStatus(
+                        MediaStatus(
+                          mediaId: mediaId,
+                          mediaType: 'tv',
+                          status: WatchStatus.watching,
+                          season: episode.seasonNumber,
+                          episode: episode.episodeNumber,
+                          updatedAt: DateTime.now(),
+                        ),
+                      );
+                }
+                onPlay!();
+              } else if (!isWatched && !isWatching) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('No playback source configured'),
+                    behavior: SnackBarBehavior.floating,
+                    backgroundColor: AppColors.surfaceDark,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+                    ),
+                  ),
+                );
               }
-              onPlay?.call();
             },
             borderRadius: BorderRadius.circular(20),
             child: Container(
@@ -1716,6 +1801,7 @@ class _EpisodeStatusPicker extends ConsumerWidget {
                 null, // Clear status
                 WatchStatus.watching,
                 WatchStatus.completed,
+                WatchStatus.planToWatch,
                 WatchStatus.onHold,
                 WatchStatus.dropped,
               ]
@@ -1736,8 +1822,8 @@ class _EpisodeStatusPicker extends ConsumerWidget {
                         s == null
                             ? 'Reset Status'
                             : s == WatchStatus.completed
-                            ? 'Mark Watched'
-                            : s.displayName,
+                                ? 'Mark Watched'
+                                : s.displayName,
                         style: AppTextStyles.labelSmall.copyWith(
                           color: s == currentStatus
                               ? AppColors.primary

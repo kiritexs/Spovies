@@ -68,4 +68,19 @@ class WatchStatusRepositoryImpl implements WatchStatusRepository {
     final key = _key(mediaId, season: season, episode: episode);
     await _box.delete(key);
   }
+
+  @override
+  Future<void> deleteAllStatusesForMedia(String mediaId) async {
+    final keysToRemove = <String>[];
+    final prefix = 'status_${mediaId}_';
+    final exactKey = 'status_$mediaId';
+    for (final key in _box.keys) {
+      if (key is String && (key == exactKey || key.startsWith(prefix))) {
+        keysToRemove.add(key);
+      }
+    }
+    for (final key in keysToRemove) {
+      await _box.delete(key);
+    }
+  }
 }

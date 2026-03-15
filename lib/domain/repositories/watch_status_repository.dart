@@ -21,4 +21,8 @@ abstract class WatchStatusRepository {
 
   /// Remove status for a media item or episode.
   Future<void> deleteStatus(String mediaId, {int? season, int? episode});
+
+  /// Remove all status entries for a media (show-level + all episode-level).
+  /// Use when removing a title from the library.
+  Future<void> deleteAllStatusesForMedia(String mediaId);
 }

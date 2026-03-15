@@ -28,17 +28,15 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   @override
   Widget build(BuildContext context) {
     final allItems = ref.watch(watchlistProvider);
-    
-    // Filter items based on selected status
+    final statusEntries = _selectedStatus == null
+        ? null
+        : ref.watch(libraryEntriesByStatusProvider(_selectedStatus!)).value ?? [];
     final filteredItems = _selectedStatus == null
         ? allItems
-        : allItems.where((item) {
-            // We need to check if this item has the selected status.
-            // Since we can't easily wait for 100 futures here, 
-            // we use the entriesByStatusProvider to get the IDs.
-            final statusEntries = ref.watch(entriesByStatusProvider(_selectedStatus!)).value ?? [];
-            return statusEntries.any((e) => e.mediaId == item.tmdbId.toString());
-          }).toList();
+        : allItems
+            .where((item) =>
+                statusEntries!.any((e) => e.mediaId == item.tmdbId.toString()))
+            .toList();
 
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
@@ -162,8 +160,12 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
             return _WatchlistItem(
               item: item,
               onTap: () => context.push('/details', extra: item),
-              onRemove: () =>
-                  ref.read(watchlistProvider.notifier).remove(item.tmdbId),
+              onRemove: () {
+                ref
+                    .read(watchStatusNotifierProvider.notifier)
+                    .deleteAllStatusesForMedia(item.tmdbId.toString());
+                ref.read(watchlistProvider.notifier).remove(item.tmdbId);
+              },
             );
           },
         );
@@ -207,6 +209,11 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       ),
     );
     if (confirmed == true) {
+      final ids =
+          ref.read(watchlistProvider).map((m) => m.tmdbId.toString()).toList();
+      for (final id in ids) {
+        ref.read(watchStatusNotifierProvider.notifier).deleteAllStatusesForMedia(id);
+      }
       ref.read(watchlistProvider.notifier).clearAll();
     }
   }
@@ -251,7 +258,7 @@ class _StatusFilterChip extends StatelessWidget {
 
 // ─── Individual Grid Item ──────────────────────────────────────────────────
 
-class _WatchlistItem extends StatelessWidget {
+class _WatchlistItem extends ConsumerWidget {
   final MediaItem item;
   final VoidCallback onTap;
   final VoidCallback onRemove;
@@ -263,15 +270,22 @@ class _WatchlistItem extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final posterUrl = buildImageUrl(item.posterPath, AppConfig.posterMedium);
+    final statusAsync = ref.watch(
+      mediaStatusProvider((
+        mediaId: item.tmdbId.toString(),
+        season: null,
+        episode: null,
+      )),
+    );
+    final status = statusAsync.valueOrNull;
 
     return GestureDetector(
       onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Poster
           Expanded(
             child: Stack(
               fit: StackFit.expand,
@@ -288,7 +302,6 @@ class _WatchlistItem extends StatelessWidget {
                         )
                       : Container(color: AppColors.surfaceDark),
                 ),
-                // Remove badge
                 Positioned(
                   top: 6,
                   right: 6,
@@ -309,40 +322,63 @@ class _WatchlistItem extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Type badge
                 Positioned(
                   bottom: 6,
                   left: 6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      item.type.displayName.toUpperCase(),
-                      style: AppTextStyles.tag.copyWith(fontSize: 9),
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          item.type.displayName.toUpperCase(),
+                          style: AppTextStyles.tag.copyWith(fontSize: 9),
+                        ),
+                      ),
+                      if (status != null) ...[
+                        const SizedBox(width: 4),
+                        Tooltip(
+                          message: status.status.displayName,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceDark.withValues(alpha: 0.95),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: AppColors.primary.withValues(alpha: 0.5),
+                              ),
+                            ),
+                            child: Icon(
+                              status.status.icon,
+                              size: 12,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-
           const SizedBox(height: 6),
-
-          // Title
           Text(
             item.title,
             style: AppTextStyles.cardTitle.copyWith(fontSize: 12),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-
-          // Year
           if (item.year != null)
             Text(
               item.year!,

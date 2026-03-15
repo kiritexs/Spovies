@@ -42,6 +42,14 @@ final entriesByStatusProvider =
   return repo.getEntriesByStatus(status);
 });
 
+/// Media-level only (season == null, episode == null). Use for library filter.
+final libraryEntriesByStatusProvider =
+    FutureProvider.family<List<MediaStatus>, WatchStatus>((ref, status) async {
+  final repo = ref.watch(watchStatusRepositoryProvider);
+  final all = await repo.getEntriesByStatus(status);
+  return all.where((e) => e.season == null && e.episode == null).toList();
+});
+
 // ─── Notifier: set status and invalidate ─────────────────────────────────
 
 class WatchStatusNotifier extends Notifier<void> {
@@ -71,6 +79,17 @@ class WatchStatusNotifier extends Notifier<void> {
     ref.invalidate(mediaStatusProvider);
     ref.invalidate(mediaStatusesForShowProvider);
     ref.invalidate(entriesByStatusProvider);
+    ref.invalidate(libraryEntriesByStatusProvider);
+  }
+
+  /// Remove all statuses for a media (show + all episodes). Use when removing from library.
+  Future<void> deleteAllStatusesForMedia(String mediaId) async {
+    final repo = ref.read(watchStatusRepositoryProvider);
+    await repo.deleteAllStatusesForMedia(mediaId);
+    ref.invalidate(mediaStatusProvider);
+    ref.invalidate(mediaStatusesForShowProvider);
+    ref.invalidate(entriesByStatusProvider);
+    ref.invalidate(libraryEntriesByStatusProvider);
   }
 }
 
