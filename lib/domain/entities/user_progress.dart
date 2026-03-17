@@ -76,4 +76,21 @@ class UserProgress {
       lastPluginId: map['lastPluginId'] as String?,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UserProgress &&
+          runtimeType == other.runtimeType &&
+          mediaId == other.mediaId &&
+          mediaType == other.mediaType &&
+          season == other.season &&
+          episode == other.episode;
+
+  @override
+  int get hashCode =>
+      mediaId.hashCode ^
+      mediaType.hashCode ^
+      season.hashCode ^
+      episode.hashCode;
 }

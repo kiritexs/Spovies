@@ -168,7 +168,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     String? preferredId,
     bool isDesktop, {
     UserProgress? continueProgress,
-    ({int season, int episode})? nextEpisode,
+    Episode? nextEpisode,
   }) {
     if (isDesktop) {
       return _buildDesktopContent(
@@ -257,7 +257,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     List<PluginManifest> plugins,
     String? preferredId, {
     UserProgress? continueProgress,
-    ({int season, int episode})? nextEpisode,
+    Episode? nextEpisode,
   }) {
     final isTV = details.type == MediaType.tv;
     final backdropUrl = buildImageUrl(
@@ -417,7 +417,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     List<PluginManifest> plugins,
     String? preferredId, {
     UserProgress? continueProgress,
-    ({int season, int episode})? nextEpisode,
+    Episode? nextEpisode,
   }) {
     final activePlugin = _resolvePlugin(plugins, preferredId);
     final isTV = details.type == MediaType.tv;
@@ -490,12 +490,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               onPressed: () => _openNextEpisode(
                 context,
                 details,
-                nextEpisode!.season,
-                nextEpisode.episode,
+                nextEpisode!.seasonNumber,
+                nextEpisode.episodeNumber,
               ),
               icon: const Icon(Icons.skip_next_rounded, size: 24),
               label: Text(
-                'Start next (S${nextEpisode.season} E${nextEpisode.episode})',
+                'Start next (S${nextEpisode.seasonNumber} E${nextEpisode.episodeNumber})',
                 style: AppTextStyles.label.copyWith(fontSize: 16),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -764,7 +764,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     List<PluginManifest> plugins,
     String? preferredId, {
     UserProgress? continueProgress,
-    ({int season, int episode})? nextEpisode,
+    Episode? nextEpisode,
   }) {
     final activePlugin = _resolvePlugin(plugins, preferredId);
     final showResume =
@@ -836,12 +836,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 onPressed: () => _openNextEpisode(
                   context,
                   details,
-                  nextEpisode!.season,
-                  nextEpisode.episode,
+                  nextEpisode!.seasonNumber,
+                  nextEpisode.episodeNumber,
                 ),
                 icon: const Icon(Icons.skip_next_rounded, size: 24),
                 label: Text(
-                  'Start next (S${nextEpisode.season} E${nextEpisode.episode})',
+                  'Start next (S${nextEpisode.seasonNumber} E${nextEpisode.episodeNumber})',
                   style: AppTextStyles.label,
                   overflow: TextOverflow.ellipsis,
                 ),

@@ -313,13 +313,13 @@ class _ContinueWatchingCardItem extends ConsumerWidget {
       remainingTime = item.remainingTime;
       onContinueTap = () => _continueWatching(context, ref, item);
     } else if (isTV && nextEpisode != null) {
-      remainingTime = 'Next: S${nextEpisode.season} E${nextEpisode.episode}';
+      remainingTime = 'Next: S${nextEpisode.seasonNumber} E${nextEpisode.episodeNumber}';
       onContinueTap = () => _openNextEpisode(
             context,
             ref,
             item,
-            nextEpisode.season,
-            nextEpisode.episode,
+            nextEpisode.seasonNumber,
+            nextEpisode.episodeNumber,
           );
     } else {
       remainingTime = isTV ? 'Up to date' : 'Finished';

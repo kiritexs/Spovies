@@ -1,21 +1,32 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:go_router/go_router.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/utils/tmdb_image_url.dart';
 import '../../../domain/entities/media_item.dart';
+import '../../../domain/entities/media_type.dart';
 import '../../../domain/entities/user_progress.dart';
 import '../../../plugins/event_bridge/event_bridge.dart';
+import '../../../plugins/protocol/plugin_url_resolver.dart';
+import '../../../plugins/protocol/trigger_hook.dart';
+import '../../providers/plugin_providers.dart';
+import '../../providers/settings_providers.dart';
 import '../../providers/watch_history_providers.dart';
+import '../../providers/webview_providers.dart';
+import '../../router/app_router.dart';
 import '../../../data/services/remote_blocklist.dart';
 
 // ─── Bridge JS — injected at document-end, guarded by flag ───────────────────
@@ -317,6 +328,33 @@ const _kNoSelectCss = '''
     '}',
   ].join('');
   (document.head || document.documentElement).appendChild(s);
+})();
+''';
+
+// ─── User Activity Tracker — injected at document-start ─────────────────────
+//
+// Detects mouse movement, touches, and key presses inside the WebView and
+// relays them to Flutter to wake up the auto-hiding UI controls.
+// This avoids putting a Flutter Listener over the WebView, which breaks
+// native gesture routing on Android and Windows.
+const _kUserActivityJs = '''
+(function() {
+  if (window.__spoviesActivityTracker) return;
+  window.__spoviesActivityTracker = true;
+  var THROTTLE_MS = 500;
+  var lastSent = 0;
+  function reportActivity() {
+    var now = Date.now();
+    if (now - lastSent < THROTTLE_MS) return;
+    lastSent = now;
+    if (window.flutter_inappwebview) {
+      window.flutter_inappwebview.callHandler('spoviesEventBridge', JSON.stringify({ type: 'USER_ACTIVITY' }));
+    }
+  }
+  window.addEventListener('mousemove', reportActivity, { passive: true });
+  window.addEventListener('touchstart', reportActivity, { passive: true });
+  window.addEventListener('click', reportActivity, { passive: true });
+  window.addEventListener('keydown', reportActivity, { passive: true });
 })();
 ''';
 
@@ -743,16 +781,25 @@ class WebViewPlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
-  late final EventBridge _eventBridge;
+  double _loadProgress = 0;
+  bool _isNavigating = false;
+  EventBridge? _eventBridge;
 
   // Stored so imperative operations (reload, goBack, etc.) are possible.
   InAppWebViewController? _controller;
-  WebViewEnvironment? _webViewEnvironment;
 
-  int _loadProgress = 0;
   bool _hasError = false;
   String _errorMsg = '';
   bool _isFullScreen = false;
+
+  Timer? _controlsTimer;
+  bool _showControls = true;
+
+  bool _showNextEpisodeOverlay = false;
+  bool _overlayActive = false; // Controls animation (slide/fade)
+  bool _dismissedNextEpisodeOverlay = false;
+  int? _lastNextEpisodeTriggered; // episode number to avoid repeat popups
+  Timer? _overlayTimer;
 
   // ─── Gesture recognizers — transferred to the WebView ────────────────────
   // Giving explicit ownership of these gestures to the WebView prevents the
@@ -767,9 +814,35 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     _lockLandscape();
     _eventBridge = EventBridge(onProgressUpdate: _onProgressUpdate);
     if (Platform.isWindows) {
-      _initWebViewEnvironment();
       _checkFullScreen();
     }
+    _resetControlsTimer();
+  }
+
+  void _resetControlsTimer() {
+    if (mounted) {
+      setState(() {
+        _showControls = true;
+        // Re-show overlay on activity if it should be visible
+        if (_showNextEpisodeOverlay && !_dismissedNextEpisodeOverlay) {
+          _overlayActive = true;
+          _startOverlayTimer();
+        }
+      });
+    }
+    _controlsTimer?.cancel();
+    _controlsTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted) setState(() => _showControls = false);
+    });
+  }
+
+  void _startOverlayTimer() {
+    _overlayTimer?.cancel();
+    _overlayTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted && _overlayActive) {
+        setState(() => _overlayActive = false);
+      }
+    });
   }
 
   Future<void> _checkFullScreen() async {
@@ -777,31 +850,27 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     if (mounted) setState(() => _isFullScreen = isFullscreen);
   }
 
-  Future<void> _initWebViewEnvironment() async {
-    try {
-      final supportDir = await getApplicationSupportDirectory();
-      _webViewEnvironment = await WebViewEnvironment.create(
-        settings: WebViewEnvironmentSettings(
-          userDataFolder: '${supportDir.path}\\Spovies_WebView2',
-        ),
-      );
-    } catch (e) {
-      if (kDebugMode) debugPrint('WebViewEnvironment.create error: $e');
-      if (mounted) {
-        setState(() {
-          _hasError = true;
-          _errorMsg =
-              'WebView initialization failed. Please ensure WebView2 Runtime is installed.';
-        });
-      }
-    }
-    if (mounted) setState(() {});
-  }
-
   @override
   void dispose() {
+    _controlsTimer?.cancel();
+    _overlayTimer?.cancel();
+    _cleanupWebView();
     _restorePortrait();
     super.dispose();
+  }
+
+  /// Centralized cleanup to ensure the WebView stops all background work.
+  /// Called before navigation and during disposal.
+  void _cleanupWebView() {
+    final controller = _controller;
+    if (controller != null) {
+      // Windows is sensitive to imperative calls during disposal transitions.
+      // We nullify the reference and let the native platform view dispose itself.
+      if (!Platform.isWindows) {
+        controller.stopLoading();
+      }
+      _controller = null;
+    }
   }
 
   // ─── Orientation ─────────────────────────────────────────────────────────
@@ -856,6 +925,43 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     ref.read(watchHistoryRepositoryProvider).saveProgress(progress);
     ref.invalidate(continueWatchingProvider);
     ref.invalidate(episodeProgressProvider);
+
+    final currentEp = event.episode ?? widget.episode;
+    // Normalize progress to 0-100 if it's 0-1
+    final normalizedProgress = (event.progress > 0 && event.progress <= 1.0)
+        ? event.progress * 100
+        : event.progress;
+
+    if (widget.media.type == MediaType.tv && normalizedProgress >= 95.0) {
+      if (!_showNextEpisodeOverlay &&
+          !_dismissedNextEpisodeOverlay &&
+          _lastNextEpisodeTriggered != currentEp) {
+        setState(() {
+          _showNextEpisodeOverlay = true;
+          _overlayActive = true;
+          _lastNextEpisodeTriggered = currentEp;
+          _startOverlayTimer();
+        });
+      }
+    } else {
+      // Reset dismissal and trigger-tracking when we move back or to a new episode
+      if (normalizedProgress < 90.0) {
+        if (_dismissedNextEpisodeOverlay) {
+          setState(() => _dismissedNextEpisodeOverlay = false);
+        }
+        if (_lastNextEpisodeTriggered != null) {
+          _lastNextEpisodeTriggered = null;
+        }
+      }
+
+      if (_showNextEpisodeOverlay && normalizedProgress < 95.0) {
+        setState(() {
+          _showNextEpisodeOverlay = false;
+          _overlayActive = false;
+          _overlayTimer?.cancel();
+        });
+      }
+    }
   }
 
   // ─── Settings ────────────────────────────────────────────────────────────
@@ -1009,10 +1115,16 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
       source: _kNoSelectCss,
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
     ),
-    // 5. App-specific bridge and progress tracking (at end).
+    // 5. App-specific bridge, activity tracking, and progress tracking
     UserScript(
       source: _kBridgeJs,
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
+      forMainFrameOnly: false,
+    ),
+    UserScript(
+      source: _kUserActivityJs,
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+      forMainFrameOnly: false,
     ),
     UserScript(
       source: _videoProgressJs(widget.resumeTimeSeconds),
@@ -1025,6 +1137,27 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Widget content;
+    if (Platform.isWindows) {
+      final envAsync = ref.watch(webViewEnvironmentProvider);
+      content = envAsync.when(
+        data: (env) {
+          if (_hasError) return _buildErrorState();
+          return _buildWebView(env);
+        },
+        loading: () => const Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+        error: (err, _) {
+          _hasError = true;
+          _errorMsg = 'WebView initialization failed: $err';
+          return _buildErrorState();
+        },
+      );
+    } else {
+      content = _hasError ? _buildErrorState() : _buildWebView();
+    }
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -1032,19 +1165,22 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        // No GestureDetector wrapper — touch events go directly to WebView.
-        body: Stack(
-          children: [
-            if (Platform.isWindows && _webViewEnvironment == null)
-              const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
-              )
-            else
-              _hasError ? _buildErrorState() : _buildWebView(),
-            _buildLoadingOverlay(),
-            _buildProgressBar(),
-            _buildWindowActions(),
-          ],
+        body: MouseRegion(
+          onHover: (_) => _resetControlsTimer(),
+          child: Listener(
+            onPointerDown: (_) => _resetControlsTimer(),
+            onPointerMove: (_) => _resetControlsTimer(),
+            behavior: HitTestBehavior.translucent,
+            child: Stack(
+              children: [
+                content,
+                _buildLoadingOverlay(),
+                _buildProgressBar(),
+                _buildWindowActions(),
+                _buildNextEpisodeOverlay(),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1052,203 +1188,181 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
 
   // ─── WebView ─────────────────────────────────────────────────────────────
 
-  Widget _buildWebView() {
-    return Focus(
-      // Intercept erratic key events from WebView2 on Windows
-      autofocus: true,
-      onKeyEvent: (node, event) => KeyEventResult.handled,
-      onKey: (node, event) => KeyEventResult.handled,
-      child: InAppWebView(
-        webViewEnvironment: _webViewEnvironment,
-        preventGestureDelay: true,
-        // Forward gestures so panning works on mobile.
-        // E.g. scrolling lists inside the video player UI or zooming.
-        // On Windows/Desktop, forwarding Flutter gestures (drag/scale) to the
-        // WebView2 control causes fatal C++ access violations during click-and-drag.
-        // We pass an empty set on Desktop to prevent crashes (clicks still work natively).
-        gestureRecognizers:
-            (!kIsWeb &&
-                (Platform.isWindows || Platform.isMacOS || Platform.isLinux))
-            ? const <Factory<OneSequenceGestureRecognizer>>{}
-            : <Factory<OneSequenceGestureRecognizer>>{
-                Factory<VerticalDragGestureRecognizer>(
-                  VerticalDragGestureRecognizer.new,
-                ),
-                Factory<HorizontalDragGestureRecognizer>(
-                  HorizontalDragGestureRecognizer.new,
-                ),
-                Factory<ScaleGestureRecognizer>(ScaleGestureRecognizer.new),
-              },
-        initialUrlRequest: URLRequest(url: WebUri(widget.url)),
-        initialSettings: _settings,
-        initialUserScripts: UnmodifiableListView(_userScripts),
-        onWebViewCreated: (controller) {
-          _controller = controller;
-          controller.addJavaScriptHandler(
-            handlerName: 'spoviesEventBridge',
-            callback: (args) {
-              if (args.isNotEmpty) {
-                _eventBridge.handleMessage(args[0].toString());
+  Widget _buildWebView([WebViewEnvironment? environment]) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
+          return const SizedBox.expand();
+        }
+
+        return Focus(
+          autofocus: true,
+          onKeyEvent: (node, event) {
+            // Always allow system volume keys to bubble up.
+            if (event.logicalKey == LogicalKeyboardKey.audioVolumeUp ||
+                event.logicalKey == LogicalKeyboardKey.audioVolumeDown ||
+                event.logicalKey == LogicalKeyboardKey.audioVolumeMute) {
+              return KeyEventResult.ignored;
+            }
+
+            // Ignore modifier keys to prevent Flutter's internal state tracker
+            // from getting desynchronized (fixes "Alt Left" assertion crash).
+            if (event.logicalKey == LogicalKeyboardKey.altLeft ||
+                event.logicalKey == LogicalKeyboardKey.altRight ||
+                event.logicalKey == LogicalKeyboardKey.controlLeft ||
+                event.logicalKey == LogicalKeyboardKey.controlRight ||
+                event.logicalKey == LogicalKeyboardKey.shiftLeft ||
+                event.logicalKey == LogicalKeyboardKey.shiftRight) {
+              return KeyEventResult.ignored;
+            }
+
+            // On Windows, we must return .handled for all other keys to prevent
+            // the WebView from triggering framework assertions during layout.
+            // On other platforms (Android/iOS), we return .ignored so system
+            // and hardware keys work naturally.
+            return Platform.isWindows
+                ? KeyEventResult.handled
+                : KeyEventResult.ignored;
+          },
+          child: InAppWebView(
+            key: ValueKey('spovies_player_${widget.url.hashCode}'),
+            webViewEnvironment: environment,
+            preventGestureDelay: true,
+            gestureRecognizers:
+                (!kIsWeb &&
+                    (Platform.isWindows ||
+                        Platform.isMacOS ||
+                        Platform.isLinux))
+                ? const <Factory<OneSequenceGestureRecognizer>>{}
+                : <Factory<OneSequenceGestureRecognizer>>{
+                    Factory<VerticalDragGestureRecognizer>(
+                      VerticalDragGestureRecognizer.new,
+                    ),
+                    Factory<HorizontalDragGestureRecognizer>(
+                      HorizontalDragGestureRecognizer.new,
+                    ),
+                    Factory<ScaleGestureRecognizer>(ScaleGestureRecognizer.new),
+                  },
+            initialUrlRequest: URLRequest(url: WebUri(widget.url)),
+            initialSettings: _settings,
+            initialUserScripts: UnmodifiableListView(_userScripts),
+            onWebViewCreated: (controller) {
+              _controller = controller;
+              controller.addJavaScriptHandler(
+                handlerName: 'spoviesEventBridge',
+                callback: (args) {
+                  if (args.isNotEmpty) {
+                    final rawMessage = args[0].toString();
+                    if (rawMessage.contains('"type":"USER_ACTIVITY"')) {
+                      _resetControlsTimer();
+                      return;
+                    }
+                    if (mounted) _eventBridge?.handleMessage(rawMessage);
+                  }
+                },
+              );
+            },
+            onProgressChanged: (controller, progress) {
+              if (!mounted) return;
+              setState(() {
+                _loadProgress = progress.toDouble();
+              });
+            },
+            onReceivedError: (controller, request, error) {
+              final isMainFrame = request.isForMainFrame ?? false;
+              if (isMainFrame && _loadProgress < 50 && mounted) {
+                setState(() {
+                  _hasError = true;
+                  _errorMsg = error.description;
+                });
               }
             },
-          );
-        },
-        onProgressChanged: (controller, progress) {
-          if (!mounted) return;
-          setState(() {
-            _loadProgress = progress;
-            // Do NOT auto-clear _hasError here. When a fatal connection
-            // error occurs, the WebView falls back to about:blank and fires
-            // onProgressChanged again (progress 10→100) for that blank page.
-            // Resetting _hasError here hides the error from the user.
-            // Error state is only cleared by an explicit _retry() call.
-          });
-        },
-        // ── Surface fatal main-frame errors; ignore sub-resource noise ──
-        onReceivedError: (controller, request, error) {
-          final isMainFrame = request.isForMainFrame ?? false;
-          if (kDebugMode && isMainFrame) {
-            debugPrint('WebView Error (${error.type}): ${error.description}');
-          }
-          // WebView2 and mobile WebViews emit connection-reset / cancelled
-          // errors constantly during HLS streaming (e.g. for aborted segment
-          // fetches). Only surface an error UI when the MAIN frame fails
-          // before the page is meaningfully loaded (< 50%).
-          //
-          // NOTE: onProgressChanged fires *before* onReceivedError — if the
-          // very first request fails at exactly progress=10, the old threshold
-          // of "< 10" evaluated to false and the error was silently hidden.
-          // Using < 50 correctly catches all early-stage connection failures
-          // (including ERR_CONNECTION_REFUSED, ERR_NAME_NOT_RESOLVED, etc.).
-          if (isMainFrame && _loadProgress < 50 && mounted) {
-            setState(() {
-              _hasError = true;
-              _errorMsg = error.description;
-            });
-          }
-        },
-        // ── Surface HTTP-level main-frame failures (5xx) ────────────────
-        onReceivedHttpError: (controller, request, errorResponse) {
-          final isMainFrame = request.isForMainFrame ?? false;
-          final statusCode = errorResponse.statusCode ?? 0;
-          if (kDebugMode && isMainFrame) {
-            debugPrint('WebView HTTP $statusCode: ${request.url}');
-          }
-          if (isMainFrame && statusCode >= 500 && mounted) {
-            setState(() {
-              _hasError = true;
-              _errorMsg = 'Server error ($statusCode)';
-            });
-          }
-        },
-        onConsoleMessage: Platform.isWindows
-            ? null
-            : (controller, message) {
-                if (kDebugMode) {
-                  // Filter out noisy streaming-site log spam.
-                  final msg = message.message;
-                  if (msg == 'undefined' ||
-                      msg.toLowerCase().contains('console.clear') ||
-                      msg.startsWith('[object Object]') ||
-                      msg.startsWith('Array')) {
-                    return;
-                  }
-                  debugPrint('WebView: $msg');
-                }
-              },
-        // ── Block popup windows (ad popups) ────────────────────────────
-        onCreateWindow: (controller, createWindowAction) async {
-          // Return false to prevent ANY new window from opening.
-          // Streaming players don't need popups; only ad scripts do.
-          return false;
-        },
-        // ── Block navigation to ad domains and suspicious schemes ────────
-        shouldOverrideUrlLoading: (controller, navigationAction) async {
-          final urlRequest = navigationAction.request;
-          final url = urlRequest.url?.toString() ?? '';
-          if (url.isEmpty) return NavigationActionPolicy.ALLOW;
-
-          // 1. Block non-standard URL schemes.
-          //    Streaming players only need http/https/blob/data/about.
-          //    Android ad networks frequently abuse intent://, market://,
-          //    fb://, etc. to force-open external apps or the Play Store
-          //    when the user taps a "skip" button sitting over an invisible
-          //    ad overlay. These navigations must never leave the WebView.
-          final scheme = urlRequest.url?.scheme ?? '';
-          if (scheme.isNotEmpty &&
-              scheme != 'https' &&
-              scheme != 'http' &&
-              scheme != 'blob' &&
-              scheme != 'data' &&
-              scheme != 'about' &&
-              scheme != 'javascript') {
-            if (kDebugMode) {
-              debugPrint(
-                'WebView: Blocked non-standard scheme "$scheme": $url',
-              );
-            }
-            return NavigationActionPolicy.CANCEL;
-          }
-
-          // 2. Block known ad/malicious domains using the Remote Blocklist
-          final blocklist =
-              ref.read(adBlocklistProvider).value ??
-              ref.read(adBlocklistFallbackProvider);
-          if (blocklist?.isBlocked(url) ?? false) {
-            if (kDebugMode) {
-              debugPrint('WebView: Blocked navigation to $url');
-            }
-            return NavigationActionPolicy.CANCEL;
-          }
-
-          // 3. Main Frame Navigation Lock
-          // Streaming players never legitimately navigate the top-level window
-          // to completely different domains after loading.
-          if (navigationAction.isForMainFrame && _loadProgress == 100) {
-            final newHost = urlRequest.url?.host.toLowerCase() ?? '';
-            final initialHost =
-                Uri.tryParse(widget.url)?.host.toLowerCase() ?? '';
-
-            if (newHost.isNotEmpty && initialHost.isNotEmpty) {
-              String getBase(String h) {
-                final p = h.split('.');
-                if (p.length < 2) return h;
-                return '${p[p.length - 2]}.${p[p.length - 1]}';
+            onReceivedHttpError: (controller, request, errorResponse) {
+              final isMainFrame = request.isForMainFrame ?? false;
+              final statusCode = errorResponse.statusCode ?? 0;
+              if (isMainFrame && statusCode >= 500 && mounted) {
+                setState(() {
+                  _hasError = true;
+                  _errorMsg = 'Server error ($statusCode)';
+                });
               }
+            },
+            onConsoleMessage: Platform.isWindows
+                ? null
+                : (controller, message) {
+                    if (kDebugMode) {
+                      final msg = message.message;
+                      if (msg == 'undefined' ||
+                          msg.toLowerCase().contains('console.clear') ||
+                          msg.startsWith('[object Object]') ||
+                          msg.startsWith('Array')) {
+                        return;
+                      }
+                      debugPrint('WebView: $msg');
+                    }
+                  },
+            onCreateWindow: (controller, createWindowAction) async {
+              return false;
+            },
+            shouldOverrideUrlLoading: (controller, navigationAction) async {
+              final urlRequest = navigationAction.request;
+              final url = urlRequest.url?.toString() ?? '';
+              if (url.isEmpty) return NavigationActionPolicy.ALLOW;
 
-              if (getBase(newHost) != getBase(initialHost)) {
-                if (kDebugMode) {
-                  debugPrint(
-                    'WebView: Blocked main frame hijack to $newHost (started on $initialHost)',
-                  );
-                }
+              final scheme = urlRequest.url?.scheme ?? '';
+              if (scheme.isNotEmpty &&
+                  scheme != 'https' &&
+                  scheme != 'http' &&
+                  scheme != 'blob' &&
+                  scheme != 'data' &&
+                  scheme != 'about' &&
+                  scheme != 'javascript') {
                 return NavigationActionPolicy.CANCEL;
               }
-            }
-          }
 
-          return NavigationActionPolicy.ALLOW;
-        },
-        // ── Block ad resource loads at the network level ───────────────
-        // Fires for every sub-resource (scripts, images, iframes).
-        // Returning null allows the request; returning an empty
-        // WebResourceResponse effectively blocks it.
-        shouldInterceptRequest: Platform.isWindows
-            ? null
-            : (controller, request) async {
-                final url = request.url.toString();
-                final blocklist =
-                    ref.read(adBlocklistProvider).value ??
-                    ref.read(adBlocklistFallbackProvider);
-                if (blocklist?.isBlocked(url) ?? false) {
-                  return WebResourceResponse(
-                    contentType: 'text/plain',
-                    data: null,
-                  );
+              final blocklist =
+                  ref.read(adBlocklistProvider).value ??
+                  ref.read(adBlocklistFallbackProvider);
+              if (blocklist?.isBlocked(url) ?? false) {
+                return NavigationActionPolicy.CANCEL;
+              }
+
+              if (navigationAction.isForMainFrame && _loadProgress == 100) {
+                final newHost = urlRequest.url?.host.toLowerCase() ?? '';
+                final initialHost =
+                    Uri.tryParse(widget.url)?.host.toLowerCase() ?? '';
+                if (newHost.isNotEmpty && initialHost.isNotEmpty) {
+                  String getBase(String h) {
+                    final p = h.split('.');
+                    if (p.length < 2) return h;
+                    return '${p[p.length - 2]}.${p[p.length - 1]}';
+                  }
+
+                  if (getBase(newHost) != getBase(initialHost)) {
+                    return NavigationActionPolicy.CANCEL;
+                  }
                 }
-                return null;
-              },
-      ),
+              }
+              return NavigationActionPolicy.ALLOW;
+            },
+            shouldInterceptRequest: Platform.isWindows
+                ? null
+                : (controller, request) async {
+                    final url = request.url.toString();
+                    final blocklist =
+                        ref.read(adBlocklistProvider).value ??
+                        ref.read(adBlocklistFallbackProvider);
+                    if (blocklist?.isBlocked(url) ?? false) {
+                      return WebResourceResponse(
+                        contentType: 'text/plain',
+                        data: null,
+                      );
+                    }
+                    return null;
+                  },
+          ),
+        );
+      },
     );
   }
 
@@ -1343,47 +1457,290 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
 
   // ─── Window Actions ───────────────────────────────────────────────────────
 
+  Widget _buildNextEpisodeOverlay() {
+    if (!_showNextEpisodeOverlay) return const SizedBox.shrink();
+
+    final nextEpisodeAsync = ref.watch(
+      nextEpisodeForProgressProvider(
+        UserProgress(
+          mediaId: widget.media.tmdbId.toString(),
+          mediaType: 'tv',
+          title: widget.media.title,
+          percentage: 100,
+          currentTime: 0,
+          duration: 0,
+          season: widget.season,
+          episode: widget.episode,
+          lastPlayedDate: DateTime.now(),
+        ),
+      ),
+    );
+
+    final nextEpisode = nextEpisodeAsync.value;
+    if (nextEpisode == null) return const SizedBox.shrink();
+
+    // Use episode stillPath if available, otherwise fallback to media backdrop.
+    final thumbUrl = buildImageUrl(
+      nextEpisode.stillPath ?? widget.media.backdropPath,
+      AppConfig.backdropSmall,
+    );
+
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOutQuart,
+      bottom: 85,
+      right: _overlayActive ? 32 : -400, // Slide in from right
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 500),
+        opacity: _overlayActive ? 1.0 : 0.0,
+        child: MouseRegion(
+          onEnter: (_) => _overlayTimer?.cancel(),
+          onExit: (_) => _startOverlayTimer(),
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: 380,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.9),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                border: Border.all(color: Colors.white12, width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.6),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  // Episode Thumbnail with Play icon overlay
+                  Stack(
+                    children: [
+                      Container(
+                        width: 140,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(
+                            AppSpacing.radiusBase,
+                          ),
+                          color: Colors.white10,
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: CachedNetworkImage(
+                          imageUrl: thumbUrl,
+                          fit: BoxFit.cover,
+                          errorWidget: (context, url, error) => const Center(
+                            child: Icon(
+                              Icons.movie_rounded,
+                              color: Colors.white24,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned.fill(
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.black.withOpacity(0.4),
+                            ),
+                            child: const Icon(
+                              Icons.play_arrow_rounded,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 16),
+
+                  // Episode Info
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'UP NEXT',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          nextEpisode.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          'S${nextEpisode.seasonNumber} E${nextEpisode.episodeNumber}',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: () => _playNextEpisode(
+                                  nextEpisode.seasonNumber,
+                                  nextEpisode.episodeNumber,
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: Colors.black,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  elevation: 0,
+                                ),
+                                child: const Text(
+                                  'Play Next',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              onPressed: () {
+                                setState(() {
+                                  _overlayActive = false;
+                                  _dismissedNextEpisodeOverlay = true;
+                                });
+                              },
+                              icon: const Icon(
+                                Icons.close_rounded,
+                                color: Colors.white70,
+                              ),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              visualDensity: VisualDensity.compact,
+                              tooltip: 'Dismiss',
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _playNextEpisode(int nextSeason, int nextEpisode) {
+    if (!mounted) return;
+
+    // Resolve the plugin and new URL before navigating
+    final plugins =
+        ref.read(pluginsForHookProvider(TriggerHook.mediaHeader)).value ?? [];
+    if (plugins.isEmpty) return;
+
+    final preferredId = ref.read(preferredPluginProvider);
+    final plugin = plugins.firstWhere(
+      (p) => p.pluginId == (widget.pluginId ?? preferredId),
+      orElse: () => plugins.first,
+    );
+
+    final nextUrl = PluginUrlResolver.resolve(
+      plugin,
+      widget.media,
+      season: nextSeason,
+      episode: nextEpisode,
+    );
+
+    if (_isNavigating) return;
+    _isNavigating = true;
+
+    Future.microtask(() {
+      if (!mounted) return;
+      _restorePortrait();
+      context.pushReplacement(
+        '/player',
+        extra: PlayerArgs(
+          url: nextUrl,
+          media: widget.media,
+          pluginName: plugin.name,
+          pluginId: plugin.pluginId,
+          season: nextSeason,
+          episode: nextEpisode,
+        ),
+      );
+    });
+  }
+
   Widget _buildWindowActions() {
     return Positioned(
       top: 0,
       left: 50,
       right: 100,
-      child: Row(
-        children: [
-          // Drag area
-          if (Platform.isWindows)
-            Expanded(
-              child: DragToMoveArea(
-                child: Container(
-                  height:
-                      60, // Tall enough for dragging but don't block controls
-                  color: Colors.transparent,
+      child: AnimatedOpacity(
+        opacity: _showControls ? 1.0 : 0.0,
+        duration: const Duration(milliseconds: 300),
+        child: IgnorePointer(
+          ignoring: !_showControls,
+          child: Row(
+            children: [
+              // Drag area
+              if (Platform.isWindows)
+                Expanded(
+                  child: DragToMoveArea(
+                    child: Container(
+                      height:
+                          60, // Tall enough for dragging but don't block controls
+                      color: Colors.transparent,
+                    ),
+                  ),
+                )
+              else
+                const Spacer(),
+
+              Padding(
+                padding: const EdgeInsets.only(top: 12, right: 16),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (Platform.isWindows) ...[
+                      _buildActionButton(
+                        icon: _isFullScreen
+                            ? Icons.fullscreen_exit_rounded
+                            : Icons.fullscreen_rounded,
+                        onTap: _toggleFullScreen,
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    _buildActionButton(
+                      icon: Icons.close_rounded,
+                      onTap: _dismiss,
+                    ),
+                  ],
                 ),
               ),
-            )
-          else
-            const Spacer(),
-
-          Padding(
-            padding: const EdgeInsets.only(top: 12, right: 16),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (Platform.isWindows) ...[
-                  _buildActionButton(
-                    icon: _isFullScreen
-                        ? Icons.fullscreen_exit_rounded
-                        : Icons.fullscreen_rounded,
-                    onTap: _toggleFullScreen,
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                _buildActionButton(icon: Icons.close_rounded, onTap: _dismiss),
-              ],
-            ),
+              // Buttons
+            ],
           ),
-          // Buttons
-        ],
+        ),
       ),
     );
   }
@@ -1421,10 +1778,13 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   // ─── Actions ──────────────────────────────────────────────────────────────
 
   void _dismiss() async {
+    if (_isNavigating) return;
+    _isNavigating = true;
+
     if (Platform.isWindows) {
       await windowManager.setFullScreen(false);
     }
-    if (mounted) Navigator.pop(context);
+    if (mounted) context.pop();
   }
 
   void _retry() {

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/repositories/watch_history_repository_impl.dart';
+import '../../domain/entities/episode.dart';
 import '../../domain/entities/user_progress.dart';
 import '../../domain/repositories/watch_history_repository.dart';
 import 'details_providers.dart';
@@ -23,11 +24,11 @@ final continueWatchingProvider = FutureProvider<List<UserProgress>>((
   return repo.getContinueWatching();
 });
 
-/// Next episode (season, episode) for a TV progress. Returns null if not TV,
+/// Next episode (full details) for a TV progress. Returns null if not TV,
 /// no season/episode, or no next episode. Pass a sentinel (e.g. mediaId: '')
 /// to skip when you have no progress.
 final nextEpisodeForProgressProvider =
-    FutureProvider.family<({int season, int episode})?, UserProgress>((
+    FutureProvider.family<Episode?, UserProgress>((
   ref,
   progress,
 ) async {
@@ -41,17 +42,40 @@ final nextEpisodeForProgressProvider =
   final currentSeasonList =
       seasons.where((s) => s.seasonNumber == progress.season).toList();
   final currentSeason = currentSeasonList.isNotEmpty ? currentSeasonList.first : null;
-  final currentEp = progress.episode!;
-  if (currentSeason != null && currentEp < currentSeason.episodeCount) {
-    return (season: progress.season!, episode: currentEp + 1);
+  final currentEpNum = progress.episode!;
+
+  int? nextSeasonNum;
+  int? nextEpNum;
+
+  if (currentSeason != null && currentEpNum < currentSeason.episodeCount) {
+    nextSeasonNum = progress.season!;
+    nextEpNum = currentEpNum + 1;
+  } else {
+    final nextS = progress.season! + 1;
+    final nextSeasonList =
+        seasons.where((s) => s.seasonNumber == nextS).toList();
+    final nextSeason = nextSeasonList.isNotEmpty ? nextSeasonList.first : null;
+    if (nextSeason != null && nextSeason.episodeCount > 0) {
+      nextSeasonNum = nextS;
+      nextEpNum = 1;
+    }
   }
-  final nextSeasonNum = progress.season! + 1;
-  final nextSeasonList =
-      seasons.where((s) => s.seasonNumber == nextSeasonNum).toList();
-  final nextSeason = nextSeasonList.isNotEmpty ? nextSeasonList.first : null;
-  if (nextSeason != null && nextSeason.episodeCount > 0) {
-    return (season: nextSeasonNum, episode: 1);
+
+  if (nextSeasonNum != null && nextEpNum != null) {
+    final episodes = await ref.watch(tvSeasonEpisodesProvider((
+      tvId: tmdbId,
+      season: nextSeasonNum,
+    )).future);
+    return episodes.firstWhere(
+      (e) => e.episodeNumber == nextEpNum,
+      orElse: () => Episode(
+        seasonNumber: nextSeasonNum!,
+        episodeNumber: nextEpNum!,
+        name: 'Episode $nextEpNum',
+      ),
+    );
   }
+
   return null;
 });
 
