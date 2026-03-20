@@ -40,10 +40,23 @@ const _kBridgeJs = '''
   if (window.__spoviesBridgeInit) return;
   window.__spoviesBridgeInit = true;
   window.addEventListener('message', function(e) {
-    var d = (typeof e.data === 'string') ? e.data : JSON.stringify(e.data);
-    if (d && window.flutter_inappwebview) {
-      window.flutter_inappwebview.callHandler('spoviesEventBridge', d);
-    }
+    try {
+      var data = e.data;
+      if (!data) return;
+      
+      // Filter out common tracking/ad noise (Yandex Metrica, etc.)
+      if (typeof data === 'string' && (data.startsWith('__ym') || data.startsWith('adscore'))) {
+        return;
+      }
+
+      var d = (typeof data === 'string') ? data : JSON.stringify(data);
+      if (d && window.flutter_inappwebview) {
+        // Only forward if it looks like one of our events (PlayerEvent or activity)
+        if (d.includes('"type"') || d.includes('"event"') || d.includes('"channel"')) {
+          window.flutter_inappwebview.callHandler('spoviesEventBridge', d);
+        }
+      }
+    } catch (ex) {}
   });
 })();
 ''';
@@ -811,7 +824,16 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   @override
   void initState() {
     super.initState();
-    _lockLandscape();
+    // Delay the orientation lock until after the first frame on iOS to
+    // prevent race conditions with the screen transition.
+    if (Platform.isIOS) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _lockLandscape();
+      });
+    } else {
+      _lockLandscape();
+    }
+
     _eventBridge = EventBridge(onProgressUpdate: _onProgressUpdate);
     if (Platform.isWindows) {
       _checkFullScreen();
@@ -875,30 +897,38 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
 
   // ─── Orientation ─────────────────────────────────────────────────────────
 
-  void _lockLandscape() {
+  Future<void> _lockLandscape() async {
     // Orientation lock and immersive mode are mobile-only APIs.
-    // Calling them on Windows/macOS/Linux is a no-op at best and can
-    // cause assertion errors on some platform channel implementations.
     if (kIsWeb || Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
       return;
     }
-    SystemChrome.setPreferredOrientations([
+
+    if (Platform.isIOS) {
+      // First allow both to "unlock" the supported set on iOS 16+.
+      // This prevents the "None of the requested orientations are supported" error.
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+        DeviceOrientation.portraitUp,
+      ]);
+      // Tiny delay to let the system acknowledge the new supported set.
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+
+    await SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
     // Immersive mode: hides nav bar + status bar for full viewport.
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
-  void _restorePortrait() {
+  Future<void> _restorePortrait() async {
     if (kIsWeb || Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
       return;
     }
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
-    SystemChrome.setEnabledSystemUIMode(
+    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    await SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.manual,
       overlays: SystemUiOverlay.values,
     );
@@ -981,9 +1011,11 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     // break `playsinline` behaviour on WKWebView.
     userAgent: Platform.isIOS
         ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
-        : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        : Platform.isAndroid
+        ? 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36'
+        : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
 
-    preferredContentMode: Platform.isIOS
+    preferredContentMode: Platform.isIOS || Platform.isAndroid
         ? UserPreferredContentMode.MOBILE
         : UserPreferredContentMode.DESKTOP,
 
@@ -1079,7 +1111,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
       forMainFrameOnly: false,
     ),
     // 3. Suppress console and spoof devtool checks ASAP.
-    if (Platform.isWindows)
+    if (!Platform.isAndroid)
       UserScript(
         source: _kConsoleKillerJs,
         injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
@@ -1287,20 +1319,52 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
                 });
               }
             },
-            onConsoleMessage: Platform.isWindows
-                ? null
-                : (controller, message) {
-                    if (kDebugMode) {
-                      final msg = message.message;
-                      if (msg == 'undefined' ||
-                          msg.toLowerCase().contains('console.clear') ||
-                          msg.startsWith('[object Object]') ||
-                          msg.startsWith('Array')) {
-                        return;
-                      }
-                      debugPrint('WebView: $msg');
-                    }
-                  },
+            onConsoleMessage: (controller, message) {
+              if (kDebugMode) {
+                final msg = message.message;
+                // Still filter out the most common noise.
+                if (msg == 'undefined' ||
+                    msg.toLowerCase().contains('console.clear') ||
+                    msg.startsWith('[object Object]') ||
+                    msg.startsWith('Array')) {
+                  return;
+                }
+                // On Windows, some sites flood with Bot/Proxy detection logs (Adscore).
+                if (Platform.isWindows && msg.contains('Adscore')) return;
+
+                debugPrint('WebView: $msg');
+              }
+            },
+            onPermissionRequest: (controller, request) async {
+              // 1. القائمة البيضاء: الأشياء المسموح بها فقط
+              final allowedResources = [
+                PermissionResourceType.PROTECTED_MEDIA_ID,
+                PermissionResourceType.MIDI_SYSEX,
+              ];
+
+              // 2. فحص الطلبات: هل كل ما في الطلب موجود في القائمة البيضاء؟
+              // نستخدم (every) للتأكد أن كل الموارد المطلوبة مسموح بها
+              bool isAllSafe = request.resources.every(
+                (res) => allowedResources.contains(res),
+              );
+
+              if (isAllSafe) {
+                // وافق فقط لو كان كل الطلب ضمن المسموح
+                return PermissionResponse(
+                  resources: request.resources,
+                  action: PermissionResponseAction.GRANT,
+                );
+              }
+
+              // 3. ارفض أي شيء آخر فوراً (بما في ذلك الكاميرا، المايك، أو أي شيء غير معروف)
+              print(
+                "Blocked unauthorized permission request: ${request.resources}",
+              );
+              return PermissionResponse(
+                resources: request.resources,
+                action: PermissionResponseAction.DENY,
+              );
+            },
             onCreateWindow: (controller, createWindowAction) async {
               return false;
             },
@@ -1673,9 +1737,14 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     if (_isNavigating) return;
     _isNavigating = true;
 
+    // Clean up current webview before navigating to free resources.
+    _cleanupWebView();
+
     Future.microtask(() {
       if (!mounted) return;
-      _restorePortrait();
+      // Note: We do NOT call _restorePortrait() here because we are
+      // navigating to another player screen which will re-lock to landscape.
+      // Calling it causes jank and can trigger iOS orientation errors.
       context.pushReplacement(
         '/player',
         extra: PlayerArgs(

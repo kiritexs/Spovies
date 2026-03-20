@@ -271,7 +271,7 @@ class _PluginTile extends ConsumerWidget {
                     onChanged: (_) => ref
                         .read(pluginEnabledProvider.notifier)
                         .toggle(plugin.pluginId),
-                    activeThumbColor: AppColors.primary,
+                    activeColor: AppColors.primary,
                     inactiveThumbColor: AppColors.textMuted,
                     inactiveTrackColor: AppColors.surfaceDark.withValues(
                       alpha: 0.8,

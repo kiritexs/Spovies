@@ -121,7 +121,12 @@ class PlayerEvent {
 
       return null;
     } catch (e) {
-      debugPrint('EventBridge: Failed to parse postMessage: $e');
+      if (kDebugMode) {
+        // Only log if it's not a known non-JSON message from external scripts
+        if (!rawMessage.startsWith('__ym') && !rawMessage.startsWith('adscore')) {
+          debugPrint('EventBridge: Failed to parse postMessage: $e');
+        }
+      }
       return null;
     }
   }
