@@ -51,33 +51,29 @@ Your plugin is a **single JSON file** with the following schema.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `pluginId` | string | Unique identifier (e.g., `example-source`, `my-stream-site`). Use lowercase, no spaces. |
-| `version` | string | Semantic version (e.g., `1.0.0`) |
+| `pluginId` | string | Unique identifier (e.g., `example-source`, `my-stream-site`). Use lowercase, no spaces. Cannot be empty. |
 | `name` | string | Display name shown in the app |
-| `description` | string | Short description of what your plugin does |
-| `hooks` | string[] | Array of [Trigger Hooks](#3-trigger-hooks) where your action appears |
 | `urlTemplate` | string | URL with placeholders (see [URL Templates](#5-url-templates)) |
-| `actionType` | string | One of: `webview`, `externalLink`, `metadataFetch` |
 
 ### Optional Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `iconUrl` | string | URL to your plugin's icon (recommended: 128x128 PNG) |
-| `presentationMode` | string | For WebView: `fullscreen` (default) or `popover` |
-| `eventBridgeConfig` | object | Required for WebView plugins that track progress (see [Event Bridge](#6-event-bridge-webview-plugins)) |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `version` | string | `"1.0.0"` | Semantic version |
+| `description` | string | `""` | Short description of what your plugin does |
+| `iconUrl` | string | — | URL to your plugin's icon (recommended: 128x128 PNG) |
+| `hooks` | string[] | `["media_header"]` | Array of [Trigger Hooks](#3-trigger-hooks) where your action appears |
+| `actionType` | string | `"webview"` | One of: `webview`, `externalLink`, `metadataFetch` |
+| `presentationMode` | string | `"fullscreen"` | For WebView: `fullscreen` or `popover` |
+| `eventBridgeConfig` | object | — | For WebView plugins that track progress (see [Event Bridge](#6-event-bridge-webview-plugins)) |
 
 ### Minimal Example
 
 ```json
 {
   "pluginId": "my-plugin",
-  "version": "1.0.0",
   "name": "My Streaming Site",
-  "description": "Watch movies and shows on MyStream",
-  "hooks": ["media_header"],
-  "urlTemplate": "https://mystream.com/watch/{mediaId}",
-  "actionType": "externalLink"
+  "urlTemplate": "https://mystream.com/watch/{{type}}/{{tmdbId}}"
 }
 ```
 
@@ -119,7 +115,7 @@ This means your plugin will appear:
 
 ### When to Use Each
 
-- **webview:** Streaming sites where users watch inside the app. Enables "Continue Watching" and PiP.
+- **webview:** Streaming sites where users watch inside the app. Enables "Continue Watching" and progress tracking.
 - **externalLink:** Sites that require login, or apps that should open natively (e.g., Netflix, Prime).
 - **metadataFetch:** APIs or services that add data (ratings, cast) but don't have a "watch" action.
 
@@ -127,31 +123,34 @@ This means your plugin will appear:
 
 ## 5. URL Templates
 
-The `urlTemplate` is a string with placeholders that Spovies replaces when the user taps your action.
+The `urlTemplate` is a string with `{{placeholder}}` tokens (double curly braces) that Spovies replaces when the user taps your action.
 
 ### Supported Placeholders
 
 | Placeholder | Replaced With | Example |
 |-------------|---------------|---------|
-| `{mediaId}` | TMDB ID of the movie/show | `12345` |
-| `{mediaType}` | `movie` or `tv` | `movie` |
-| `{title}` | URL-encoded title | `Inception` |
-| `{imdbId}` | IMDb ID (if available) | `tt1375666` |
-| `{season}` | Season number (episode_item only) | `1` |
-| `{episode}` | Episode number (episode_item only) | `5` |
+| `{{tmdbId}}` | TMDB ID of the movie/show | `12345` |
+| `{{id}}` | Alias for `{{tmdbId}}` | `12345` |
+| `{{type}}` | `movie` or `tv` | `movie` |
+| `{{title}}` | URL-encoded title | `Inception` |
+| `{{imdbId}}` | IMDb ID (if available, else empty) | `tt1375666` |
+| `{{season}}` | Season number (for TV) | `1` |
+| `{{episode}}` | Episode number (for TV) | `5` |
+
+**TV path fallback:** If your template does **not** contain `{{season}}` or `{{episode}}` but the media is a TV show, the app appends `/season/episode` as path segments (e.g. `/1/1` for S1E1).
 
 ### Examples
 
 ```
-https://example.com/watch/{mediaId}?type={mediaType}
-https://mystream.com/search?q={title}
-https://example.com/movie/{imdbId}
-https://example.com/show/{mediaId}/s{season}e{episode}
+https://example.com/embed/{{type}}/{{tmdbId}}
+https://mystream.com/search?q={{title}}
+https://example.com/movie/{{imdbId}}
+https://example.com/show/{{tmdbId}}/s{{season}}e{{episode}}
 ```
 
 ### Encoding
 
-- `{title}` is automatically URL-encoded.
+- `{{title}}` is automatically URL-encoded.
 - Other values are inserted as-is. Ensure your server handles special characters.
 
 ---
@@ -169,65 +168,63 @@ If your plugin uses `actionType: "webview"` and you want Spovies to track watch 
 {
   "actionType": "webview",
   "eventBridgeConfig": {
-    "postMessageOrigin": "https://your-domain.com",
-    "allowedEvents": ["progress", "pause", "stop", "heartbeat"]
+    "postMessageOrigin": "*",
+    "allowedEventTypes": ["progress", "pause", "stop", "heartbeat"]
   }
 }
 ```
 
 | Field | Description |
 |-------|-------------|
-| `postMessageOrigin` | The origin of your page (must match `window.location.origin`). Used for security validation. |
-| `allowedEvents` | Events your page will send. Spovies ignores events not in this list. |
+| `postMessageOrigin` | Allowed origin for `postMessage` (use `"*"` to allow any, or your domain for security). |
+| `allowedEventTypes` | Optional allowlist of events your page will send. Default includes `progress`, `pause`, `stop`, `heartbeat`. |
 
-### PostMessage Format
+### PostMessage Format (Recommended: PLAYER_EVENT)
 
-Send messages from your page to the Spovies WebView:
+The recommended format wraps events in a `PLAYER_EVENT` type:
 
 ```javascript
-// Progress update (send every 5-10 seconds and on pause/stop)
-window.parent.postMessage({
-  type: 'progress',
-  payload: {
-    timestamp: 3600,      // Current position in seconds
-    percentage: 65.5,     // 0-100
-    duration: 5500        // Total duration in seconds (optional)
+window.postMessage(JSON.stringify({
+  type: "PLAYER_EVENT",
+  data: {
+    event: "timeupdate",    // timeupdate, play, pause, ended, seeked
+    currentTime: 120.5,     // Current position in seconds
+    duration: 7200,         // Total duration in seconds
+    progress: 1.6,          // Progress percentage (0–100)
+    id: "299534",           // TMDB ID (string)
+    mediaType: "movie",     // "movie" or "tv"
+    season: 1,              // Optional; for TV
+    episode: 8              // Optional; for TV
   }
-}, 'https://your-domain.com');
-
-// User paused
-window.parent.postMessage({
-  type: 'pause',
-  payload: {
-    timestamp: 3600,
-    percentage: 65.5
-  }
-}, 'https://your-domain.com');
-
-// User stopped / closed
-window.parent.postMessage({
-  type: 'stop',
-  payload: {
-    timestamp: 3600,
-    percentage: 65.5
-  }
-}, 'https://your-domain.com');
-
-// Heartbeat (every 5-10 sec) - ensures progress is saved even if app crashes
-window.parent.postMessage({
-  type: 'heartbeat',
-  payload: {
-    timestamp: 3600,
-    percentage: 65.5
-  }
-}, 'https://your-domain.com');
+}), "*");
 ```
+
+### Supported Event Formats
+
+The Event Bridge auto-detects multiple postMessage formats:
+
+| Format | Structure | Used By |
+|--------|-----------|---------|
+| **PLAYER_EVENT** (recommended) | `{ type: "PLAYER_EVENT", data: { event, currentTime, duration, ... } }` | Provider A, custom plugins |
+| **Provider D** | `{ channel, event, time, duration, percent }` | Provider D |
+| **Provider C native** | `{ event: "time"\|"pause"\|"userpause", time, duration }` | Provider C |
+
+### Throttling Behavior
+
+| Event | Behavior |
+|-------|----------|
+| `timeupdate`, `seeked`, `play` | Throttled to 1 write per 5 seconds |
+| `pause`, `ended` | Saved immediately (no throttle) |
+
+### Universal HTML5 Fallback
+
+Even if your plugin does **not** implement `postMessage`, Spovies injects a universal script that monitors any `<video>` element on the page. This means basic progress tracking works out of the box for most streaming pages.
 
 ### Best Practices
 
-- **Send `heartbeat` every 5-10 seconds** during playback. Do not rely only on `stop` — the app may crash or the phone may die.
-- **Send `progress` or `heartbeat` on pause** so the user can resume accurately.
-- **Include both `timestamp` and `percentage`** for redundancy.
+- **Send events on both `timeupdate` and `pause`** — the app throttles `timeupdate` automatically.
+- **Include both `currentTime` and `duration`** so the app can calculate percentage accurately.
+- **The `ended` event triggers immediate save** — send it when playback finishes.
 
 ---
 
@@ -254,7 +251,7 @@ Use the same placeholders as for actions. Spovies will fetch your URL when loadi
 
 ```json
 {
-  "urlTemplate": "https://api.myratings.com/movie/{mediaId}",
+  "urlTemplate": "https://api.myratings.com/movie/{{tmdbId}}",
   "actionType": "metadataFetch"
 }
 ```
@@ -282,19 +279,29 @@ https://example.com/spovies/manifest.json
 https://raw.githubusercontent.com/yourorg/spovies-plugin/main/manifest.json
 ```
 
+### Plugin Registries
+
+A single URL can return **multiple plugins** by responding with either:
+
+- A **JSON array** of manifest objects: `[ { manifest1 }, { manifest2 } ]`
+- A **registry object** with a `plugins` key: `{ "plugins": [ { manifest1 }, { manifest2 } ] }`
+
+This lets you distribute a collection of plugins from one URL.
+
 ### User Installation
 
-1. User opens Spovies → Settings → Plugins
-2. User pastes your manifest URL
-3. Spovies fetches, validates, and registers your plugin
-4. Your plugin appears in the configured hook zones
+1. User opens Spovies → Settings → Manage Plugins
+2. User pastes your manifest URL (or registry URL)
+3. Spovies fetches, validates, and registers the plugin(s)
+4. Plugins appear in the configured hook zones
+5. User can toggle enable/disable, set preferred provider, or remove
 
 ### Validation
 
-Spovies validates your manifest against the schema. Invalid manifests are rejected with an error. Ensure:
-- All required fields are present
-- `hooks` contains only valid values: `media_header`, `episode_item`, `media_card_context`
-- `actionType` is one of: `webview`, `externalLink`, `metadataFetch`
+Spovies validates your manifest against the schema. Invalid manifests are rejected with a detailed error message. Ensure:
+- All required fields are present (`pluginId`, `name`, `urlTemplate`)
+- `hooks` (if provided) contains only valid values: `media_header`, `episode_item`, `media_card_context`
+- `actionType` (if provided) is one of: `webview`, `externalLink`, `metadataFetch`
 - `urlTemplate` is a valid URL format
 
 ---
@@ -304,7 +311,7 @@ Spovies validates your manifest against the schema. Invalid manifests are reject
 ### What Spovies Does
 
 - **WebView isolation:** Your page runs in a sandboxed WebView. No direct access to the Flutter app or device.
-- **Origin validation:** `postMessage` is only accepted if the origin matches `eventBridgeConfig.postMessageOrigin`.
+- **Origin validation:** `postMessage` is filtered by `eventBridgeConfig.postMessageOrigin` (`"*"` allows any origin).
 - **HTTPS only:** Manifests and URLs must use HTTPS (except localhost for development).
 
 ### What You Should Do
@@ -328,7 +335,7 @@ Spovies validates your manifest against the schema. Invalid manifests are reject
   "description": "Find where to stream on JustWatch",
   "iconUrl": "https://justwatch.com/favicon.png",
   "hooks": ["media_header", "media_card_context"],
-  "urlTemplate": "https://www.justwatch.com/search?q={title}",
+  "urlTemplate": "https://www.justwatch.com/search?q={{title}}",
   "actionType": "externalLink"
 }
 ```
@@ -343,12 +350,12 @@ Spovies validates your manifest against the schema. Invalid manifests are reject
   "description": "Stream movies and shows",
   "iconUrl": "https://example.com/icon.png",
   "hooks": ["media_header", "episode_item"],
-  "urlTemplate": "https://example.com/watch/{mediaId}?type={mediaType}&s={season}&e={episode}",
+  "urlTemplate": "https://example.com/embed/{{type}}/{{tmdbId}}",
   "actionType": "webview",
   "presentationMode": "fullscreen",
   "eventBridgeConfig": {
-    "postMessageOrigin": "https://example.com",
-    "allowedEvents": ["progress", "pause", "stop", "heartbeat"]
+    "postMessageOrigin": "*",
+    "allowedEventTypes": ["progress", "pause", "stop", "heartbeat"]
   }
 }
 ```
@@ -362,8 +369,18 @@ Spovies validates your manifest against the schema. Invalid manifests are reject
   "name": "IMDb Ratings",
   "description": "Add IMDb ratings to details",
   "hooks": ["media_header"],
-  "urlTemplate": "https://api.myimdb.com/movie/{mediaId}/rating",
+  "urlTemplate": "https://api.myimdb.com/movie/{{tmdbId}}/rating",
   "actionType": "metadataFetch"
+}
+```
+
+### Example 4: Minimal Plugin (required fields only)
+
+```json
+{
+  "pluginId": "my-plugin",
+  "name": "My Plugin",
+  "urlTemplate": "https://mysite.com/watch/{{type}}/{{tmdbId}}"
 }
 ```
 
@@ -374,6 +391,7 @@ Spovies validates your manifest against the schema. Invalid manifests are reject
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2025-03-02 | Initial specification |
+| 2.0 | 2026-04-21 | Updated placeholder format to `{{tmdbId}}`/`{{type}}`, added registry support, documented multi-format Event Bridge (Provider A, Provider D, Provider C), added universal HTML5 fallback, corrected required/optional fields |
 
 ---
 
