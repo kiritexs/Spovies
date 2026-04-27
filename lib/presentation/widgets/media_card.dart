@@ -111,13 +111,6 @@ class _MediaCardState extends State<MediaCard>
     );
   }
 
-  Widget _buildPoster() {
-    return AspectRatio(
-      aspectRatio: AppSpacing.mediaCardAspectRatio,
-      child: _buildPosterContent(),
-    );
-  }
-
   /// Poster content (decoration, image, badge). Fills its parent.
   Widget _buildPosterContent() {
     return Container(

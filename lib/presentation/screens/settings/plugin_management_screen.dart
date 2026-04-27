@@ -136,13 +136,14 @@ class PluginManagementScreen extends ConsumerWidget {
   // ─── Add Plugin Bottom Sheet ────────────────────────────────────────────
 
   void _showAddPluginSheet(BuildContext context, WidgetRef ref) {
-    final controller = TextEditingController();
-
+    // The controller's lifetime is owned by _AddPluginSheetState (created in
+    // initState, disposed in dispose). Creating it here would leak it every
+    // time the sheet opens because nothing in this scope ever disposes it.
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _AddPluginSheet(controller: controller),
+      builder: (context) => const _AddPluginSheet(),
     );
   }
 
@@ -335,17 +336,28 @@ class _PluginTile extends ConsumerWidget {
 // ─── Add Plugin Bottom Sheet Widget ───────────────────────────────────────
 
 class _AddPluginSheet extends ConsumerStatefulWidget {
-  final TextEditingController controller;
-
-  const _AddPluginSheet({required this.controller});
+  const _AddPluginSheet();
 
   @override
   ConsumerState<_AddPluginSheet> createState() => _AddPluginSheetState();
 }
 
 class _AddPluginSheetState extends ConsumerState<_AddPluginSheet> {
+  late final TextEditingController _controller;
   bool _isLoading = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -400,7 +412,7 @@ class _AddPluginSheetState extends ConsumerState<_AddPluginSheet> {
 
                 // URL Input
                 TextField(
-                  controller: widget.controller,
+                  controller: _controller,
                   autofocus: true,
                   style: AppTextStyles.body,
                   keyboardType: TextInputType.url,
@@ -484,7 +496,7 @@ class _AddPluginSheetState extends ConsumerState<_AddPluginSheet> {
   }
 
   Future<void> _onInstall() async {
-    final url = widget.controller.text.trim();
+    final url = _controller.text.trim();
     if (url.isEmpty) {
       setState(() => _error = 'Please enter a URL');
       return;

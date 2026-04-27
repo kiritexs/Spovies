@@ -201,15 +201,12 @@ Future<void> _continueWatching(
     return;
   }
 
-  final preferredId = ref.read(preferredPluginProvider);
-  var activePlugin = plugins.first;
-  if (item.lastPluginId != null) {
-    final match = plugins.where((p) => p.pluginId == item.lastPluginId);
-    if (match.isNotEmpty) activePlugin = match.first;
-  } else if (preferredId != null) {
-    final match = plugins.where((p) => p.pluginId == preferredId);
-    if (match.isNotEmpty) activePlugin = match.first;
-  }
+  final activePlugin = PluginUrlResolver.pickPlugin(
+    plugins,
+    savedId: item.lastPluginId,
+    preferredId: ref.read(preferredPluginProvider),
+  );
+  if (activePlugin == null) return;
 
   final url = PluginUrlResolver.resolve(
     activePlugin,
@@ -266,12 +263,11 @@ Future<void> _openNextEpisode(
     );
     return;
   }
-  final preferredId = ref.read(preferredPluginProvider);
-  var activePlugin = plugins.first;
-  if (preferredId != null) {
-    final match = plugins.where((p) => p.pluginId == preferredId);
-    if (match.isNotEmpty) activePlugin = match.first;
-  }
+  final activePlugin = PluginUrlResolver.pickPlugin(
+    plugins,
+    preferredId: ref.read(preferredPluginProvider),
+  );
+  if (activePlugin == null) return;
   final url = PluginUrlResolver.resolve(
     activePlugin,
     media,

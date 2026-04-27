@@ -59,14 +59,21 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     ref.read(searchQueryProvider.notifier).update('');
     setState(() => _isSearching = false);
     ref.read(isSearchActiveProvider.notifier).state = false;
+    // Drop focus too, so the soft keyboard goes away whether _clearSearch
+    // was triggered by the X button, by the system back gesture (via the
+    // shell's clear signal), or by leaving and returning to the tab.
+    FocusManager.instance.primaryFocus?.unfocus();
   }
 
-  @override
-  void deactivate() {
-    // Ensure nav bar reappears when leaving the tab mid-search
-    ref.read(isSearchActiveProvider.notifier).state = false;
-    super.deactivate();
-  }
+  // NOTE: There used to be a `deactivate()` here that reset
+  // `isSearchActiveProvider` to false whenever the user left this tab. That
+  // produced a sneaky bug: the controller text and `_isSearching` would
+  // stay set, but the provider would lie. When the user came back and
+  // pressed system back, the shell read the provider, saw "no active
+  // search", and switched tabs instead of clearing search. The nav-bar
+  // visibility logic the deactivate was working around now lives in the
+  // shell and gates on the active tab index, so we no longer need this
+  // override at all.
 
   void _selectGenre(int id, String name) {
     setState(() {
@@ -83,6 +90,14 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   @override
   Widget build(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
+
+    // Shell asks us to clear the search whenever the user presses system
+    // back while typing. The signal increments; we just react to any change.
+    ref.listen<int>(searchClearSignalProvider, (_, _) {
+      if (_searchController.text.isNotEmpty || _isSearching) {
+        _clearSearch();
+      }
+    });
 
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
@@ -142,6 +157,11 @@ class _SearchBar extends StatelessWidget {
           child: TextField(
             controller: controller,
             style: AppTextStyles.body,
+            // Tap on anything outside the field (results grid, genre tiles,
+            // discovery rows, even empty space) drops focus and the soft
+            // keyboard. The TextField itself, the keyboard, and any other
+            // descendants of this TextField are exempt automatically.
+            onTapOutside: (_) => FocusScope.of(context).unfocus(),
             decoration: InputDecoration(
               hintText: 'Search movies & TV shows…',
               hintStyle: AppTextStyles.body.copyWith(
@@ -202,6 +222,9 @@ class _DiscoveryContent extends ConsumerWidget {
 
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
+      // Drag-to-dismiss: starting a scroll over the discover content drops
+      // the soft keyboard so the user can see the rows they're scrolling.
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       slivers: [
         // ── 1. Trending Now ─────────────────────────────────────────────
         SliverToBoxAdapter(
@@ -957,6 +980,7 @@ class _SearchResults extends ConsumerWidget {
         AppSpacing.sectionPaddingH,
         120,
       ),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
         childAspectRatio: 0.52,
@@ -964,7 +988,7 @@ class _SearchResults extends ConsumerWidget {
         mainAxisSpacing: 12,
       ),
       itemCount: 9,
-      itemBuilder: (_, __) => const ShimmerPlaceholder(),
+      itemBuilder: (_, _) => const ShimmerPlaceholder(),
     );
   }
 
@@ -1035,6 +1059,7 @@ class _ResultsGrid extends StatelessWidget {
         AppSpacing.sectionPaddingH,
         120,
       ),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
         childAspectRatio: 0.52,

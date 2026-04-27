@@ -25,6 +25,36 @@ import '../../domain/entities/plugin_manifest.dart';
 /// tv ep 3  : https://example.com/embed/tv/12345/1/3?color=…     ✓
 /// ```
 class PluginUrlResolver {
+  /// Pick the most appropriate plugin from [plugins] for the given preferences.
+  ///
+  /// Resolution order:
+  ///   1. [savedId] — the plugin previously used for this exact item (if any)
+  ///   2. [preferredId] — the user's globally preferred plugin (if any)
+  ///   3. `plugins.first` as a last resort
+  ///
+  /// Centralises the logic that was previously duplicated (and subtly diverged)
+  /// between the home screen's "Continue Watching" path and the in-player
+  /// "Play Next Episode" overlay. Returns `null` only when [plugins] is empty.
+  static PluginManifest? pickPlugin(
+    List<PluginManifest> plugins, {
+    String? savedId,
+    String? preferredId,
+  }) {
+    if (plugins.isEmpty) return null;
+
+    if (savedId != null) {
+      for (final p in plugins) {
+        if (p.pluginId == savedId) return p;
+      }
+    }
+    if (preferredId != null) {
+      for (final p in plugins) {
+        if (p.pluginId == preferredId) return p;
+      }
+    }
+    return plugins.first;
+  }
+
   /// Resolve URL template with media item data.
   static String resolve(
     PluginManifest plugin,
@@ -73,11 +103,27 @@ class PluginUrlResolver {
         !hasEpisodePlaceholder) {
       final s = season ?? 1;
       final e = episode ?? 1;
-      final uri = Uri.parse(url);
-      final cleanPath = uri.path.endsWith('/')
-          ? uri.path.substring(0, uri.path.length - 1)
-          : uri.path;
-      url = uri.replace(path: '$cleanPath/$s/$e').toString();
+      // tryParse instead of parse: a malformed plugin template (or a weird
+      // substitution result) shouldn't take down the whole resolver — fall
+      // back to plain string concatenation instead.
+      final uri = Uri.tryParse(url);
+      if (uri != null) {
+        final cleanPath = uri.path.endsWith('/')
+            ? uri.path.substring(0, uri.path.length - 1)
+            : uri.path;
+        url = uri.replace(path: '$cleanPath/$s/$e').toString();
+      } else {
+        // Last-resort: append before any query/fragment.
+        final qIdx = url.indexOf('?');
+        if (qIdx == -1) {
+          url = '${url.endsWith('/') ? url.substring(0, url.length - 1) : url}/$s/$e';
+        } else {
+          final base = url.substring(0, qIdx);
+          final query = url.substring(qIdx);
+          final trimmed = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+          url = '$trimmed/$s/$e$query';
+        }
+      }
     }
 
     return url;

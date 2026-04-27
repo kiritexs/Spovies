@@ -134,18 +134,12 @@ class PlayerEvent {
 
 /// Manages postMessage event parsing and throttled progress updates.
 class EventBridge {
-  final String? allowedOrigin;
-  final List<String> allowedEventTypes;
   final void Function(PlayerEvent event) onProgressUpdate;
 
   DateTime? _lastWrite;
   static const _throttleDuration = Duration(seconds: 5);
 
-  EventBridge({
-    this.allowedOrigin,
-    this.allowedEventTypes = const ['PLAYER_EVENT'],
-    required this.onProgressUpdate,
-  });
+  EventBridge({required this.onProgressUpdate});
 
   /// Handle a raw postMessage string from the WebView.
   void handleMessage(String rawMessage) {

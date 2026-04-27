@@ -796,6 +796,19 @@ class WebViewPlayerScreen extends ConsumerStatefulWidget {
 class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   double _loadProgress = 0;
   bool _isNavigating = false;
+
+  /// `true` when this screen is being torn down because the user pressed
+  /// "Play Next" — i.e. we're handing off to another `/player` route.
+  ///
+  /// `dispose()` consults this to decide whether to call `_restorePortrait`.
+  /// On iOS, route transition + dispose ordering means the OLD screen's
+  /// `_restorePortrait` would otherwise queue `setPreferredOrientations`
+  /// for portrait *after* the NEW screen's `_lockLandscape` had already
+  /// queued landscape — iOS honours the most recent preference and forces
+  /// a rotation to portrait under the new player. Skipping the restore on
+  /// handoff keeps the device in landscape across episodes.
+  bool _navigatingToAnotherPlayer = false;
+
   EventBridge? _eventBridge;
 
   // Stored so imperative operations (reload, goBack, etc.) are possible.
@@ -813,6 +826,40 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   bool _dismissedNextEpisodeOverlay = false;
   int? _lastNextEpisodeTriggered; // episode number to avoid repeat popups
   Timer? _overlayTimer;
+
+  /// Delay between the iOS 16+ "supported orientations" relaxation call and
+  /// the actual landscape lock. Without it, the second
+  /// `setPreferredOrientations` call can land before the system has finished
+  /// committing the first, producing the *"None of the requested
+  /// orientations are supported"* runtime error.
+  ///
+  /// 50 ms has held up reliably on iPhones from XS through 15 Pro; bump this
+  /// (or switch to `addPostFrameCallback`) if the error reappears on slower
+  /// devices.
+  static const Duration _kIosOrientationCommitDelay =
+      Duration(milliseconds: 50);
+
+  /// Latches `true` the first time the main frame finishes loading. Once set,
+  /// any subsequent main-frame navigation is checked against the original
+  /// host base — even if `_loadProgress` has dropped to 0 because the
+  /// navigation that's being inspected is itself the redirect. Without this
+  /// latch, programmatic `location.assign('evil.com')` calls slip through
+  /// the cross-domain gate during the brief window when progress is < 100.
+  bool _initialLoadComplete = false;
+
+  /// Cached "base" of the originally requested URL's host (e.g. `example.com`
+  /// for `https://www.example.com/embed/123`). Computed once in [initState] so
+  /// every navigation check is an O(1) string compare.
+  late final String _initialHostBase = _getBaseHost(
+    Uri.tryParse(widget.url)?.host.toLowerCase() ?? '',
+  );
+
+  static String _getBaseHost(String host) {
+    if (host.isEmpty) return host;
+    final parts = host.split('.');
+    if (parts.length < 2) return host;
+    return '${parts[parts.length - 2]}.${parts[parts.length - 1]}';
+  }
 
   // ─── Gesture recognizers — transferred to the WebView ────────────────────
   // Giving explicit ownership of these gestures to the WebView prevents the
@@ -842,16 +889,27 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   }
 
   void _resetControlsTimer() {
-    if (mounted) {
+    if (!mounted) return;
+
+    // The hot path: pointer move + JS user-activity events fire continuously.
+    // The JS bridge already throttles to 500 ms, but we still get pointer
+    // moves on every frame on Windows/desktop. Only call setState when
+    // something actually needs to change — otherwise we're scheduling an
+    // entire rebuild of the player chrome on every mouse twitch.
+    final overlayShouldShow =
+        _showNextEpisodeOverlay && !_dismissedNextEpisodeOverlay;
+    final overlayNeedsUpdate = overlayShouldShow && !_overlayActive;
+
+    if (!_showControls || overlayNeedsUpdate) {
       setState(() {
         _showControls = true;
-        // Re-show overlay on activity if it should be visible
-        if (_showNextEpisodeOverlay && !_dismissedNextEpisodeOverlay) {
+        if (overlayNeedsUpdate) {
           _overlayActive = true;
           _startOverlayTimer();
         }
       });
     }
+
     _controlsTimer?.cancel();
     _controlsTimer = Timer(const Duration(seconds: 5), () {
       if (mounted) setState(() => _showControls = false);
@@ -877,7 +935,11 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     _controlsTimer?.cancel();
     _overlayTimer?.cancel();
     _cleanupWebView();
-    _restorePortrait();
+    // Skip the orientation restore when handing off to another player —
+    // see [_navigatingToAnotherPlayer] for the iOS race this avoids.
+    if (!_navigatingToAnotherPlayer) {
+      _restorePortrait();
+    }
     super.dispose();
   }
 
@@ -904,15 +966,15 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     }
 
     if (Platform.isIOS) {
-      // First allow both to "unlock" the supported set on iOS 16+.
-      // This prevents the "None of the requested orientations are supported" error.
+      // First, relax the supported set so iOS 16+ doesn't reject the
+      // landscape-only call below with "None of the requested orientations
+      // are supported".
       await SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
         DeviceOrientation.portraitUp,
       ]);
-      // Tiny delay to let the system acknowledge the new supported set.
-      await Future.delayed(const Duration(milliseconds: 50));
+      await Future.delayed(_kIosOrientationCommitDelay);
     }
 
     await SystemChrome.setPreferredOrientations([
@@ -966,6 +1028,10 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
       if (!_showNextEpisodeOverlay &&
           !_dismissedNextEpisodeOverlay &&
           _lastNextEpisodeTriggered != currentEp) {
+        // _lastNextEpisodeTriggered is bookkeeping (read only in this method,
+        // never in build) — assigning it inside setState is just convenient
+        // grouping with _showNextEpisodeOverlay/_overlayActive which DO drive
+        // the overlay's visibility.
         setState(() {
           _showNextEpisodeOverlay = true;
           _overlayActive = true;
@@ -974,21 +1040,20 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
         });
       }
     } else {
-      // Reset dismissal and trigger-tracking when we move back or to a new episode
+      // Reset dismissal + trigger-tracking when the user has scrubbed back
+      // far enough to "re-arm" the overlay for this episode. Neither field
+      // is read in build, so plain assignment is correct — wrapping in
+      // setState would schedule a rebuild that does nothing.
       if (normalizedProgress < 90.0) {
-        if (_dismissedNextEpisodeOverlay) {
-          setState(() => _dismissedNextEpisodeOverlay = false);
-        }
-        if (_lastNextEpisodeTriggered != null) {
-          _lastNextEpisodeTriggered = null;
-        }
+        _dismissedNextEpisodeOverlay = false;
+        _lastNextEpisodeTriggered = null;
       }
 
       if (_showNextEpisodeOverlay && normalizedProgress < 95.0) {
+        _overlayTimer?.cancel();
         setState(() {
           _showNextEpisodeOverlay = false;
           _overlayActive = false;
-          _overlayTimer?.cancel();
         });
       }
     }
@@ -1180,11 +1245,14 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
         loading: () => const Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
-        error: (err, _) {
-          _hasError = true;
-          _errorMsg = 'WebView initialization failed: $err';
-          return _buildErrorState();
-        },
+        // Render the error state directly without mutating widget state during
+        // build — that would either trigger a setState-in-build assertion or
+        // permanently latch _hasError, leaving the screen stuck if the env
+        // provider later recovers. Retry simply invalidates the provider.
+        error: (err, _) => _buildErrorState(
+          overrideMessage: 'WebView initialization failed: $err',
+          onRetry: () => ref.invalidate(webViewEnvironmentProvider),
+        ),
       );
     } else {
       content = _hasError ? _buildErrorState() : _buildWebView();
@@ -1257,7 +1325,10 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
                 : KeyEventResult.ignored;
           },
           child: InAppWebView(
-            key: ValueKey('spovies_player_${widget.url.hashCode}'),
+            // Full URL (not hashCode) — String hashCode collides, and a
+            // collision here causes the framework to reuse the previous
+            // WebView state for a different URL.
+            key: ValueKey('spovies_player_${widget.url}'),
             webViewEnvironment: environment,
             preventGestureDelay: true,
             gestureRecognizers:
@@ -1296,6 +1367,10 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
             },
             onProgressChanged: (controller, progress) {
               if (!mounted) return;
+              // Latch once: powers the post-load cross-domain check in
+              // shouldOverrideUrlLoading. Set before setState so the next
+              // build sees a consistent state.
+              if (progress >= 100) _initialLoadComplete = true;
               setState(() {
                 _loadProgress = progress.toDouble();
               });
@@ -1336,30 +1411,31 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
               }
             },
             onPermissionRequest: (controller, request) async {
-              // 1. القائمة البيضاء: الأشياء المسموح بها فقط
-              final allowedResources = [
+              // Whitelist: only DRM (Widevine) — required for protected
+              // streaming. Camera, microphone, geolocation, MIDI, etc. are
+              // never needed by a video player and must always be denied.
+              // (PermissionResourceType isn't a real Dart enum, so the set
+              // can't be `const`.)
+              final allowedResources = <PermissionResourceType>{
                 PermissionResourceType.PROTECTED_MEDIA_ID,
-                PermissionResourceType.MIDI_SYSEX,
-              ];
+              };
 
-              // 2. فحص الطلبات: هل كل ما في الطلب موجود في القائمة البيضاء؟
-              // نستخدم (every) للتأكد أن كل الموارد المطلوبة مسموح بها
-              bool isAllSafe = request.resources.every(
-                (res) => allowedResources.contains(res),
+              final isAllSafe = request.resources.every(
+                allowedResources.contains,
               );
 
               if (isAllSafe) {
-                // وافق فقط لو كان كل الطلب ضمن المسموح
                 return PermissionResponse(
                   resources: request.resources,
                   action: PermissionResponseAction.GRANT,
                 );
               }
 
-              // 3. ارفض أي شيء آخر فوراً (بما في ذلك الكاميرا، المايك، أو أي شيء غير معروف)
-              print(
-                "Blocked unauthorized permission request: ${request.resources}",
-              );
+              if (kDebugMode) {
+                debugPrint(
+                  'Blocked unauthorized permission request: ${request.resources}',
+                );
+              }
               return PermissionResponse(
                 resources: request.resources,
                 action: PermissionResponseAction.DENY,
@@ -1391,20 +1467,22 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
                 return NavigationActionPolicy.CANCEL;
               }
 
-              if (navigationAction.isForMainFrame && _loadProgress == 100) {
-                final newHost = urlRequest.url?.host.toLowerCase() ?? '';
-                final initialHost =
-                    Uri.tryParse(widget.url)?.host.toLowerCase() ?? '';
-                if (newHost.isNotEmpty && initialHost.isNotEmpty) {
-                  String getBase(String h) {
-                    final p = h.split('.');
-                    if (p.length < 2) return h;
-                    return '${p[p.length - 2]}.${p[p.length - 1]}';
-                  }
-
-                  if (getBase(newHost) != getBase(initialHost)) {
-                    return NavigationActionPolicy.CANCEL;
-                  }
+              // Cross-domain main-frame guard.
+              //
+              // We use _initialLoadComplete (latched true on the first
+              // progress=100 event) instead of the live _loadProgress, because
+              // a programmatic location.assign('evil.com') triggers
+              // shouldOverrideUrlLoading *while* progress is dropping back to
+              // 0 — gating on `_loadProgress == 100` would let the redirect
+              // through. Once the original page has loaded, every cross-base
+              // main-frame nav is treated as a hijack and cancelled.
+              if (navigationAction.isForMainFrame &&
+                  _initialLoadComplete &&
+                  _initialHostBase.isNotEmpty) {
+                final newBase =
+                    _getBaseHost(urlRequest.url?.host.toLowerCase() ?? '');
+                if (newBase.isNotEmpty && newBase != _initialHostBase) {
+                  return NavigationActionPolicy.CANCEL;
                 }
               }
               return NavigationActionPolicy.ALLOW;
@@ -1469,7 +1547,11 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
 
   // ─── Error State ─────────────────────────────────────────────────────────
 
-  Widget _buildErrorState() {
+  /// [overrideMessage] / [onRetry] let transient errors (e.g. WebView env
+  /// initialisation failure on Windows) render their own message and retry
+  /// behaviour without touching `_hasError`/`_errorMsg`, which are owned by
+  /// the in-WebView load lifecycle.
+  Widget _buildErrorState({String? overrideMessage, VoidCallback? onRetry}) {
     return Container(
       color: Colors.black,
       child: Center(
@@ -1495,13 +1577,13 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                _errorMsg,
+                overrideMessage ?? _errorMsg,
                 style: const TextStyle(color: Colors.white54, fontSize: 13),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
-                onPressed: _retry,
+                onPressed: onRetry ?? _retry,
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text('Retry'),
                 style: ElevatedButton.styleFrom(
@@ -1552,7 +1634,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 600),
       curve: Curves.easeOutQuart,
-      bottom: 85,
+      bottom: 100,
       right: _overlayActive ? 32 : -400, // Slide in from right
       child: AnimatedOpacity(
         duration: const Duration(milliseconds: 500),
@@ -1566,12 +1648,12 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
               width: 380,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.9),
+                color: Colors.black.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
                 border: Border.all(color: Colors.white12, width: 1),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.6),
+                    color: Colors.black.withValues(alpha: 0.6),
                     blurRadius: 20,
                     offset: const Offset(0, 8),
                   ),
@@ -1609,7 +1691,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Colors.black.withOpacity(0.4),
+                              color: Colors.black.withValues(alpha: 0.4),
                             ),
                             child: const Icon(
                               Icons.play_arrow_rounded,
@@ -1719,13 +1801,12 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     // Resolve the plugin and new URL before navigating
     final plugins =
         ref.read(pluginsForHookProvider(TriggerHook.mediaHeader)).value ?? [];
-    if (plugins.isEmpty) return;
-
-    final preferredId = ref.read(preferredPluginProvider);
-    final plugin = plugins.firstWhere(
-      (p) => p.pluginId == (widget.pluginId ?? preferredId),
-      orElse: () => plugins.first,
+    final plugin = PluginUrlResolver.pickPlugin(
+      plugins,
+      savedId: widget.pluginId,
+      preferredId: ref.read(preferredPluginProvider),
     );
+    if (plugin == null) return;
 
     final nextUrl = PluginUrlResolver.resolve(
       plugin,
@@ -1736,15 +1817,17 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
 
     if (_isNavigating) return;
     _isNavigating = true;
+    // Tell our own dispose() to NOT restore portrait — the new player
+    // route will re-lock landscape in its initState and we'd otherwise
+    // race against it (iOS forces a rotation to whichever
+    // setPreferredOrientations call landed last).
+    _navigatingToAnotherPlayer = true;
 
     // Clean up current webview before navigating to free resources.
     _cleanupWebView();
 
     Future.microtask(() {
       if (!mounted) return;
-      // Note: We do NOT call _restorePortrait() here because we are
-      // navigating to another player screen which will re-lock to landscape.
-      // Calling it causes jank and can trigger iOS orientation errors.
       context.pushReplacement(
         '/player',
         extra: PlayerArgs(

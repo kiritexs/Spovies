@@ -39,7 +39,12 @@ class AllMediaArgs {
     required this.category,
     this.genreId,
     this.genreMap = const {},
-  });
+  }) : assert(
+          (category != BrowseCategory.discoverMoviesByGenre &&
+                  category != BrowseCategory.discoverTvByGenre) ||
+              genreId != null,
+          'genreId is required for discover-by-genre categories',
+        );
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -137,15 +142,19 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
             page: nextPage,
           )).map((m) => m.toEntity()).toList();
         case BrowseCategory.discoverMoviesByGenre:
-          newItems = (await api.discoverMoviesByGenre(
-            genreId!,
-            page: nextPage,
-          )).map((m) => m.toEntity()).toList();
         case BrowseCategory.discoverTvByGenre:
-          newItems = (await api.discoverTvByGenre(
-            genreId!,
-            page: nextPage,
-          )).map((m) => m.toEntity()).toList();
+          // Constructor asserts genreId is non-null for these cases, but in
+          // release builds asserts are stripped — fail loudly with a typed
+          // error instead of NoSuchMethodError on a null force-unwrap.
+          if (genreId == null) {
+            throw StateError(
+              'genreId is required for ${cat.name} but was null',
+            );
+          }
+          final results = cat == BrowseCategory.discoverMoviesByGenre
+              ? await api.discoverMoviesByGenre(genreId, page: nextPage)
+              : await api.discoverTvByGenre(genreId, page: nextPage);
+          newItems = results.map((m) => m.toEntity()).toList();
       }
 
       if (!mounted) return;

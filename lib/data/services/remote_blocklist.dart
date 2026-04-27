@@ -328,24 +328,6 @@ class AdBlocklist {
     return result;
   }
 
-  /// Returns a compact, comma-separated JS string of all blocked domains
-  /// suitable for inclusion in a JavaScript blocklist array.
-  ///
-  /// Capped at [maxDomains] to prevent JS injection from becoming too large.
-  String toJsArray({int maxDomains = 40000}) {
-    final buf = StringBuffer('[');
-    var count = 0;
-    for (final d in _domains) {
-      if (count >= maxDomains) break;
-      if (count > 0) buf.write(',');
-      // Escape single quotes in domain names (shouldn't occur, but defensive)
-      buf.write("'${d.replaceAll("'", "\\'")}'");
-      count++;
-    }
-    buf.write(']');
-    return buf.toString();
-  }
-
   // ── Internals ───────────────────────────────────────────────────────────────
 
   static Future<String?> _fetch(String url) async {
@@ -361,7 +343,13 @@ class AdBlocklist {
         ..set(HttpHeaders.acceptHeader, 'text/plain, */*');
       final resp = await req.close().timeout(_kResponseTimeout);
       if (resp.statusCode == 200) {
-        final body = await resp.transform(utf8.decoder).join();
+        // The .timeout() above only bounds req.close(); a slow streaming
+        // response could otherwise hold the connection open indefinitely
+        // while we drain the body. Bound the body read separately.
+        final body = await resp
+            .transform(utf8.decoder)
+            .join()
+            .timeout(_kResponseTimeout);
         client.close();
         return body;
       }
