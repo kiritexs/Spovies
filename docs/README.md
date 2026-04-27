@@ -1,6 +1,6 @@
 # Spovies Documentation
 
-Pre-implementation architecture and specification documents.
+Architecture and specification documents for the Spovies app.
 
 ## Documents
 
@@ -12,7 +12,7 @@ Pre-implementation architecture and specification documents.
 ## Quick Links
 
 - **5-Phase Roadmap** → [TECHNICAL_SPECIFICATION.md § 5](./TECHNICAL_SPECIFICATION.md#5-project-roadmap-5-phases)
-- **Riverpod + TMDB Merge Logic** → [TECHNICAL_SPECIFICATION.md § 6](./TECHNICAL_SPECIFICATION.md#6-state-management-flow--riverpod-structure)
+- **Riverpod Provider Architecture** → [TECHNICAL_SPECIFICATION.md § 6](./TECHNICAL_SPECIFICATION.md#6-state-management-flow--riverpod-structure)
 - **Plugin Manifest Schema** → [PLUGIN_SPECIFICATION.md § 2](./PLUGIN_SPECIFICATION.md#2-plugin-manifest)
 - **UI/UX Design System** → [TECHNICAL_SPECIFICATION.md § 8](./TECHNICAL_SPECIFICATION.md#8-uiux-design-system)
 - **TMDB API Reference** → [TECHNICAL_SPECIFICATION.md § 9](./TECHNICAL_SPECIFICATION.md#9-tmdb-api-integration-reference)

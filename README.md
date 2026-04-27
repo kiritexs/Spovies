@@ -48,32 +48,40 @@ The app does **not** host or stream content itself. Plugins provide the watch li
 - **Search** — By movie or TV show name.
 - **Movies / TV** — Toggle for trending content.
 - **Genre filters** — Narrow results.
+- **All Media** — Paginated view for browsing full lists.
 - Tap any poster to open **details**.
 
 ### Browse (Watchlist)
 - Grid of saved titles.
+- **Watch status filtering** — Filter by status: watching, completed, dropped, on-hold, plan-to-watch.
+- **Status management** — Change status per title from the browse screen.
 - Remove items or clear the list.
 
 ### Details
-- Backdrop, poster, title, genres, overview.
-- **Cast** row.
-- **Trailer** — Opens in browser.
-- **Watch** — From installed plugins; opens in-app WebView player.
-- **TV shows** — Season and episode list.
+- Backdrop, poster, title, genres, overview, rating badge.
+- **Cast** row — Horizontal scroll with images and roles.
+- **Trailer** — Opens YouTube in browser.
+- **Watch** — Primary plugin button + dropdown for alternate providers.
+- **Watchlist toggle** — Add/remove from saved titles.
+- **TV shows** — Season selector, episode list with still images, per-episode Watch buttons.
 
 ### Player
 - In-app **WebView** when you tap **Watch**.
-- Plugins can report **progress** for continue-watching and history.
-- Tuned for inline playback (e.g. on iOS).
+- **Auto-resume** — Seeks to last position when progress was saved.
+- **Dual progress tracking** — Plugin-emitted postMessage events + universal HTML5 `<video>` element tracker.
+- **Remote ad blocklist** — Filters known ad/tracking scripts in the WebView.
+- Supports multiple event formats: Provider A (`PLAYER_EVENT`), Provider C native, Provider D.
+- Landscape support on mobile.
 
 ### Profile (Settings)
-- **Manage plugins** — Add (by manifest URL), remove, view installed plugins.
+- **Manage plugins** — Add by manifest URL, toggle enable/disable, set preferred provider, remove.
+- **Plugin registries** — A single URL can return multiple plugins.
 - **Export data** — Back up to a `.spovies` file (watch history, watchlist, plugins, settings).
 - **Import data** — Restore from a `.spovies` backup.
 - **Clear watch history** / **Clear watchlist**.
-- **Theme** — Dark.
-- **Playback** — Player options.
-- **About** — App info and licenses.
+- **Theme** — Dark (default).
+- **Playback** — Preferred provider dropdown.
+- **About** — App version, TMDB attribution, licenses.
 
 ---
 
@@ -85,7 +93,7 @@ Plugins are add-ons that define:
 - **Which URL** (or URL template) opens in the in-app WebView.
 - **Optional** progress reporting so Continue watching and watch history work.
 
-Install plugins in **Settings → Manage Plugins** by entering the **HTTPS URL** of a plugin manifest (a JSON file). Each plugin can optionally send progress events to the app via the Event Bridge.
+Install plugins in **Settings → Manage Plugins** by entering the **HTTPS URL** of a plugin manifest (a JSON file). A single URL can also return a **registry** (array of manifests or `{ plugins: [...] }`) to install multiple plugins at once. Each plugin can optionally send progress events to the app via the Event Bridge.
 
 ---
 
@@ -226,6 +234,8 @@ Your page must post JSON messages that the app listens for. The app injects a br
 
 Your page should call `window.postMessage(…)` with the JSON above (e.g. from the video player’s `timeupdate` or `pause` handlers). The app will parse it and update watch history when the format matches.
 
+The Event Bridge also auto-detects other common formats (Provider D, Provider C native). Additionally, even without any `postMessage` support, the app injects a **universal HTML5 `<video>` tracker** that monitors playback progress directly from `<video>` elements on the page.
+
 ### 7. Minimal and full example manifests
 
 **Minimal (required only):**
@@ -274,11 +284,12 @@ Host this JSON at an HTTPS URL (e.g. `https://mysite.com/spovies-manifest.json`)
 
 | Layer | Technology |
 |-------|------------|
-| App | Flutter (Android & iOS) |
+| App | Flutter (Android, iOS, Windows, macOS, Linux) |
 | Metadata | TMDB (images, cast, genres, etc.) |
 | State & routing | Riverpod, GoRouter |
 | Local storage | Hive (history, watchlist, plugins, settings) |
 | Player | InAppWebView + Event Bridge for plugin progress |
+| Desktop | window_manager (custom title bar, window sizing) |
 
 ---
 

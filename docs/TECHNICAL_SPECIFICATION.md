@@ -1,8 +1,8 @@
 # Spovies — Technical Specification Document (TSD)
 
-**Version:** 1.1  
-**Status:** Architecture & Logic (Pre-Implementation)  
-**Last Updated:** March 2, 2026
+**Version:** 2.0  
+**Status:** Implemented  
+**Last Updated:** April 21, 2026
 
 ---
 
@@ -44,23 +44,7 @@ The **SpoviesPlugin** interface is the contract between the app and any media pr
 
 ---
 
-### 1.2 Smart Metadata Merging
-
-Multiple plugins may contribute metadata for the same media item:
-
-- **Plugin A:** Stream URL, quality info  
-- **Plugin B:** IMDb rating, cast  
-- **Plugin C:** Trailer link  
-
-The app merges these into a **Unified Details View** using:
-
-1. **Source Priority:** TMDB (canonical) > Plugin metadata (enrichment)
-2. **Conflict Resolution:** First non-null wins per field; user preference can override for ratings
-3. **Aggregation:** Arrays (e.g., stream sources) are concatenated and deduplicated
-
----
-
-### 1.3 Event-Driven Progress
+### 1.2 Event-Driven Progress
 
 | Event | Source | Action |
 |-------|--------|--------|
@@ -68,13 +52,13 @@ The app merges these into a **Unified Details View** using:
 | `pause` / `stop` | WebView `postMessage` | Update progress + timestamp |
 | `heartbeat` | WebView (every 5–10 sec) | Continuous sync for crash resilience |
 
-**Flow:** WebView → `EventBridge` → `TrackProgressUseCase` → `WatchHistoryRepository` → Hive/Isar
+**Flow:** WebView → `EventBridge` → `WebViewProviders` → `WatchHistoryRepository` → Hive
 
 **Continue Watching:** Home screen reads `WatchHistory` sorted by `LastPlayedDate`, shows items with `Percentage < 90`.
 
 ---
 
-### 1.4 Plugin Sandboxing & Dynamic Loading
+### 1.3 Plugin Sandboxing & Dynamic Loading
 
 - **Sandboxing:** WebViews run in isolated contexts; no direct DOM access to app.
 - **Dynamic Loading:** App fetches `PluginManifest` JSON from a remote URL; no app update required.
@@ -113,82 +97,110 @@ The app merges these into a **Unified Details View** using:
 lib/
 ├── main.dart
 │
-├── core/                          # Shared utilities, constants, config
+├── core/                              # Shared utilities, constants, config
 │   ├── config/
-│   │   ├── app_config.dart
-│   │   └── deep_link_config.dart
-│   ├── constants/
-│   │   └── trigger_hooks.dart
+│   │   ├── app_config.dart            # App constants
+│   │   └── env.dart                   # TMDB API key (envied)
 │   ├── errors/
 │   │   ├── app_exception.dart
 │   │   └── plugin_exception.dart
 │   ├── theme/
-│   │   ├── app_theme.dart
-│   │   └── palette_extractor.dart
+│   │   ├── app_theme.dart             # ThemeData setup
+│   │   ├── app_colors.dart            # Dark theme palette
+│   │   ├── app_text_styles.dart       # Spline Sans typography
+│   │   └── app_spacing.dart           # Spacing tokens
 │   └── utils/
-│       └── url_validator.dart
+│       ├── url_validator.dart
+│       └── tmdb_image_url.dart
 │
 ├── data/
 │   ├── datasources/
 │   │   ├── remote/
-│   │   │   ├── tmdb_api.dart
-│   │   │   └── plugin_manifest_api.dart
+│   │   │   ├── tmdb_api.dart          # Dio wrapper for TMDB
+│   │   │   ├── retry_interceptor.dart
+│   │   │   └── tmdb_cache_interceptor.dart
 │   │   └── local/
-│   │       ├── watch_history_repository_impl.dart
-│   │       └── hive_box.dart
+│   │       └── hive_service.dart      # Hive initialization & box refs
 │   ├── models/
 │   │   ├── media_item_model.dart
-│   │   ├── plugin_manifest_model.dart
-│   │   └── user_progress_model.dart
-│   └── repositories/
-│       ├── media_repository_impl.dart
-│       ├── plugin_repository_impl.dart
-│       └── watch_history_repository_impl.dart
+│   │   ├── genre_model.dart
+│   │   └── plugin_manifest_model.dart
+│   ├── repositories/
+│   │   ├── media_repository_impl.dart
+│   │   ├── plugin_repository_impl.dart
+│   │   ├── watch_history_repository_impl.dart
+│   │   └── watch_status_repository_impl.dart
+│   └── services/
+│       ├── export_import_service.dart  # .spovies backup/restore
+│       └── remote_blocklist.dart       # Ad/tracking domain blocklist
 │
 ├── domain/
 │   ├── entities/
 │   │   ├── media_item.dart
-│   │   ├── plugin.dart
+│   │   ├── media_type.dart
+│   │   ├── media_metadata.dart
 │   │   ├── episode.dart
-│   │   └── user_progress.dart
-│   ├── repositories/
-│   │   ├── media_repository.dart
-│   │   ├── plugin_repository.dart
-│   │   └── watch_history_repository.dart
-│   └── usecases/
-│       ├── fetch_details_usecase.dart
-│       ├── execute_plugin_action_usecase.dart
-│       ├── track_progress_usecase.dart
-│       ├── merge_metadata_usecase.dart
-│       └── get_continue_watching_usecase.dart
+│   │   ├── cast_member.dart
+│   │   ├── plugin_manifest.dart
+│   │   ├── user_progress.dart
+│   │   └── watch_status.dart          # WatchStatus enum + MediaStatus
+│   └── repositories/
+│       ├── media_repository.dart
+│       ├── plugin_repository.dart
+│       ├── watch_history_repository.dart
+│       └── watch_status_repository.dart
 │
 ├── presentation/
-│   ├── providers/                  # Riverpod providers
+│   ├── providers/                     # Riverpod providers
 │   │   ├── media_providers.dart
 │   │   ├── plugin_providers.dart
 │   │   ├── details_providers.dart
-│   │   └── watch_history_providers.dart
+│   │   ├── watch_history_providers.dart
+│   │   ├── watch_status_providers.dart
+│   │   ├── watchlist_providers.dart
+│   │   ├── search_providers.dart
+│   │   ├── settings_providers.dart
+│   │   └── webview_providers.dart
+│   ├── router/
+│   │   ├── app_router.dart            # GoRouter with shell + full-screen routes
+│   │   └── shell_scaffold.dart        # Tab shell with glass bottom nav
 │   ├── screens/
 │   │   ├── home/
-│   │   ├── details/
+│   │   │   └── home_screen.dart
+│   │   ├── explore/
+│   │   │   ├── discover_screen.dart
+│   │   │   └── all_media_screen.dart
 │   │   ├── search/
+│   │   │   └── search_screen.dart
+│   │   ├── details/
+│   │   │   └── details_screen.dart
+│   │   ├── watchlist/
+│   │   │   └── watchlist_screen.dart
+│   │   ├── player/
+│   │   │   └── webview_player_screen.dart
 │   │   └── settings/
+│   │       ├── settings_screen.dart
+│   │       └── plugin_management_screen.dart
 │   └── widgets/
+│       ├── app_header.dart
+│       ├── hero_card.dart
 │       ├── media_card.dart
-│       ├── plugin_action_button.dart
-│       ├── unified_details_view.dart
-│       └── webview_player.dart
+│       ├── media_row.dart
+│       ├── continue_watching_card.dart
+│       ├── glass_bottom_nav.dart
+│       ├── shimmer_placeholder.dart
+│       ├── desktop_side_nav.dart
+│       └── desktop_window_frame.dart
 │
-└── plugins/                       # Plugin runtime & protocol
+└── plugins/                           # Plugin runtime & protocol
     ├── protocol/
-    │   ├── spovies_plugin.dart
     │   ├── trigger_hook.dart
-    │   └── action_type.dart
+    │   ├── action_type.dart
+    │   └── plugin_url_resolver.dart   # URL template placeholder replacement
     ├── event_bridge/
-    │   ├── event_bridge.dart
-    │   └── post_message_handler.dart
+    │   └── event_bridge.dart          # Parses postMessage from WebView
     └── discovery/
-        └── plugin_discovery_service.dart
+        └── plugin_discovery_service.dart  # Manifest fetch & validation
 ```
 
 ---
@@ -197,9 +209,9 @@ lib/
 
 | Layer | Responsibility |
 |-------|----------------|
-| **Data** | TMDB API, HTTP for plugin manifests, Hive/Isar persistence, model serialization |
-| **Domain** | Entities (pure Dart), use case interfaces, repository contracts |
-| **Presentation** | Riverpod state, UI widgets, screens, theme application |
+| **Data** | TMDB API (Dio), HTTP for plugin manifests, Hive persistence, model serialization, export/import service, remote blocklist |
+| **Domain** | Entities (pure Dart), repository contracts (interfaces) |
+| **Presentation** | Riverpod providers, UI screens & widgets, GoRouter navigation, theme application |
 
 ---
 
@@ -256,12 +268,12 @@ class MediaItem {
   "description": "Stream movies and shows",
   "iconUrl": "https://example.com/icon.png",
   "hooks": ["media_header", "episode_item"],
-  "urlTemplate": "https://example.com/watch/{mediaId}?type={mediaType}",
+  "urlTemplate": "https://example.com/watch/{{type}}/{{tmdbId}}",
   "actionType": "webview",
   "presentationMode": "fullscreen",
   "eventBridgeConfig": {
     "postMessageOrigin": "https://example.com",
-    "allowedEvents": ["progress", "pause", "stop", "heartbeat"]
+    "allowedEventTypes": ["progress", "pause", "stop", "heartbeat"]
   }
 }
 ```
@@ -291,11 +303,15 @@ class PluginManifest {
 {
   "mediaId": "12345",
   "mediaType": "movie",
-  "episodeId": null,
-  "timestamp": 3600,
+  "title": "Inception",
+  "posterPath": "/path.jpg",
   "percentage": 65.5,
-  "lastPlayedDate": "2025-03-02T14:30:00Z",
-  "pluginId": "example-source"
+  "currentTime": 3600,
+  "duration": 5500,
+  "season": null,
+  "episode": null,
+  "lastPlayedDate": "2026-03-02T14:30:00Z",
+  "lastPluginId": "example-source"
 }
 ```
 
@@ -305,11 +321,40 @@ class PluginManifest {
 class UserProgress {
   final String mediaId;
   final MediaType mediaType;
-  final String? episodeId;
-  final int timestamp;
+  final String title;
+  final String? posterPath;
   final double percentage;
+  final double currentTime;
+  final double duration;
+  final int? season;
+  final int? episode;
   final DateTime lastPlayedDate;
-  final String? pluginId;
+  final String? lastPluginId;
+}
+```
+
+---
+
+### 3.4 WatchStatus & MediaStatus
+
+```dart
+enum WatchStatus {
+  watching,
+  completed,
+  dropped,
+  onHold,
+  planToWatch,
+}
+```
+
+```dart
+class MediaStatus {
+  final String mediaId;
+  final String mediaType;
+  final WatchStatus status;
+  final int? season;
+  final int? episode;
+  final DateTime updatedAt;
 }
 ```
 
@@ -322,97 +367,114 @@ class UserProgress {
 | Scenario | Behavior |
 |----------|----------|
 | Plugin fails to load URL | Show "Provider unavailable" toast; suggest alternative plugin in dropdown if available |
-| All plugins fail | Show "No providers available" with retry button; log for analytics |
-| Network error | Retry with exponential backoff; show cached data if available |
-| Invalid manifest | Skip plugin; log error; notify user in Settings > Plugins |
+| All plugins fail | Show "No providers available" message |
+| Network error | Retry with exponential backoff via `RetryInterceptor`; show cached data if available |
+| Invalid manifest | Reject plugin with detailed error; notify user in Settings > Plugins |
 
-### 4.2 Deep-Link Handling
+### 4.2 Remote Ad Blocklist
 
-**Scheme:** `spovies://details/{type}/{id}`
+The app maintains a community-sourced blocklist of ad/tracking domains that are filtered in the WebView player:
 
-**Examples:**
-- `spovies://details/movie/12345`
-- `spovies://details/tv/67890`
+- **Multiple sources**: OISD, Peter Lowe, AdGuard, NoCoin, Steven Black
+- **24-hour cache TTL** — blocklist refreshes daily
+- **Built-in fallback** — ~70 hardcoded domains when network is unavailable
+- **O(1) lookup** via `HashSet` + LRU cache for domain checks
+- Exported as JavaScript array (capped at 40k domains) and injected into WebView
 
-**Flow:** Parse URI → `DeepLinkHandler` → `FetchDetailsUseCase` → Navigate to Details screen with `MediaItem` loaded.
+### 4.3 Dual Progress Tracking
 
-### 4.3 Theming Engine
+The WebView player uses two independent systems to capture playback progress:
 
-- **Palette Generator:** Extract dominant color from poster image (e.g., `palette_generator` package).
-- **Apply:** Use as accent color for buttons, progress bars, highlights.
-- **Fallback:** Default theme if no poster or extraction fails.
+1. **Plugin-emitted events** — `postMessage` events from the embedded player (if the plugin supports it)
+2. **Universal HTML5 tracker** — Injected script that directly monitors any `<video>` element on the page
+
+This ensures progress is captured even for plugins that don't implement the Event Bridge.
+
+### 4.4 TMDB Response Caching
+
+API responses are cached locally in Hive with configurable TTLs via `TmdbCacheInterceptor`:
+
+| Data Type | Cache TTL |
+|-----------|-----------|
+| Configuration | 24 hours |
+| Genre lists | 24 hours |
+| Trending lists | 30 minutes |
+| Movie/TV details | 1 hour |
+| Search results | Not cached |
 
 ---
 
 ## 5. Project Roadmap (5 Phases)
 
-### Phase 1: Foundation (Weeks 1–2)
+### Phase 1: Foundation ✅
 
-- [ ] Project setup: Flutter, dependencies (Riverpod, Hive/Isar, Dio, `google_fonts`, `cached_network_image`, `material_symbols_icons`)
-- [ ] Folder structure per Clean Architecture
-- [ ] Design system: `AppTheme`, `AppColors`, `AppTextStyles`, `AppSpacing` matching `stitch/code.html` tokens
-- [ ] TMDB API wrapper: `TmdbApi` class with Bearer token auth, `/configuration`, `/genre/movie/list`, `/trending/movie/week`
-- [ ] Image loading with `CachedNetworkImage` + shimmer placeholder
-- [ ] Core entities: `MediaItem`, `Episode`
-- [ ] Home screen with Hero card (4:5), "Now Trending" horizontal snap row, glass bottom nav
-- [ ] Deep-link parsing (no navigation yet)
+- [x] Project setup: Flutter, dependencies (Riverpod, Hive, Dio, `google_fonts`, `cached_network_image`)
+- [x] Folder structure per Clean Architecture
+- [x] Design system: `AppTheme`, `AppColors`, `AppTextStyles`, `AppSpacing` matching `stitch/code.html` tokens
+- [x] TMDB API wrapper: `TmdbApi` class with Bearer token auth, retry & cache interceptors
+- [x] Image loading with `CachedNetworkImage` + shimmer placeholder
+- [x] Core entities: `MediaItem`, `Episode`, `CastMember`, `MediaMetadata`
+- [x] Home screen with Hero card (4:5), "Now Trending" horizontal snap row, glass bottom nav
 
-**Deliverable:** App renders TMDB content with full design-system fidelity matching `code.html`; Hero + Trending row + glass nav functional.
-
----
-
-### Phase 2: Plugin Protocol & Discovery (Weeks 3–4)
-
-- [ ] `SpoviesPlugin` interface and `PluginManifest` model
-- [ ] Plugin Discovery Service (fetch manifest from URL)
-- [ ] TriggerHook enum and zone constants
-- [ ] Mock plugin for testing
-- [ ] Plugin list in Settings (manual URL entry)
-- [ ] Plugin repository + local cache of manifests
-
-**Deliverable:** App can load and display plugin manifests; Settings shows installed plugins.
+**Deliverable:** App renders TMDB content with full design-system fidelity; Hero + Trending row + glass nav functional.
 
 ---
 
-### Phase 3: Unified Details & Plugin Actions (Weeks 5–6)
+### Phase 2: Plugin Protocol & Discovery ✅
 
-- [ ] Details screen: backdrop hero, cast row, trailer chip, rating badge, age cert — all from `append_to_response` single call
-- [ ] `MergeMetadataUseCase` for combining TMDB + plugin data
-- [ ] `ExecutePluginActionUseCase` (ExternalLink, WebView stubs)
-- [ ] Primary + "More Providers" dropdown UI (glass bottom sheet)
-- [ ] User preference: Preferred Provider in Settings
-- [ ] `media_card_context` hook (long-press glass context menu on cards)
-- [ ] Palette generator: extract dominant color from poster, animate accent color
+- [x] `PluginManifest` entity and model
+- [x] Plugin Discovery Service (fetch manifest from URL, supports registries)
+- [x] TriggerHook enum and ActionType enum
+- [x] Plugin management screen (add by URL, toggle enable/disable, set preferred, remove)
+- [x] Plugin repository + local cache of manifests in Hive
+- [x] Plugin URL resolver with `{{tmdbId}}`, `{{type}}`, `{{season}}`, `{{episode}}` placeholders
 
-**Deliverable:** Details page shows merged metadata with cinematic layout; Watch button opens plugin; accent color adapts to content.
-
----
-
-### Phase 4: WebView Player & Progress Tracking (Weeks 7–8)
-
-- [ ] Full-screen WebView container with landscape support
-- [ ] Swipe-down to minimize → PiP mini-player
-- [ ] EventBridge: `postMessage` listener
-- [ ] `TrackProgressUseCase` + `WatchHistoryRepository`
-- [ ] Hive/Isar schema for `UserProgress`
-- [ ] Continue Watching row on home screen
-- [ ] `episode_item` hook for TV episodes
-
-**Deliverable:** Watch in WebView; progress saved; Continue Watching works.
+**Deliverable:** App can load, validate, and manage plugin manifests; Settings shows installed plugins.
 
 ---
 
-### Phase 5: Polish & Export/Import (Weeks 9–10)
+### Phase 3: Details & Plugin Actions ✅
 
-- [ ] Theming engine (poster palette → accent color)
-- [ ] Intelligent fallback (plugin failure handling)
-- [ ] Deep-link navigation to Details
-- [ ] Settings screen: all sections (Data, Plugins, Appearance, Playback, About)
-- [ ] Export / Import feature (`ExportService`, `ImportService`, `.spovies` file format)
-- [ ] Share export via `share_plus`; import via `file_picker`
-- [ ] Performance tuning, error handling, shimmer/skeleton states on all loading UI
+- [x] Details screen: backdrop hero, cast row, trailer chip, rating badge — all from `append_to_response` single call
+- [x] Primary Watch button + dropdown for alternate providers
+- [x] User preference: Preferred Provider in Settings
+- [x] TV show support: season selector, episode list with still images, per-episode Watch buttons
+- [x] Watchlist toggle (add/remove from saved titles)
 
-**Deliverable:** Production-ready, fully local app. Users can back up and restore all data without any server.
+**Deliverable:** Details page shows TMDB metadata with cinematic layout; Watch button opens plugin.
+
+---
+
+### Phase 4: WebView Player & Progress Tracking ✅
+
+- [x] Full-screen WebView container with landscape support
+- [x] EventBridge: `postMessage` listener with multi-format support (Provider A, Provider D, Provider C)
+- [x] Universal HTML5 `<video>` element tracker (fallback for all plugins)
+- [x] `WatchHistoryRepository` + Hive persistence for `UserProgress`
+- [x] Auto-resume: seeks to last saved position
+- [x] Throttled progress writes (5-second throttle for continuous, immediate for pause/ended)
+- [x] Continue Watching row on home screen
+- [x] `episode_item` hook for TV episodes
+- [x] Remote ad blocklist injected into WebView
+
+**Deliverable:** Watch in WebView; progress saved and resumed; Continue Watching works.
+
+---
+
+### Phase 5: Polish & Export/Import ✅
+
+- [x] Intelligent fallback (plugin failure handling, retry interceptor)
+- [x] Settings screen: all sections (Data, Plugins, Appearance, Playback, About)
+- [x] Export / Import feature (`ExportImportService`, `.spovies` gzip file format)
+- [x] Share export via `share_plus`; import via `file_picker`
+- [x] Shimmer/skeleton loading states on all screens
+- [x] Watch status system (watching, completed, dropped, on-hold, plan-to-watch)
+- [x] Watchlist with status filtering
+- [x] Desktop support: Windows, macOS, Linux (window_manager, side nav, window frame)
+- [x] Search screen with live TMDB results
+- [x] All Media paginated browsing screen
+
+**Deliverable:** Production-ready, fully local app across mobile and desktop. Users can back up and restore all data.
 
 ---
 
@@ -421,18 +483,16 @@ class UserProgress {
 ### 6.1 Data Flow Overview
 
 ```
-TMDB API ──► MediaRepository ──► FetchDetailsUseCase
+TMDB API ──► MediaRepository ──► detailsProviders
                                       │
-Plugin Discovery ──► PluginRepository ──► GetPluginsForHookUseCase
-                                      │
-                                      ▼
-                            MergeMetadataUseCase
+Plugin Discovery ──► PluginRepository ──► pluginProviders
                                       │
                                       ▼
-                            detailsProvider (AsyncValue<UnifiedDetails>)
+                            DetailsScreen (UI)
                                       │
-                                      ▼
-                            UnifiedDetailsView (UI)
+                            PluginUrlResolver ──► WebViewPlayerScreen
+                                      │
+                            EventBridge ──► webviewProviders ──► WatchHistoryRepository
 ```
 
 ---
@@ -442,109 +502,64 @@ Plugin Discovery ──► PluginRepository ──► GetPluginsForHookUseCase
 #### A. Media Providers (TMDB Data)
 
 ```dart
-// Raw TMDB data - single source of truth from API
+// Repository providers
 final mediaRepositoryProvider = Provider<MediaRepository>((ref) => ...);
 
-final mediaDetailsProvider = FutureProvider.family<MediaItem, String>((ref, mediaId) async {
-  final repo = ref.watch(mediaRepositoryProvider);
-  return repo.getDetails(mediaId);
-});
+// Trending & curated lists
+final trendingMoviesProvider = FutureProvider<List<MediaItem>>((ref) => ...);
+final topRatedMoviesProvider = FutureProvider<List<MediaItem>>((ref) => ...);
 
-// For TV: fetches season/episode structure
-final tvDetailsProvider = FutureProvider.family<MediaItem, String>((ref, mediaId) async {
-  final repo = ref.watch(mediaRepositoryProvider);
-  return repo.getTvDetails(mediaId);
-});
+// Details (with append_to_response for cast, videos, images)
+final movieDetailsProvider = FutureProvider.family<MediaItem, int>((ref, id) => ...);
+final tvDetailsProvider = FutureProvider.family<MediaItem, int>((ref, id) => ...);
+
+// Search
+final searchResultsProvider = FutureProvider.family<List<MediaItem>, String>((ref, query) => ...);
+
+// Genre map (cached)
+final genreMapProvider = FutureProvider<Map<int, String>>((ref) => ...);
 ```
 
 #### B. Plugin Providers
 
 ```dart
-// All installed plugins (from discovery + user config)
-final pluginRepositoryProvider = Provider<PluginRepository>((ref) => ...);
-
-final installedPluginsProvider = FutureProvider<List<PluginManifest>>((ref) async {
-  final repo = ref.watch(pluginRepositoryProvider);
-  return repo.getInstalledPlugins();
-});
+// All installed plugins (from Hive)
+final installedPluginsProvider = FutureProvider<List<PluginManifest>>((ref) => ...);
 
 // Plugins for a specific hook - used by UI to render buttons
-final pluginsForHookProvider = FutureProvider.family<List<PluginManifest>, TriggerHook>((ref, hook) async {
-  final plugins = await ref.watch(installedPluginsProvider.future);
-  return plugins.where((p) => p.hooks.contains(hook)).toList();
-});
+final pluginsForHookProvider = FutureProvider.family<List<PluginManifest>, TriggerHook>((ref, hook) => ...);
 
-// User's preferred provider (from Settings)
-final preferredProviderProvider = StateProvider<String?>((ref) => null);
+// Per-plugin enabled/disabled state
+final pluginEnabledProvider = Provider.family<bool, String>((ref, pluginId) => ...);
+
+// User's preferred provider (from Settings, persisted in Hive)
+final preferredPluginProvider = StateProvider<String?>((ref) => ...);
 ```
 
-#### C. Unified Details Provider (The Merge Logic)
-
-This is the core provider that combines TMDB + Plugin data:
+#### C. Watch History & Status Providers
 
 ```dart
-// Input: mediaId, mediaType
-// Output: UnifiedDetails (TMDB data + plugin actions + enriched metadata)
+// Continue Watching (items with percentage < 90, sorted by lastPlayedDate)
+final continueWatchingProvider = FutureProvider<List<UserProgress>>((ref) => ...);
 
-final unifiedDetailsProvider = FutureProvider.family<UnifiedDetails, UnifiedDetailsParams>((ref, params) async {
-  // 1. Fetch TMDB data (base)
-  final mediaFuture = params.mediaType == MediaType.movie
-      ? ref.watch(mediaDetailsProvider(params.mediaId).future)
-      : ref.watch(tvDetailsProvider(params.mediaId).future);
-  
-  final media = await mediaFuture;
-  
-  // 2. Fetch plugins for media_header (and episode_item if TV)
-  final pluginsForHeader = await ref.watch(pluginsForHookProvider(TriggerHook.mediaHeader).future);
-  final preferredId = ref.watch(preferredProviderProvider);
-  
-  // 3. Merge metadata from plugins (if any provide MetadataFetch)
-  final metadataPlugins = pluginsForHeader.where((p) => p.actionType == ActionType.metadataFetch);
-  final mergedMetadata = await ref.read(mergeMetadataUseCaseProvider).execute(
-    MergeMetadataParams(media: media, plugins: metadataPlugins),
-  );
-  
-  // 4. Build ordered plugin actions (Primary + List)
-  //    - If preferredId set and found: that plugin first, rest after
-  //    - Else: plugins in discovery order (first = primary, rest in dropdown)
-  final preferred = preferredId != null
-      ? pluginsForHeader.where((p) => p.pluginId == preferredId).toList()
-      : <PluginManifest>[];
-  final rest = preferredId != null
-      ? pluginsForHeader.where((p) => p.pluginId != preferredId).toList()
-      : pluginsForHeader;
-  final orderedPlugins = preferred.isNotEmpty ? [...preferred, ...rest] : rest;
-  
-  // 5. For TV: get plugins per episode
-  List<Map<Episode, List<PluginManifest>>>? episodePlugins;
-  if (params.mediaType == MediaType.tv && media.episodes != null) {
-    final pluginsForEpisode = await ref.watch(pluginsForHookProvider(TriggerHook.episodeItem).future);
-    episodePlugins = media.episodes!.map((ep) => {ep: pluginsForEpisode}).toList();
-  }
-  
-  return UnifiedDetails(
-    media: media.copyWith(metadata: mergedMetadata),
-    headerPlugins: orderedPlugins,
-    episodePlugins: episodePlugins,
-  );
-});
+// For a specific media: current progress (for auto-resume)
+final progressForMediaProvider = FutureProvider.family<UserProgress?, String>((ref, mediaId) => ...);
+
+// Watch status (watching, completed, dropped, on-hold, plan-to-watch)
+final libraryEntriesByStatusProvider = FutureProvider.family<List<MediaStatus>, WatchStatus>((ref, status) => ...);
 ```
 
-#### D. Watch History Providers
+#### D. WebView & Settings Providers
 
 ```dart
-final watchHistoryRepositoryProvider = Provider<WatchHistoryRepository>((ref) => ...);
+// WebView event and progress tracking (receives EventBridge events, writes to WatchHistoryRepository)
+final webviewProgressProvider = ...;
 
-final continueWatchingProvider = FutureProvider<List<UserProgress>>((ref) async {
-  final repo = ref.watch(watchHistoryRepositoryProvider);
-  return repo.getContinueWatching(limit: 10);
-});
+// Watchlist (saved media items)
+final watchlistProvider = NotifierProvider<WatchlistNotifier, List<MediaItem>>(...);
 
-// For a specific media: current progress (for "Resume" button)
-final progressForMediaProvider = FutureProvider.family<UserProgress?, String>((ref, mediaId) async {
-  final repo = ref.watch(watchHistoryRepositoryProvider);
-  return repo.getProgress(mediaId);
-});
+// App settings (persisted to Hive)
+final settingsProvider = NotifierProvider<SettingsNotifier, AppSettings>(...);
 ```
 
 #### E. Provider Dependencies Diagram
@@ -554,32 +569,46 @@ final progressForMediaProvider = FutureProvider.family<UserProgress?, String>((r
                     │ mediaRepository     │
                     └──────────┬──────────┘
                                │
-                    ┌──────────▼──────────┐
-                    │ mediaDetailsProvider│
-                    └──────────┬──────────┘
+              ┌────────────────┼────────────────┐
+              ��                ▼                ▼
+    ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+    │ trending     │ │ details      │ │ search       │
+    │ Providers    │ │ Providers    │ │ Providers    │
+    └──────┬───────┘ └──────┬───────┘ └──────────────┘
+           │                │
+           ▼                ▼
+    ┌──────────────┐ ┌──────────────────────────┐
+    │ HomeScreen   │ │ DetailsScreen            │
+    └──────────────┘ └──────────┬───────────────┘
                                │
-┌─────────────────────┐       │       ┌─────────────────────┐
-│ pluginRepository     │       │       │ preferredProvider    │
-└──────────┬──────────┘       │       └──────────┬──────────┘
-           │                  │                  │
-           ▼                  │                  │
-┌─────────────────────┐       │                  │
-│ pluginsForHook      │       │                  │
-└──────────┬──────────┘       │                  │
-           │                  │                  │
-           └──────────────────┼──────────────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │ mergeMetadataUseCase│
-                    └──────────┬──────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │ unifiedDetailsProvider│  ◄── THE MERGE
-                    └──────────┬──────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │ DetailsScreen       │
-                    └────────────────────┘
+              ┌────────────────┼────────────────┐
+              ▼                ▼                ▼
+    ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+    │ plugin       │ │ PluginUrl    │ │ watchlist     │
+    │ Providers    │ │ Resolver     │ │ Provider     │
+    └──────────────┘ └──────┬───────┘ └──────────────┘
+                            │
+                   ┌────────▼────────┐
+                   │ WebViewPlayer   │
+                   │ Screen          │
+                   └────────┬────────┘
+                            │
+              ┌─────────────┼─────────────┐
+              ▼                           ▼
+    ┌──────────────┐            ┌──────────────┐
+    │ EventBridge  │            │ HTML5 Video  │
+    │              │            │ Tracker      │
+    └──────┬───────┘            └──────┬───────┘
+           └────────────┬──────────────┘
+                        ▼
+              ┌──────────────────┐
+              │ webviewProviders │
+              └────────┬─────────┘
+                       ▼
+              ┌──────────────────┐
+              │ WatchHistory     │
+              │ Repository       │
+              └──────────────────┘
 ```
 
 ---
@@ -589,37 +618,42 @@ final progressForMediaProvider = FutureProvider.family<UserProgress?, String>((r
 When user taps "Watch" (or selects from dropdown):
 
 ```dart
-// In ExecutePluginActionUseCase
-// 1. Resolve URL from template: urlTemplate.replaceAll('{mediaId}', media.id)
-// 2. If actionType == webview: Open WebViewPlayer with URL + EventBridge
+// 1. PluginUrlResolver replaces placeholders in urlTemplate:
+//    {{tmdbId}}, {{type}}, {{title}}, {{imdbId}}, {{season}}, {{episode}}
+// 2. If actionType == webview: Navigate to WebViewPlayerScreen with resolved URL
 // 3. If actionType == externalLink: Launch url_launcher
-// 4. If actionType == metadataFetch: Already handled in merge; no action
+// 4. If actionType == metadataFetch: Reserved for future use
 ```
 
-The `WebViewPlayer` widget:
-- Injects JavaScript to listen for `postMessage` from the loaded page
-- Forwards events to `EventBridge` → `TrackProgressUseCase`
-- Handles swipe-down for PiP
+The `WebViewPlayerScreen`:
+- Loads the resolved URL in a full-screen `InAppWebView`
+- Injects remote blocklist as JavaScript to filter ad/tracking domains
+- Injects universal HTML5 `<video>` element tracker script
+- Listens for `postMessage` events via `EventBridge`
+- Auto-resumes playback from last saved position (`resumeTimeSeconds`)
+- Writes progress to `WatchHistoryRepository` via `webviewProviders`
+- Throttles `timeupdate` writes (5-second interval); immediate for `pause`/`ended`
 
 ---
 
 ## 7. Local-First Data Strategy
 
-> **Decision:** There is no backend. The app is fully local. All user data lives in Hive/Isar on-device. Users can back up and restore their data via an **Export / Import** feature in Settings. No auth, no cloud sync, no server.
+> **Decision:** There is no backend. The app is fully local. All user data lives in Hive on-device. Users can back up and restore their data via an **Export / Import** feature in Settings. No auth, no cloud sync, no server.
 
 ---
 
-### 7.1 What is Stored Locally (Hive/Isar)
+### 7.1 What is Stored Locally (Hive)
 
-| Data | Box / Collection | Description |
-|------|-----------------|-------------|
+| Data | Box | Description |
+|------|-----|-------------|
 | `WatchHistory` | `watchHistoryBox` | Progress records per media item (`UserProgress`) |
 | `Watchlist` | `watchlistBox` | User's saved/bookmarked media |
+| `WatchStatus` | `watchStatusBox` | Per-media status tracking (`MediaStatus`) |
 | `InstalledPlugins` | `pluginsBox` | Cached plugin manifests (fetched from URLs) |
 | `TmdbCache` | `tmdbCacheBox` | Cached API responses with TTL |
 | `GenreCache` | `genreCacheBox` | Movie + TV genre lists |
 | `TmdbConfig` | `configBox` | TMDB image configuration |
-| `AppSettings` | `settingsBox` | Theme mode, preferred provider, language, etc. |
+| `AppSettings` | `settingsBox` | Theme mode, preferred provider, etc. |
 
 ---
 
@@ -687,11 +721,11 @@ User picks .spovies file (via file_picker)
 
 | Section | Options |
 |---------|---------|
+| **Plugins** | Manage plugins → Add by URL, toggle enable/disable, set preferred, remove. Supports registries (single URL → multiple plugins). |
 | **Data** | Export Data, Import Data, Clear Watch History, Clear Watchlist |
-| **Plugins** | Add Plugin (paste URL), installed plugin list, remove plugin |
-| **Appearance** | Theme mode (Dark / Light / System), Language |
+| **Appearance** | Theme mode (Dark default) |
 | **Playback** | Preferred Provider (dropdown of installed plugins) |
-| **About** | App version, TMDB attribution, Spovies plugin docs link |
+| **About** | App version, TMDB attribution, licenses |
 
 ---
 
@@ -702,14 +736,17 @@ User picks .spovies file (via file_picker)
 final watchlistProvider = NotifierProvider<WatchlistNotifier, List<MediaItem>>(...);
 
 // Watch history (Continue Watching)
-final watchHistoryProvider = NotifierProvider<WatchHistoryNotifier, List<UserProgress>>(...);
+final continueWatchingProvider = FutureProvider<List<UserProgress>>(...);
+final watchHistoryProvider = FutureProvider<List<UserProgress>>(...);
+
+// Watch status (library)
+final libraryEntriesByStatusProvider = FutureProvider.family<List<MediaStatus>, WatchStatus>(...);
 
 // App settings (persisted to Hive, reactive)
-final appSettingsProvider = NotifierProvider<AppSettingsNotifier, AppSettings>(...);
+final settingsProvider = NotifierProvider<SettingsNotifier, AppSettings>(...);
 
 // Export/Import
-final exportServiceProvider = Provider<ExportService>((ref) => ExportService(ref));
-final importServiceProvider = Provider<ImportService>((ref) => ImportService(ref));
+final exportImportServiceProvider = Provider<ExportImportService>((ref) => ...);
 ```
 
 ---
@@ -718,11 +755,11 @@ final importServiceProvider = Provider<ImportService>((ref) => ImportService(ref
 
 | Package | Purpose |
 |---------|---------|
-| `hive_flutter` / `isar` | Primary local database |
+| `hive_flutter` | Primary local database |
 | `path_provider` | Get app documents directory |
 | `share_plus` | Share export file via OS share sheet |
 | `file_picker` | Let user pick `.spovies` file to import |
-| `archive` | gzip compress/decompress the export file |
+| `dart:io` (gzip) | Compress/decompress the export file |
 
 ---
 
@@ -841,9 +878,7 @@ final importServiceProvider = Provider<ImportService>((ref) => ImportService(ref
 | Poster card hover | scale 1.05–1.10, 500–700ms ease-in-out |
 | Button tap | `active:scale-95` (95%), instant |
 | Screen transitions | Slide/fade, ~300ms |
-| WebView open | Bottom sheet slide-up or full-screen push |
-| Mini-player appear | Slide up from bottom, 300ms spring |
-| Palette color change | Animated color interpolation, 500ms |
+| WebView open | Full-screen push |
 | Continue Watching progress | Animated width change on mount |
 
 ---
@@ -859,12 +894,11 @@ final importServiceProvider = Provider<ImportService>((ref) => ImportService(ref
 ### 8.8 Home Screen Layout (Section Order)
 
 1. Header (fixed, top)
-2. Hero Featured Movie (first item of `trending/movie/week` or editor-picked)
+2. Hero Featured Movie (first item of `trending/movie/week`)
 3. "Now Trending" horizontal scroll row
-4. "Continue Watching" glass card (only shown if user has watch history)
+4. "Continue Watching" glass card (only shown if user has watch history with progress < 90%)
 5. "Top Rated" horizontal scroll row
-6. (Phase 5+) "New Releases", "For You" rows
-7. Floating Glass Bottom Nav (fixed, bottom)
+6. Floating Glass Bottom Nav (fixed, bottom)
 
 ---
 
@@ -885,7 +919,7 @@ Authorization: Bearer <TMDB_READ_ACCESS_TOKEN>
 accept: application/json
 ```
 
-Store the token in `flutter_secure_storage` or `.env` (never hardcoded). In Flutter, use `Dio` with a base interceptor that attaches this header to every request.
+Store the token in `.env` and access via `envied` package (code-generated `Env.tmdbReadAccessToken`). In Flutter, use `Dio` with a base interceptor that attaches this header to every request.
 
 ---
 
@@ -1008,24 +1042,28 @@ class TmdbApi {
   TmdbApi(this._dio);
 
   // Trending
-  Future<List<MediaItemModel>> getTrendingMovies({String window = 'week'});
-  Future<List<MediaItemModel>> getTrendingTv({String window = 'day'});
+  Future<List<MediaItemModel>> getTrendingMovies();
+  Future<List<MediaItemModel>> getTrendingTv();
 
-  // Details
-  Future<MediaItemModel> getMovieDetails(int id);
-  Future<MediaItemModel> getTvDetails(int id);
-  Future<SeasonModel> getSeason(int seriesId, int seasonNumber);
+  // Details (with append_to_response)
+  Future<MediaItemModel> getMovieDetails(int id);  // credits,videos,images,release_dates
+  Future<MediaItemModel> getTvDetails(int id);      // credits,videos,aggregate_credits
+  Future<List<Episode>> getTvSeasonEpisodes(int seriesId, int seasonNumber);
 
   // Search
-  Future<List<MediaItemModel>> search(String query);
+  Future<List<MediaItemModel>> search(String query);  // multi-search, filters to movie+tv
 
   // Curated lists
   Future<List<MediaItemModel>> getTopRatedMovies({int page = 1});
+  Future<List<MediaItemModel>> getTopRatedTv({int page = 1});
   Future<List<MediaItemModel>> getPopularMovies({int page = 1});
-  Future<List<MediaItemModel>> getUpcomingMovies({int page = 1});
+  Future<List<MediaItemModel>> getPopularTv({int page = 1});
 
-  // Config & genres
-  Future<TmdbConfigModel> getConfiguration();
+  // Discover by genre
+  Future<List<MediaItemModel>> discoverMoviesByGenre(int genreId, {int page = 1});
+  Future<List<MediaItemModel>> discoverTvByGenre(int genreId, {int page = 1});
+
+  // Genres
   Future<List<GenreModel>> getMovieGenres();
   Future<List<GenreModel>> getTvGenres();
 }
@@ -1046,7 +1084,7 @@ final dioProvider = Provider<Dio>((ref) {
   ));
 
   dio.interceptors.add(RetryInterceptor(dio, retries: 3));
-  dio.interceptors.add(LogInterceptor()); // remove in production
+  dio.interceptors.add(TmdbCacheInterceptor());  // Hive-backed response cache with TTL
 
   return dio;
 });
@@ -1090,16 +1128,9 @@ This returns cast, trailer info, additional images, and age rating in one reques
 
 ### 9.7 Rate Limiting & Caching Strategy
 
-| Data Type | Cache TTL | Storage |
-|-----------|-----------|---------|
-| Configuration | 24 hours | Hive |
-| Genre lists | 24 hours | Hive |
-| Trending lists | 30 minutes | Hive |
-| Movie/TV details | 1 hour | Hive |
-| Search results | No cache | In-memory only |
-| User progress | Persistent | Hive/Isar |
+Caching is handled by `TmdbCacheInterceptor`, a custom Hive-backed Dio interceptor. See [§ 4.4](#44-tmdb-response-caching) for TTL details.
 
-Use `dio_cache_interceptor` or a custom Hive-backed cache layer.
+User data (progress, watchlist, watch status) is persisted permanently in Hive and is not subject to TTL expiration.
 
 ---
 
