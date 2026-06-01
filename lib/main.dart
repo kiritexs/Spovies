@@ -7,12 +7,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'core/theme/app_theme.dart';
+import 'core/utils/host_utils.dart';
 import 'data/datasources/local/hive_service.dart';
 import 'presentation/router/app_router.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await HiveService.init();
+  // Init local persistence + the bundled Public Suffix List in parallel.
+  // Both are required before any UI loads (PSL backs the WebView's
+  // cross-domain navigation guard and the ad blocklist's eTLD+1 lookup).
+  await Future.wait([
+    HiveService.init(),
+    HostUtils.init(),
+  ]);
 
   // Desktop Specific Initialization
   if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {

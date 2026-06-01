@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
@@ -84,9 +86,9 @@ class _WindowButtons extends StatelessWidget {
           icon: Icons.crop_square_rounded,
           onPressed: () async {
             if (await windowManager.isMaximized()) {
-              windowManager.unmaximize();
+              unawaited(windowManager.unmaximize());
             } else {
-              windowManager.maximize();
+              unawaited(windowManager.maximize());
             }
           },
         ),
@@ -115,7 +117,7 @@ class _WindowButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onPressed,
-      hoverColor: isClose ? Colors.red.withOpacity(0.8) : Colors.white10,
+      hoverColor: isClose ? Colors.red.withValues(alpha:0.8) : Colors.white10,
       child: SizedBox(
         width: 46,
         height: 32,

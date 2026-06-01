@@ -61,8 +61,9 @@ class GlassBottomNav extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             AnimatedScale(
-              scale: isActive ? 1.0 : 1.0,
+              scale: isActive ? 1.15 : 1.0,
               duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutBack,
               child: Icon(
                 isActive ? _getFilledIcon(item.icon) : item.icon,
                 color: isActive ? AppColors.primary : AppColors.textSecondary,

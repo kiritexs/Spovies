@@ -88,7 +88,7 @@ class _NavItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = isSelected ? AppColors.primary : AppColors.textSecondary;
     final bgColor = isSelected
-        ? AppColors.primary.withOpacity(0.15)
+        ? AppColors.primary.withValues(alpha:0.15)
         : Colors.transparent;
 
     return Padding(

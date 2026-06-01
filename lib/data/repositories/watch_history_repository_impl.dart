@@ -40,22 +40,21 @@ class WatchHistoryRepositoryImpl implements WatchHistoryRepository {
 
   @override
   Future<List<UserProgress>> getContinueWatching({int limit = 10}) async {
-    final all = <UserProgress>[];
-    for (final key in _box.keys) {
-      final data = _box.get(key);
-      if (data != null) all.add(UserProgress.fromMap(data));
-    }
-    // One entry per media: keep the most recently played progress per mediaId
+    // One entry per media: keep the most recently played progress per
+    // mediaId. We iterate `_box.values` directly (Hive regular boxes hold
+    // everything in memory, so this skips the per-key disk lookup) and
+    // dedupe in a single pass instead of materialising the full list first.
     final byMedia = <String, UserProgress>{};
-    for (final p in all) {
+    for (final data in _box.values) {
+      final p = UserProgress.fromMap(data);
       final existing = byMedia[p.mediaId];
       if (existing == null ||
           p.lastPlayedDate.isAfter(existing.lastPlayedDate)) {
         byMedia[p.mediaId] = p;
       }
     }
-    final entries = byMedia.values.toList();
-    entries.sort((a, b) => b.lastPlayedDate.compareTo(a.lastPlayedDate));
+    final entries = byMedia.values.toList()
+      ..sort((a, b) => b.lastPlayedDate.compareTo(a.lastPlayedDate));
     return entries.take(limit).toList();
   }
 

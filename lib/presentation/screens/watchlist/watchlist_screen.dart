@@ -211,8 +211,12 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
     if (confirmed == true) {
       final ids =
           ref.read(watchlistProvider).map((m) => m.tmdbId.toString()).toList();
+      // Await each delete so failures surface (and so the watchlist clear
+      // below happens only after status rows are gone).
       for (final id in ids) {
-        ref.read(watchStatusNotifierProvider.notifier).deleteAllStatusesForMedia(id);
+        await ref
+            .read(watchStatusNotifierProvider.notifier)
+            .deleteAllStatusesForMedia(id);
       }
       ref.read(watchlistProvider.notifier).clearAll();
     }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -419,7 +420,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     UserProgress? continueProgress,
     Episode? nextEpisode,
   }) {
-    final activePlugin = _resolvePlugin(plugins, preferredId);
+    final activePlugin = PluginUrlResolver.pickPlugin(plugins, preferredId: preferredId);
     final isTV = details.type == MediaType.tv;
     final showResume =
         continueProgress != null &&
@@ -446,7 +447,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 ),
                 child: ElevatedButton.icon(
                   onPressed: () =>
-                      _openContinue(context, details, continueProgress!),
+                      _openContinue(context, details, continueProgress),
                   icon: const Icon(Icons.play_circle_rounded, size: 28),
                   label: Text(
                     'Continue (${continueProgress.remainingTime})',
@@ -490,7 +491,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               onPressed: () => _openNextEpisode(
                 context,
                 details,
-                nextEpisode!.seasonNumber,
+                nextEpisode.seasonNumber,
                 nextEpisode.episodeNumber,
               ),
               icon: const Icon(Icons.skip_next_rounded, size: 24),
@@ -766,7 +767,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     UserProgress? continueProgress,
     Episode? nextEpisode,
   }) {
-    final activePlugin = _resolvePlugin(plugins, preferredId);
+    final activePlugin = PluginUrlResolver.pickPlugin(plugins, preferredId: preferredId);
     final showResume =
         continueProgress != null &&
         continueProgress.percentage < 95 &&
@@ -790,7 +791,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               ),
               child: ElevatedButton.icon(
                 onPressed: () =>
-                    _openContinue(context, details, continueProgress!),
+                    _openContinue(context, details, continueProgress),
                 icon: const Icon(Icons.play_circle_rounded, size: 24),
                 label: Text(
                   'Continue (${continueProgress.remainingTime})',
@@ -836,7 +837,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 onPressed: () => _openNextEpisode(
                   context,
                   details,
-                  nextEpisode!.seasonNumber,
+                  nextEpisode.seasonNumber,
                   nextEpisode.episodeNumber,
                 ),
                 icon: const Icon(Icons.skip_next_rounded, size: 24),
@@ -1208,7 +1209,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           ),
           data: (episodes) => Column(
             children: episodes.map((ep) {
-              final epPlugin = _resolvePlugin(episodePlugins, preferredId);
+              final epPlugin = PluginUrlResolver.pickPlugin(
+                episodePlugins,
+                preferredId: preferredId,
+              );
               return _EpisodeRow(
                 mediaId: details.tmdbId.toString(),
                 episode: ep,
@@ -1245,7 +1249,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         [];
     if (plugins.isEmpty) return;
     final preferredId = ref.read(preferredPluginProvider);
-    final plugin = _resolvePlugin(plugins, preferredId);
+    final plugin = PluginUrlResolver.pickPlugin(plugins, preferredId: preferredId);
     if (plugin == null) return;
     final url = PluginUrlResolver.resolve(
       plugin,
@@ -1307,16 +1311,14 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             .read(pluginsForHookProvider(TriggerHook.mediaHeader))
             .whenOrNull(data: (list) => list) ??
         [];
-    if (plugins.isEmpty) return;
-    final preferredId = ref.read(preferredPluginProvider);
-    var activePlugin = plugins.first;
-    if (progress.lastPluginId != null) {
-      final match = plugins.where((p) => p.pluginId == progress.lastPluginId);
-      if (match.isNotEmpty) activePlugin = match.first;
-    } else if (preferredId != null) {
-      final match = plugins.where((p) => p.pluginId == preferredId);
-      if (match.isNotEmpty) activePlugin = match.first;
-    }
+    // pickPlugin handles savedId/preferredId fallback in one place — keeping
+    // it centralised so the resolution order can't drift between call sites.
+    final activePlugin = PluginUrlResolver.pickPlugin(
+      plugins,
+      savedId: progress.lastPluginId,
+      preferredId: ref.read(preferredPluginProvider),
+    );
+    if (activePlugin == null) return;
     final url = PluginUrlResolver.resolve(
       activePlugin,
       details,
@@ -1335,22 +1337,6 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         episode: progress.episode,
       ),
     );
-  }
-
-  // ─── Resolve Preferred Plugin ─────────────────────────────────────────
-
-  /// Returns the user's preferred plugin if it's in [plugins], otherwise
-  /// falls back to the first plugin.  Returns null if the list is empty.
-  PluginManifest? _resolvePlugin(
-    List<PluginManifest> plugins,
-    String? preferredId,
-  ) {
-    if (plugins.isEmpty) return null;
-    if (preferredId != null) {
-      final match = plugins.where((p) => p.pluginId == preferredId);
-      if (match.isNotEmpty) return match.first;
-    }
-    return plugins.first;
   }
 
   Future<void> _executePlugin(
@@ -1393,16 +1379,18 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             : 0.0;
 
         if (!context.mounted) return;
-        context.push(
-          '/player',
-          extra: PlayerArgs(
-            url: url,
-            media: media,
-            pluginName: plugin.name,
-            pluginId: plugin.pluginId,
-            resumeTimeSeconds: resumeTime,
-            season: season,
-            episode: episode,
+        unawaited(
+          context.push(
+            '/player',
+            extra: PlayerArgs(
+              url: url,
+              media: media,
+              pluginName: plugin.name,
+              pluginId: plugin.pluginId,
+              resumeTimeSeconds: resumeTime,
+              season: season,
+              episode: episode,
+            ),
           ),
         );
         break;
@@ -1419,11 +1407,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     return OutlinedButton.icon(
       onPressed: () async {
         if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Could not open trailer')),
-            );
-          }
+          // Use the State's `mounted` (not context.mounted) so the lint can
+          // see the guard is tied to this widget's own lifecycle.
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not open trailer')),
+          );
         }
       },
       icon: const Icon(Icons.play_circle_outline, size: 20),
@@ -1776,8 +1765,9 @@ class _EpisodeRow extends ConsumerWidget {
                               child: Align(
                                 alignment: Alignment.centerLeft,
                                 child: FractionallySizedBox(
-                                  widthFactor: (progress?.percentage ?? 0 / 100)
-                                      .clamp(0.0, 1.0),
+                                  widthFactor:
+                                      ((progress?.percentage ?? 0) / 100)
+                                          .clamp(0.0, 1.0),
                                   child: Container(
                                     decoration: const BoxDecoration(
                                       color: AppColors.primary,

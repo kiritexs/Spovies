@@ -11,6 +11,11 @@ import '../../data/models/plugin_manifest_model.dart';
 class PluginDiscoveryService {
   final Dio _dio;
 
+  /// Maximum acceptable manifest body size. A hostile URL could otherwise
+  /// stream gigabytes and OOM the app; this cap is generous for any
+  /// legitimate manifest (typically <10 KB) or registry (<256 KB).
+  static const int _maxManifestBytes = 512 * 1024; // 512 KB
+
   PluginDiscoveryService(this._dio);
 
   /// Fetches and validates a plugin manifest from the given [url].
@@ -25,47 +30,18 @@ class PluginDiscoveryService {
       throw PluginUrlValidationException(urlError);
     }
 
-    // 2. Fetch JSON
+    // 2. Fetch (size-capped) and decode
+    final raw = await _fetchBytes(url.trim(), const Duration(seconds: 10));
     final Map<String, dynamic> json;
     try {
-      final response = await _dio.get<dynamic>(
-        url.trim(),
-        options: Options(
-          receiveTimeout: const Duration(seconds: 10),
-          responseType: ResponseType.json,
-        ),
-      );
-
-      final data = response.data;
-      if (data is Map<String, dynamic>) {
-        json = data;
-      } else if (data is String) {
-        json = jsonDecode(data) as Map<String, dynamic>;
+      final decoded = jsonDecode(utf8.decode(raw));
+      if (decoded is Map<String, dynamic>) {
+        json = decoded;
       } else {
         throw const InvalidManifestException('Invalid response format');
       }
-    } on DioException catch (e) {
-      // Print full error to console for developer debugging
-      debugPrint(
-        'PluginDiscoveryService: DioException [${e.type}]: ${e.error}',
-      );
-      debugPrint('Stacktrace: ${e.stackTrace}');
-
-      final message = switch (e.type) {
-        DioExceptionType.connectionTimeout => 'Connection timed out',
-        DioExceptionType.receiveTimeout => 'Server took too long to respond',
-        DioExceptionType.badResponse =>
-          'Server returned error: ${e.response?.statusCode}',
-        DioExceptionType.connectionError =>
-          'Connection failed. Check your internet or if the URL is accessible.',
-        _ => e.message ?? 'Unknown network error',
-      };
-      throw PluginNetworkException(
-        'Failed to fetch manifest: $message',
-        statusCode: e.response?.statusCode,
-      );
-    } catch (e) {
-      throw PluginNetworkException('Unexpected error: $e');
+    } on FormatException catch (e) {
+      throw InvalidManifestException('Manifest is not valid JSON: ${e.message}');
     }
 
     // 3. Validate required fields
@@ -116,20 +92,52 @@ class PluginDiscoveryService {
   }
 
   Future<dynamic> _fetchJson(String url) async {
+    final raw = await _fetchBytes(url.trim(), const Duration(seconds: 15));
     try {
-      final response = await _dio.get<dynamic>(
-        url.trim(),
+      final decoded = jsonDecode(utf8.decode(raw));
+      if (decoded is Map<String, dynamic> || decoded is List) return decoded;
+      throw const InvalidManifestException('Invalid response format');
+    } on FormatException catch (e) {
+      throw InvalidManifestException('Response is not valid JSON: ${e.message}');
+    }
+  }
+
+  /// Fetches the response body as bytes with a hard size cap.
+  ///
+  /// Defends against hostile manifest URLs that would otherwise stream
+  /// arbitrarily large payloads and exhaust device memory.
+  Future<List<int>> _fetchBytes(String url, Duration receiveTimeout) async {
+    try {
+      final response = await _dio.get<List<int>>(
+        url,
         options: Options(
-          receiveTimeout: const Duration(seconds: 15),
-          responseType: ResponseType.json,
+          receiveTimeout: receiveTimeout,
+          responseType: ResponseType.bytes,
         ),
       );
-      final raw = response.data;
-      if (raw is Map<String, dynamic>) return raw;
-      if (raw is List) return raw;
-      if (raw is String) return jsonDecode(raw);
-      throw const InvalidManifestException('Invalid response format');
+      // 1. Reject early if the server advertises a too-large body.
+      final advertised =
+          int.tryParse(response.headers.value('content-length') ?? '');
+      if (advertised != null && advertised > _maxManifestBytes) {
+        throw PluginNetworkException(
+          'Manifest body too large (${advertised}B > ${_maxManifestBytes}B)',
+        );
+      }
+      final bytes = response.data;
+      if (bytes == null) {
+        throw const InvalidManifestException('Empty response body');
+      }
+      // 2. Belt-and-braces in case content-length was missing or wrong.
+      if (bytes.length > _maxManifestBytes) {
+        throw PluginNetworkException(
+          'Manifest body too large (${bytes.length}B > ${_maxManifestBytes}B)',
+        );
+      }
+      return bytes;
     } on DioException catch (e) {
+      if (kDebugMode) {
+        debugPrint('PluginDiscoveryService: DioException [${e.type}]: ${e.error}');
+      }
       final message = switch (e.type) {
         DioExceptionType.connectionTimeout => 'Connection timed out',
         DioExceptionType.receiveTimeout => 'Server took too long to respond',
@@ -158,7 +166,7 @@ class PluginDiscoveryService {
           final m = await fetchAndValidate(item.trim());
           manifests.add(m);
         } else if (item is Map) {
-          final map = Map<String, dynamic>.from(item as Map);
+          final map = Map<String, dynamic>.from(item);
           _validateSchema(map);
           manifests.add(PluginManifestModel.fromJson(map));
         }
@@ -180,6 +188,17 @@ class PluginDiscoveryService {
       if (json[field] is String && (json[field] as String).trim().isEmpty) {
         throw InvalidManifestException('Field "$field" cannot be empty');
       }
+    }
+
+    // urlTemplate is loaded directly in a WebView, so it must use a safe
+    // scheme — javascript:, data:, file:, etc. would otherwise execute in
+    // the WebView context. UrlValidator.validateUrlTemplate also bounds
+    // length to guard against pathological payloads.
+    final templateError = UrlValidator.validateUrlTemplate(
+      json['urlTemplate'] as String,
+    );
+    if (templateError != null) {
+      throw InvalidManifestException(templateError);
     }
 
     // Validate hooks are known values

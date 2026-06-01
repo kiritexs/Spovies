@@ -205,7 +205,10 @@ class AdBlocklist {
       );
 
       // ── 1. Try disk cache ──────────────────────────────────────────────────
-      if (await cacheFile.exists() && await metaFile.exists()) {
+      // existsSync is faster than the async variant for a single stat call
+      // — there is no concurrency win and the async wrapper just queues a
+      // microtask. Used only on startup, so blocking is negligible.
+      if (cacheFile.existsSync() && metaFile.existsSync()) {
         try {
           final meta =
               jsonDecode(await metaFile.readAsString()) as Map<String, dynamic>;
@@ -291,10 +294,13 @@ class AdBlocklist {
 
   /// Returns `true` if [url] should be blocked.
   ///
-  /// Check order (fastest first):
-  ///   1. Registered domain (eTLD+1) — covers ~90% of cases.
-  ///   2. Exact hostname match — for domains stored as full subdomains.
-  ///   3. Suffix walk — catches CDN subdomains like cdn2.acscdn.com.
+  /// Check order:
+  ///   1. Exact hostname match — for domains stored as full subdomains.
+  ///   2. Suffix walk — catches CDN subdomains like `cdn2.acscdn.com` AND
+  ///      naturally covers the registered domain (eTLD+1) since the walk
+  ///      visits every suffix `parts[i..]`. The previous explicit eTLD+1
+  ///      step was redundant for 3+-part hosts and only added string
+  ///      allocations.
   bool isBlocked(String url) {
     if (url.isEmpty) return false;
     final host = _hostOf(url);
@@ -307,20 +313,18 @@ class AdBlocklist {
       return cachedResult;
     }
 
-    bool _computeBlock() {
-      // 1. eTLD+1
-      if (_domains.contains(_registeredDomain(host))) return true;
-      // 2. Exact host
+    bool computeBlock() {
+      // 1. Exact host
       if (_domains.contains(host)) return true;
-      // 3. Suffix walk (subdomain cascade)
+      // 2. Suffix walk (subdomain cascade + registered domain)
       final parts = host.split('.');
-      for (var i = 1; i < parts.length - 1; i++) {
+      for (var i = 1; i < parts.length; i++) {
         if (_domains.contains(parts.sublist(i).join('.'))) return true;
       }
       return false;
     }
 
-    final result = _computeBlock();
+    final result = computeBlock();
     _cache[host] = result;
     if (_cache.length > _maxCacheSize) {
       _cache.remove(_cache.keys.first); // Remove oldest
@@ -449,14 +453,6 @@ class AdBlocklist {
     } catch (_) {
       return '';
     }
-  }
-
-  /// Extract the registered domain (eTLD+1) from a hostname.
-  /// E.g. "cdn2.doubleclick.net" → "doubleclick.net"
-  static String _registeredDomain(String host) {
-    final p = host.split('.');
-    if (p.length < 2) return host;
-    return '${p[p.length - 2]}.${p[p.length - 1]}';
   }
 }
 

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network security configuration for Spovies.
+
+  Defaults to HTTPS-only — TMDB, plugin manifest fetches, and the remote
+  ad blocklist are all served over HTTPS, and plugin manifest URLs must be
+  HTTPS (enforced by UrlValidator).
+
+  If a future plugin legitimately needs HTTP for a specific embed domain,
+  add a <domain-config cleartextTrafficPermitted="true"> entry below
+  scoped to that domain rather than re-enabling cleartext globally.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

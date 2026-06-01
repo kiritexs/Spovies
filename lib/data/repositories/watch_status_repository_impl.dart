@@ -39,13 +39,13 @@ class WatchStatusRepositoryImpl implements WatchStatusRepository {
 
   @override
   Future<List<MediaStatus>> getStatusesForMedia(String mediaId) async {
-    final prefix = 'status_${mediaId}_';
+    // Filter by the stored mediaId field rather than the Hive key prefix —
+    // this also avoids the false-positive case where a media id is a
+    // prefix of another (e.g. "1234" vs "12345").
     final list = <MediaStatus>[];
-    for (final key in _box.keys) {
-      if (key is String && (key == 'status_$mediaId' || key.startsWith(prefix))) {
-        final data = _box.get(key);
-        if (data != null) list.add(MediaStatus.fromMap(data));
-      }
+    for (final data in _box.values) {
+      final entry = MediaStatus.fromMap(data);
+      if (entry.mediaId == mediaId) list.add(entry);
     }
     return list;
   }
@@ -53,12 +53,9 @@ class WatchStatusRepositoryImpl implements WatchStatusRepository {
   @override
   Future<List<MediaStatus>> getEntriesByStatus(WatchStatus status) async {
     final list = <MediaStatus>[];
-    for (final key in _box.keys) {
-      final data = _box.get(key);
-      if (data != null) {
-        final entry = MediaStatus.fromMap(data);
-        if (entry.status == status) list.add(entry);
-      }
+    for (final data in _box.values) {
+      final entry = MediaStatus.fromMap(data);
+      if (entry.status == status) list.add(entry);
     }
     return list;
   }
@@ -71,16 +68,18 @@ class WatchStatusRepositoryImpl implements WatchStatusRepository {
 
   @override
   Future<void> deleteAllStatusesForMedia(String mediaId) async {
-    final keysToRemove = <String>[];
-    final prefix = 'status_${mediaId}_';
-    final exactKey = 'status_$mediaId';
-    for (final key in _box.keys) {
-      if (key is String && (key == exactKey || key.startsWith(prefix))) {
-        keysToRemove.add(key);
+    // Collect matching keys via toMap() so we pay one box traversal and
+    // then a single batched deleteAll instead of N awaited deletes.
+    final keysToRemove = <dynamic>[];
+    // `_box` is Box<Map>, so entry.value is already a Map — no need for
+    // an extra `is Map` check.
+    for (final entry in _box.toMap().entries) {
+      if (entry.value['mediaId']?.toString() == mediaId) {
+        keysToRemove.add(entry.key);
       }
     }
-    for (final key in keysToRemove) {
-      await _box.delete(key);
+    if (keysToRemove.isNotEmpty) {
+      await _box.deleteAll(keysToRemove);
     }
   }
 }

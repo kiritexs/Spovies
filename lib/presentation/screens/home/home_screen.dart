@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -216,16 +218,20 @@ Future<void> _continueWatching(
   );
 
   if (!context.mounted) return;
-  context.push(
-    '/player',
-    extra: PlayerArgs(
-      url: url,
-      media: media,
-      pluginName: activePlugin.name,
-      pluginId: activePlugin.pluginId,
-      resumeTimeSeconds: item.currentTime,
-      season: item.season,
-      episode: item.episode,
+  // Fire-and-forget — GoRouter's push returns Future<T?> tracking the route
+  // result, but the caller doesn't need it.
+  unawaited(
+    context.push(
+      '/player',
+      extra: PlayerArgs(
+        url: url,
+        media: media,
+        pluginName: activePlugin.name,
+        pluginId: activePlugin.pluginId,
+        resumeTimeSeconds: item.currentTime,
+        season: item.season,
+        episode: item.episode,
+      ),
     ),
   );
 }
@@ -275,16 +281,18 @@ Future<void> _openNextEpisode(
     episode: nextEpisode,
   );
   if (!context.mounted) return;
-  context.push(
-    '/player',
-    extra: PlayerArgs(
-      url: url,
-      media: media,
-      pluginName: activePlugin.name,
-      pluginId: activePlugin.pluginId,
-      resumeTimeSeconds: 0,
-      season: nextSeason,
-      episode: nextEpisode,
+  unawaited(
+    context.push(
+      '/player',
+      extra: PlayerArgs(
+        url: url,
+        media: media,
+        pluginName: activePlugin.name,
+        pluginId: activePlugin.pluginId,
+        resumeTimeSeconds: 0,
+        season: nextSeason,
+        episode: nextEpisode,
+      ),
     ),
   );
 }

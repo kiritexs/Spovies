@@ -1,1 +1,36 @@
 include: package:flutter_lints/flutter.yaml
+
+# Spovies lint configuration.
+#
+# We layer a small set of *high-impact* rules on top of `flutter_lints`:
+#   • Correctness rules promoted to errors so they fail CI rather than getting
+#     buried in info-level noise (`unawaited_futures`,
+#     `use_build_context_synchronously`).
+#   • A handful of code-smell lints kept at the default level.
+#
+# We deliberately leave style-only rules (require_trailing_commas,
+# prefer_const_*, sort_pub_dependencies, …) off the strict list — they
+# generate hundreds of unrelated hits across the existing screens and add
+# no signal until the codebase is fully migrated.
+analyzer:
+  errors:
+    unawaited_futures: error
+    use_build_context_synchronously: error
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+
+linter:
+  rules:
+    # ── Correctness ─────────────────────────────────────────────────────
+    avoid_slow_async_io: true
+    avoid_type_to_string: true
+    cancel_subscriptions: true
+    close_sinks: true
+    no_adjacent_strings_in_list: true
+    throw_in_finally: true
+    unawaited_futures: true
+
+    # ── Production hygiene ─────────────────────────────────────────────
+    avoid_print: true
+    avoid_web_libraries_in_flutter: true

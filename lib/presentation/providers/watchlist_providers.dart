@@ -18,14 +18,9 @@ class WatchlistNotifier extends Notifier<List<MediaItem>> {
   }
 
   List<MediaItem> _loadFromBox() {
-    final items = <MediaItem>[];
-    for (final key in _box.keys) {
-      final data = _box.get(key);
-      if (data != null) {
-        items.add(_fromMap(data));
-      }
-    }
-    return items;
+    // `_box.values` returns the in-memory cached iterable directly, which
+    // is strictly faster than iterating keys and calling get() per item.
+    return [for (final data in _box.values) _fromMap(data)];
   }
 
   /// Add a media item to the watchlist.

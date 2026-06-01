@@ -15,6 +15,7 @@ import 'package:window_manager/window_manager.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/utils/host_utils.dart';
 import '../../../core/utils/tmdb_image_url.dart';
 import '../../../domain/entities/media_item.dart';
 import '../../../domain/entities/media_type.dart';
@@ -850,15 +851,19 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   /// Cached "base" of the originally requested URL's host (e.g. `example.com`
   /// for `https://www.example.com/embed/123`). Computed once in [initState] so
   /// every navigation check is an O(1) string compare.
-  late final String _initialHostBase = _getBaseHost(
-    Uri.tryParse(widget.url)?.host.toLowerCase() ?? '',
+  ///
+  /// Backed by the Public Suffix List (see [HostUtils]) so multi-part TLDs
+  /// like `foo.co.uk` are handled correctly.
+  late final String _initialHostBase = HostUtils.registeredDomain(
+    Uri.tryParse(widget.url)?.host ?? '',
   );
 
-  static String _getBaseHost(String host) {
-    if (host.isEmpty) return host;
-    final parts = host.split('.');
-    if (parts.length < 2) return host;
-    return '${parts[parts.length - 2]}.${parts[parts.length - 1]}';
+  late final ProviderContainer _container;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _container = ProviderScope.containerOf(context);
   }
 
   // ─── Gesture recognizers — transferred to the WebView ────────────────────
@@ -935,6 +940,13 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     _controlsTimer?.cancel();
     _overlayTimer?.cancel();
     _cleanupWebView();
+    // If progress was written during this session but never flushed via a
+    // pause/ended event (e.g. the user just closed the player), refresh
+    // the Continue Watching row once on the way out.
+    if (_progressDirty) {
+      _container.invalidate(continueWatchingProvider);
+      _container.invalidate(episodeProgressProvider);
+    }
     // Skip the orientation restore when handing off to another player —
     // see [_navigatingToAnotherPlayer] for the iOS race this avoids.
     if (!_navigatingToAnotherPlayer) {
@@ -998,9 +1010,14 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
 
   // ─── Progress Tracking ───────────────────────────────────────────────────
 
+  /// Tracks whether anything has been persisted this session so we know to
+  /// invalidate the Continue Watching list once on lifecycle events.
+  bool _progressDirty = false;
+
   void _onProgressUpdate(PlayerEvent event) {
     if (!mounted) return;
     if (event.duration <= 0) return;
+
     final progress = UserProgress(
       mediaId: widget.media.tmdbId.toString(),
       mediaType: widget.media.type.name,
@@ -1014,17 +1031,40 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
       lastPlayedDate: DateTime.now(),
       lastPluginId: widget.pluginId,
     );
-    ref.read(watchHistoryRepositoryProvider).saveProgress(progress);
-    ref.invalidate(continueWatchingProvider);
-    ref.invalidate(episodeProgressProvider);
 
+    // Fire-and-forget write with explicit error handling so a Hive write
+    // failure can't escape as an unhandled async error.
+    unawaited(
+      ref
+          .read(watchHistoryRepositoryProvider)
+          .saveProgress(progress)
+          .catchError((Object e, StackTrace st) {
+            if (kDebugMode) debugPrint('saveProgress failed: $e');
+          }),
+    );
+    _progressDirty = true;
+
+    // Invalidate the Continue Watching row only on pause/ended — the
+    // throttled timeupdate fires every ~5s during playback and used to
+    // rebuild the home screen continuously. The repository write above
+    // still happens every update so progress survives a crash.
+    final isLifecycle =
+        event.eventType == 'pause' || event.eventType == 'ended';
+    if (isLifecycle) {
+      ref.invalidate(continueWatchingProvider);
+      ref.invalidate(episodeProgressProvider);
+      _progressDirty = false;
+    }
+
+    // PlayerEvent.tryParse normalises progress to the 0–100 scale at the
+    // parse boundary, so we use it directly here. The previous
+    // "if (progress <= 1.0) *= 100" heuristic mis-fired at <1 % real
+    // progress (e.g. 0.83 % → 83 %) and triggered the Next-Episode
+    // overlay seconds into playback.
     final currentEp = event.episode ?? widget.episode;
-    // Normalize progress to 0-100 if it's 0-1
-    final normalizedProgress = (event.progress > 0 && event.progress <= 1.0)
-        ? event.progress * 100
-        : event.progress;
+    final pct = event.progress;
 
-    if (widget.media.type == MediaType.tv && normalizedProgress >= 95.0) {
+    if (widget.media.type == MediaType.tv && pct >= 95.0) {
       if (!_showNextEpisodeOverlay &&
           !_dismissedNextEpisodeOverlay &&
           _lastNextEpisodeTriggered != currentEp) {
@@ -1044,12 +1084,12 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
       // far enough to "re-arm" the overlay for this episode. Neither field
       // is read in build, so plain assignment is correct — wrapping in
       // setState would schedule a rebuild that does nothing.
-      if (normalizedProgress < 90.0) {
+      if (pct < 90.0) {
         _dismissedNextEpisodeOverlay = false;
         _lastNextEpisodeTriggered = null;
       }
 
-      if (_showNextEpisodeOverlay && normalizedProgress < 95.0) {
+      if (_showNextEpisodeOverlay && pct < 95.0) {
         _overlayTimer?.cancel();
         setState(() {
           _showNextEpisodeOverlay = false;
@@ -1479,8 +1519,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
               if (navigationAction.isForMainFrame &&
                   _initialLoadComplete &&
                   _initialHostBase.isNotEmpty) {
-                final newBase =
-                    _getBaseHost(urlRequest.url?.host.toLowerCase() ?? '');
+                final newBase = HostUtils.registeredDomain(
+                  urlRequest.url?.host ?? '',
+                );
                 if (newBase.isNotEmpty && newBase != _initialHostBase) {
                   return NavigationActionPolicy.CANCEL;
                 }
@@ -1827,18 +1868,31 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     _cleanupWebView();
 
     Future.microtask(() {
-      if (!mounted) return;
-      context.pushReplacement(
-        '/player',
-        extra: PlayerArgs(
-          url: nextUrl,
-          media: widget.media,
-          pluginName: plugin.name,
-          pluginId: plugin.pluginId,
-          season: nextSeason,
-          episode: nextEpisode,
-        ),
-      );
+      if (!mounted) {
+        // The route disappeared before the microtask ran. Reset both flags
+        // so we don't leave the (now detached) state stuck pretending it's
+        // mid-navigation.
+        _isNavigating = false;
+        _navigatingToAnotherPlayer = false;
+        return;
+      }
+      try {
+        context.pushReplacement(
+          '/player',
+          extra: PlayerArgs(
+            url: nextUrl,
+            media: widget.media,
+            pluginName: plugin.name,
+            pluginId: plugin.pluginId,
+            season: nextSeason,
+            episode: nextEpisode,
+          ),
+        );
+      } catch (e) {
+        _isNavigating = false;
+        _navigatingToAnotherPlayer = false;
+        if (kDebugMode) debugPrint('_playNextEpisode push failed: $e');
+      }
     });
   }
 
@@ -1929,14 +1983,27 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
 
   // ─── Actions ──────────────────────────────────────────────────────────────
 
-  void _dismiss() async {
+  Future<void> _dismiss() async {
     if (_isNavigating) return;
     _isNavigating = true;
 
-    if (Platform.isWindows) {
-      await windowManager.setFullScreen(false);
+    try {
+      if (Platform.isWindows) {
+        await windowManager.setFullScreen(false);
+      }
+      if (!mounted) {
+        // The widget is already being torn down; nothing to pop. Reset the
+        // flag so a re-entrant call after a quick rebuild isn't wedged.
+        _isNavigating = false;
+        return;
+      }
+      context.pop();
+    } catch (e) {
+      // Any failure (windowManager error, GoRouter pop refused) must
+      // unwedge the screen so the user can try again.
+      _isNavigating = false;
+      if (kDebugMode) debugPrint('_dismiss failed: $e');
     }
-    if (mounted) context.pop();
   }
 
   void _retry() {
