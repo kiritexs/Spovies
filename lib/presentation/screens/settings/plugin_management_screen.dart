@@ -97,7 +97,7 @@ class PluginManagementScreen extends ConsumerWidget {
     return ListView.separated(
       padding: const EdgeInsets.all(AppSpacing.xl),
       itemCount: plugins.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final plugin = plugins[index];
         return Dismissible(
@@ -272,7 +272,7 @@ class _PluginTile extends ConsumerWidget {
                     onChanged: (_) => ref
                         .read(pluginEnabledProvider.notifier)
                         .toggle(plugin.pluginId),
-                    activeColor: AppColors.primary,
+                    activeThumbColor: AppColors.primary,
                     inactiveThumbColor: AppColors.textMuted,
                     inactiveTrackColor: AppColors.surfaceDark.withValues(
                       alpha: 0.8,
@@ -520,8 +520,8 @@ class _AddPluginSheetState extends ConsumerState<_AddPluginSheet> {
               count == 0
                   ? 'No new plugins to install (all already installed).'
                   : count == 1
-                      ? '${installed.single.name} installed successfully!'
-                      : '$count plugins installed successfully!',
+                  ? '${installed.single.name} installed successfully!'
+                  : '$count plugins installed successfully!',
             ),
             backgroundColor: AppColors.primary,
             behavior: SnackBarBehavior.floating,

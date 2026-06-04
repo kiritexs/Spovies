@@ -318,7 +318,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                             AppConfig.posterLarge,
                           ),
                           fit: BoxFit.cover,
-                          placeholder: (_, __) => const ShimmerPlaceholder(),
+                          placeholder: (_, _) => const ShimmerPlaceholder(),
                         ),
                       ),
                     ),
@@ -420,7 +420,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     UserProgress? continueProgress,
     Episode? nextEpisode,
   }) {
-    final activePlugin = PluginUrlResolver.pickPlugin(plugins, preferredId: preferredId);
+    final activePlugin = PluginUrlResolver.pickPlugin(
+      plugins,
+      preferredId: preferredId,
+    );
     final isTV = details.type == MediaType.tv;
     final showResume =
         continueProgress != null &&
@@ -767,7 +770,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     UserProgress? continueProgress,
     Episode? nextEpisode,
   }) {
-    final activePlugin = PluginUrlResolver.pickPlugin(plugins, preferredId: preferredId);
+    final activePlugin = PluginUrlResolver.pickPlugin(
+      plugins,
+      preferredId: preferredId,
+    );
     final showResume =
         continueProgress != null &&
         continueProgress.percentage < 95 &&
@@ -975,7 +981,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         );
       },
       loading: () => const SizedBox(width: 56, height: 56),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
     );
   }
 
@@ -1257,7 +1263,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         [];
     if (plugins.isEmpty) return;
     final preferredId = ref.read(preferredPluginProvider);
-    final plugin = PluginUrlResolver.pickPlugin(plugins, preferredId: preferredId);
+    final plugin = PluginUrlResolver.pickPlugin(
+      plugins,
+      preferredId: preferredId,
+    );
     if (plugin == null) return;
     final url = PluginUrlResolver.resolve(
       plugin,
@@ -1628,7 +1637,7 @@ class _EpisodeRow extends ConsumerWidget {
           ],
         ),
       ),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
       data: (progress) {
         final status = statusAsync.value?.status;
         final bool isWatched =
@@ -1774,8 +1783,10 @@ class _EpisodeRow extends ConsumerWidget {
                                 alignment: Alignment.centerLeft,
                                 child: FractionallySizedBox(
                                   widthFactor:
-                                      ((progress?.percentage ?? 0) / 100)
-                                          .clamp(0.0, 1.0),
+                                      ((progress?.percentage ?? 0) / 100).clamp(
+                                        0.0,
+                                        1.0,
+                                      ),
                                   child: Container(
                                     decoration: const BoxDecoration(
                                       color: AppColors.primary,

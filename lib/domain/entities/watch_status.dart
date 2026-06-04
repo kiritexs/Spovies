@@ -9,37 +9,37 @@ enum WatchStatus {
   planToWatch;
 
   String get value => switch (this) {
-        WatchStatus.watching => 'watching',
-        WatchStatus.completed => 'completed',
-        WatchStatus.dropped => 'dropped',
-        WatchStatus.onHold => 'on_hold',
-        WatchStatus.planToWatch => 'plan_to_watch',
-      };
+    WatchStatus.watching => 'watching',
+    WatchStatus.completed => 'completed',
+    WatchStatus.dropped => 'dropped',
+    WatchStatus.onHold => 'on_hold',
+    WatchStatus.planToWatch => 'plan_to_watch',
+  };
 
   static WatchStatus fromString(String? value) => switch (value) {
-        'watching' => WatchStatus.watching,
-        'completed' => WatchStatus.completed,
-        'dropped' => WatchStatus.dropped,
-        'on_hold' => WatchStatus.onHold,
-        'plan_to_watch' => WatchStatus.planToWatch,
-        _ => WatchStatus.planToWatch,
-      };
+    'watching' => WatchStatus.watching,
+    'completed' => WatchStatus.completed,
+    'dropped' => WatchStatus.dropped,
+    'on_hold' => WatchStatus.onHold,
+    'plan_to_watch' => WatchStatus.planToWatch,
+    _ => WatchStatus.planToWatch,
+  };
 
   String get displayName => switch (this) {
-        WatchStatus.watching => 'Watching',
-        WatchStatus.completed => 'Completed',
-        WatchStatus.dropped => 'Dropped',
-        WatchStatus.onHold => 'On Hold',
-        WatchStatus.planToWatch => 'Plan to Watch',
-      };
+    WatchStatus.watching => 'Watching',
+    WatchStatus.completed => 'Completed',
+    WatchStatus.dropped => 'Dropped',
+    WatchStatus.onHold => 'On Hold',
+    WatchStatus.planToWatch => 'Plan to Watch',
+  };
 
   IconData get icon => switch (this) {
-        WatchStatus.watching => Icons.visibility_rounded,
-        WatchStatus.completed => Icons.check_circle_rounded,
-        WatchStatus.dropped => Icons.delete_sweep_rounded,
-        WatchStatus.onHold => Icons.pause_circle_rounded,
-        WatchStatus.planToWatch => Icons.bookmark_add_rounded,
-      };
+    WatchStatus.watching => Icons.visibility_rounded,
+    WatchStatus.completed => Icons.check_circle_rounded,
+    WatchStatus.dropped => Icons.delete_sweep_rounded,
+    WatchStatus.onHold => Icons.pause_circle_rounded,
+    WatchStatus.planToWatch => Icons.bookmark_add_rounded,
+  };
 }
 
 /// A single status entry: media-level (movie or show) or episode-level (TV).
@@ -61,13 +61,13 @@ class MediaStatus {
   });
 
   Map<String, dynamic> toMap() => {
-        'mediaId': mediaId,
-        'mediaType': mediaType,
-        'status': status.value,
-        'season': season,
-        'episode': episode,
-        'updatedAt': updatedAt.toIso8601String(),
-      };
+    'mediaId': mediaId,
+    'mediaType': mediaType,
+    'status': status.value,
+    'season': season,
+    'episode': episode,
+    'updatedAt': updatedAt.toIso8601String(),
+  };
 
   factory MediaStatus.fromMap(Map<dynamic, dynamic> map) {
     return MediaStatus(

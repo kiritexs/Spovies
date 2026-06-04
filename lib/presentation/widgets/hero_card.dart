@@ -64,8 +64,8 @@ class HeroCard extends StatelessWidget {
                                   begin: Alignment.centerLeft,
                                   end: Alignment.centerRight,
                                   colors: [
-                                    Colors.black.withValues(alpha:0.9),
-                                    Colors.black.withValues(alpha:0.4),
+                                    Colors.black.withValues(alpha: 0.9),
+                                    Colors.black.withValues(alpha: 0.4),
                                     Colors.transparent,
                                   ],
                                   stops: const [0.0, 0.45, 1.0],
@@ -116,8 +116,8 @@ class HeroCard extends StatelessWidget {
     return CachedNetworkImage(
       imageUrl: url,
       fit: BoxFit.cover,
-      placeholder: (_, __) => const ShimmerPlaceholder(),
-      errorWidget: (_, __, ___) => Container(color: AppColors.surfaceDark),
+      placeholder: (_, _) => const ShimmerPlaceholder(),
+      errorWidget: (_, _, _) => Container(color: AppColors.surfaceDark),
     );
   }
 
@@ -133,8 +133,8 @@ class HeroCard extends StatelessWidget {
       imageUrl: url,
       fit: BoxFit.cover,
       fadeInDuration: const Duration(milliseconds: 500),
-      placeholder: (_, __) => const ShimmerPlaceholder(),
-      errorWidget: (_, __, ___) => Container(color: AppColors.surfaceDark),
+      placeholder: (_, _) => const ShimmerPlaceholder(),
+      errorWidget: (_, _, _) => Container(color: AppColors.surfaceDark),
     );
   }
 
@@ -185,9 +185,11 @@ class HeroCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha:0.2),
+                  color: AppColors.primary.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppColors.primary.withValues(alpha:0.5)),
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.5),
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -238,14 +240,16 @@ class HeroCard extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha:0.05),
+                      color: Colors.white.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.white.withValues(alpha:0.1)),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.1),
+                      ),
                     ),
                     child: Text(
                       movie.overview!,
                       style: AppTextStyles.labelSmall.copyWith(
-                        color: Colors.white.withValues(alpha:0.7),
+                        color: Colors.white.withValues(alpha: 0.7),
                         height: 1.4,
                       ),
                       maxLines: 3,

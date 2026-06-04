@@ -41,7 +41,9 @@ class PluginDiscoveryService {
         throw const InvalidManifestException('Invalid response format');
       }
     } on FormatException catch (e) {
-      throw InvalidManifestException('Manifest is not valid JSON: ${e.message}');
+      throw InvalidManifestException(
+        'Manifest is not valid JSON: ${e.message}',
+      );
     }
 
     // 3. Validate required fields
@@ -98,7 +100,9 @@ class PluginDiscoveryService {
       if (decoded is Map<String, dynamic> || decoded is List) return decoded;
       throw const InvalidManifestException('Invalid response format');
     } on FormatException catch (e) {
-      throw InvalidManifestException('Response is not valid JSON: ${e.message}');
+      throw InvalidManifestException(
+        'Response is not valid JSON: ${e.message}',
+      );
     }
   }
 
@@ -134,8 +138,9 @@ class PluginDiscoveryService {
       // Defence-in-depth: also reject if Content-Length advertised too big,
       // or if the cap was breached without our progress callback firing
       // (very small bodies that arrive in a single chunk).
-      final advertised =
-          int.tryParse(response.headers.value('content-length') ?? '');
+      final advertised = int.tryParse(
+        response.headers.value('content-length') ?? '',
+      );
       if (advertised != null && advertised > _maxManifestBytes) {
         throw PluginNetworkException(
           'Manifest body too large (${advertised}B > ${_maxManifestBytes}B)',

@@ -10,15 +10,22 @@ import 'core/theme/app_theme.dart';
 import 'core/utils/host_utils.dart';
 import 'data/datasources/local/hive_service.dart';
 import 'presentation/router/app_router.dart';
+import 'presentation/screens/player/player_scripts.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Init local persistence + the bundled Public Suffix List in parallel.
-  // Both are required before any UI loads (PSL backs the WebView's
-  // cross-domain navigation guard and the ad blocklist's eTLD+1 lookup).
+  // Init local persistence, the bundled Public Suffix List, and the
+  // player's injected JS in parallel. All three must be ready before
+  // any UI loads:
+  //   • Hive — every repository depends on it
+  //   • PSL — backs the player's cross-domain navigation guard and the
+  //     ad blocklist's eTLD+1 lookup
+  //   • PlayerScripts — the WebView player constructs its UserScript
+  //     list synchronously and throws if scripts aren't loaded
   await Future.wait([
     HiveService.init(),
     HostUtils.init(),
+    PlayerScripts.load(),
   ]);
 
   // Desktop Specific Initialization
@@ -47,9 +54,7 @@ void main() async {
         systemNavigationBarIconBrightness: Brightness.light,
       ),
     );
-    await SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-    ]);
+    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   }
 
   runApp(const ProviderScope(child: SpoviesApp()));

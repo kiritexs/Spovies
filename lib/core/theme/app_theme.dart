@@ -40,7 +40,7 @@ abstract final class AppTheme {
       // Desktop Scrollbar
       scrollbarTheme: ScrollbarThemeData(
         thumbColor: WidgetStateProperty.all(
-          AppColors.textMuted.withValues(alpha:0.2),
+          AppColors.textMuted.withValues(alpha: 0.2),
         ),
         radius: const Radius.circular(8),
         thickness: WidgetStateProperty.all(8),
@@ -50,7 +50,7 @@ abstract final class AppTheme {
       // Smooth selection
       textSelectionTheme: TextSelectionThemeData(
         cursorColor: AppColors.primary,
-        selectionColor: AppColors.primary.withValues(alpha:0.35),
+        selectionColor: AppColors.primary.withValues(alpha: 0.35),
         selectionHandleColor: AppColors.primary,
       ),
     );

@@ -32,11 +32,7 @@ void main() {
     test('computes progress when "progress" field is missing', () {
       final raw = jsonEncode({
         'type': 'PLAYER_EVENT',
-        'data': {
-          'event': 'timeupdate',
-          'currentTime': 30.0,
-          'duration': 120.0,
-        },
+        'data': {'event': 'timeupdate', 'currentTime': 30.0, 'duration': 120.0},
       });
       final ev = PlayerEvent.tryParse(raw)!;
       expect(ev.progress, 25.0);

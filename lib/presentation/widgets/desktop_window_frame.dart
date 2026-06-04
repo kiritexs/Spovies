@@ -117,7 +117,7 @@ class _WindowButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onPressed,
-      hoverColor: isClose ? Colors.red.withValues(alpha:0.8) : Colors.white10,
+      hoverColor: isClose ? Colors.red.withValues(alpha: 0.8) : Colors.white10,
       child: SizedBox(
         width: 46,
         height: 32,

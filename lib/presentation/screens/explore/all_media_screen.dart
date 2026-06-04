@@ -40,11 +40,11 @@ class AllMediaArgs {
     this.genreId,
     this.genreMap = const {},
   }) : assert(
-          (category != BrowseCategory.discoverMoviesByGenre &&
-                  category != BrowseCategory.discoverTvByGenre) ||
-              genreId != null,
-          'genreId is required for discover-by-genre categories',
-        );
+         (category != BrowseCategory.discoverMoviesByGenre &&
+                 category != BrowseCategory.discoverTvByGenre) ||
+             genreId != null,
+         'genreId is required for discover-by-genre categories',
+       );
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -228,8 +228,9 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
                   int columns = 3;
                   if (constraints.crossAxisExtent > 800) {
                     columns = 6;
-                  } else if (constraints.crossAxisExtent > 500)
+                  } else if (constraints.crossAxisExtent > 500) {
                     columns = 4;
+                  }
                   return SliverGrid(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: columns,
@@ -238,7 +239,7 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
                       mainAxisSpacing: 12,
                     ),
                     delegate: SliverChildBuilderDelegate(
-                      (_, __) => const ShimmerPlaceholder(),
+                      (_, _) => const ShimmerPlaceholder(),
                       childCount: 12,
                     ),
                   );
@@ -258,8 +259,9 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
                   int columns = 3;
                   if (constraints.crossAxisExtent > 800) {
                     columns = 6;
-                  } else if (constraints.crossAxisExtent > 500)
+                  } else if (constraints.crossAxisExtent > 500) {
                     columns = 4;
+                  }
                   return SliverGrid(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: columns,

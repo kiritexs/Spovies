@@ -105,31 +105,33 @@ final topRatedTvProvider = FutureProvider<List<MediaItem>>((ref) async {
 final discoverMoviesByGenreProvider =
     FutureProvider.family<List<MediaItem>, int>((ref, genreId) async {
       final api = ref.watch(tmdbApiProvider);
-      return (await api.discoverMoviesByGenre(genreId))
-          .map((m) => m.toEntity())
-          .toList();
+      return (await api.discoverMoviesByGenre(
+        genreId,
+      )).map((m) => m.toEntity()).toList();
     });
 
 /// Discover TV shows by genre id.
-final discoverTvByGenreProvider =
-    FutureProvider.family<List<MediaItem>, int>((ref, genreId) async {
-      final api = ref.watch(tmdbApiProvider);
-      return (await api.discoverTvByGenre(genreId))
-          .map((m) => m.toEntity())
-          .toList();
-    });
+final discoverTvByGenreProvider = FutureProvider.family<List<MediaItem>, int>((
+  ref,
+  genreId,
+) async {
+  final api = ref.watch(tmdbApiProvider);
+  return (await api.discoverTvByGenre(
+    genreId,
+  )).map((m) => m.toEntity()).toList();
+});
 
 /// Combined genre list (movies + TV, deduped) for Discovery genre chips.
-final allGenresProvider = FutureProvider<List<({int id, String name})>>(
-  (ref) async {
-    final api = ref.watch(tmdbApiProvider);
-    final movie = await api.getMovieGenres();
-    final tv = await api.getTvGenres();
-    final seen = <int>{};
-    final merged = <({int id, String name})>[];
-    for (final g in [...movie, ...tv]) {
-      if (seen.add(g.id)) merged.add((id: g.id, name: g.name));
-    }
-    return merged;
-  },
-);
+final allGenresProvider = FutureProvider<List<({int id, String name})>>((
+  ref,
+) async {
+  final api = ref.watch(tmdbApiProvider);
+  final movie = await api.getMovieGenres();
+  final tv = await api.getTvGenres();
+  final seen = <int>{};
+  final merged = <({int id, String name})>[];
+  for (final g in [...movie, ...tv]) {
+    if (seen.add(g.id)) merged.add((id: g.id, name: g.name));
+  }
+  return merged;
+});

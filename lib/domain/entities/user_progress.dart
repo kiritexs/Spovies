@@ -10,6 +10,7 @@ class UserProgress {
   final int? season;
   final int? episode;
   final DateTime lastPlayedDate;
+
   /// Plugin ID used when this progress was last saved (for "Continue" to reuse).
   final String? lastPluginId;
 

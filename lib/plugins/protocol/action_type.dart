@@ -10,11 +10,18 @@ enum ActionType {
     ActionType.metadataFetch => 'metadataFetch',
   };
 
+  /// Strictly parses [value] against the known set.
+  ///
+  /// Throws [FormatException] on an unknown string — the previous silent
+  /// fallback to [externalLink] meant that a corrupt or malicious plugin
+  /// manifest (e.g. one imported from an untrusted `.spovies` backup) could
+  /// land on the *most dangerous* sink (`launchUrl(externalApplication)`)
+  /// regardless of whether the original value was even a recognised action.
   static ActionType fromString(String value) => switch (value) {
     'webview' => ActionType.webview,
     'externalLink' => ActionType.externalLink,
     'metadataFetch' => ActionType.metadataFetch,
-    _ => ActionType.externalLink,
+    _ => throw FormatException('Unknown actionType: "$value"'),
   };
 }
 

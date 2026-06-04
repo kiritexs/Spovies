@@ -27,8 +27,9 @@ class SearchClearSignal extends Notifier<int> {
   void requestClear() => state++;
 }
 
-final searchClearSignalProvider =
-    NotifierProvider<SearchClearSignal, int>(SearchClearSignal.new);
+final searchClearSignalProvider = NotifierProvider<SearchClearSignal, int>(
+  SearchClearSignal.new,
+);
 
 // ─── Search State ────────────────────────────────────────────────────────
 

@@ -28,7 +28,8 @@ class Episode {
     return '${hours}h ${minutes}m';
   }
 
-  String get label => 'S${seasonNumber.toString().padLeft(2, '0')}E${episodeNumber.toString().padLeft(2, '0')}';
+  String get label =>
+      'S${seasonNumber.toString().padLeft(2, '0')}E${episodeNumber.toString().padLeft(2, '0')}';
 }
 
 /// A TV season summary (for the season selector).

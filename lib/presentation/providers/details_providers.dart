@@ -17,7 +17,10 @@ final movieDetailsProvider = FutureProvider.family<MediaItem, int>((
 });
 
 /// Fetches TV show details.
-final tvDetailsProvider = FutureProvider.family<MediaItem, int>((ref, tmdbId) async {
+final tvDetailsProvider = FutureProvider.family<MediaItem, int>((
+  ref,
+  tmdbId,
+) async {
   final repo = ref.watch(mediaRepositoryProvider);
   return repo.getTvDetails(tmdbId);
 });

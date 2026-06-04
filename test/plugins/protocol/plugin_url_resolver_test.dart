@@ -10,10 +10,7 @@ import 'package:spovies/plugins/protocol/action_type.dart';
 import 'package:spovies/plugins/protocol/plugin_url_resolver.dart';
 import 'package:spovies/plugins/protocol/trigger_hook.dart';
 
-PluginManifest _plugin(
-  String id, {
-  String? template,
-}) {
+PluginManifest _plugin(String id, {String? template}) {
   return PluginManifest(
     pluginId: id,
     version: '1.0.0',
@@ -87,17 +84,19 @@ void main() {
       expect(url, 'https://e.example/movie/42');
     });
 
-    test('appends /season/episode for TV when template has no placeholders',
-        () {
-      final url = PluginUrlResolver.resolve(
-        _plugin('tv', template: 'https://e.example/embed/{{tmdbId}}?c=red'),
-        _tv(),
-        season: 2,
-        episode: 5,
-      );
-      // The resolver should insert /2/5 *before* the query string.
-      expect(url, 'https://e.example/embed/7/2/5?c=red');
-    });
+    test(
+      'appends /season/episode for TV when template has no placeholders',
+      () {
+        final url = PluginUrlResolver.resolve(
+          _plugin('tv', template: 'https://e.example/embed/{{tmdbId}}?c=red'),
+          _tv(),
+          season: 2,
+          episode: 5,
+        );
+        // The resolver should insert /2/5 *before* the query string.
+        expect(url, 'https://e.example/embed/7/2/5?c=red');
+      },
+    );
 
     test('strips season/episode placeholders for movies', () {
       final url = PluginUrlResolver.resolve(

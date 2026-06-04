@@ -87,9 +87,9 @@ class TmdbCacheInterceptor extends Interceptor {
       final cached = _box.get(key);
 
       if (cached != null) {
-      if (kDebugMode) {
-        debugPrint('[Cache] STALE fallback: ${err.requestOptions.uri.path}');
-      }
+        if (kDebugMode) {
+          debugPrint('[Cache] STALE fallback: ${err.requestOptions.uri.path}');
+        }
         final data = jsonDecode(cached['body'] as String);
         handler.resolve(
           Response(

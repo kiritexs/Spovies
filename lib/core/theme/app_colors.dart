@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 
 /// Spovies color palette — extracted from stitch/code.html design reference.
@@ -77,11 +76,7 @@ abstract final class AppColors {
 
   /// Primary button glow shadow.
   static final List<BoxShadow> primaryGlowShadow = [
-    const BoxShadow(
-      color: primaryGlow,
-      blurRadius: 20,
-      spreadRadius: -5,
-    ),
+    const BoxShadow(color: primaryGlow, blurRadius: 20, spreadRadius: -5),
   ];
 
   /// Navigation bar shadow.

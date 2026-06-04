@@ -97,19 +97,16 @@ final installedPluginsProvider = FutureProvider<List<PluginManifest>>((
 /// Watches [installedPluginsProvider] so it automatically re-evaluates
 /// whenever a plugin is installed or uninstalled — no restart required.
 final pluginsForHookProvider =
-    FutureProvider.family<List<PluginManifest>, TriggerHook>((
-  ref,
-  hook,
-) async {
-  // Re-run when the installed list changes (install / uninstall)
-  final installed = await ref.watch(installedPluginsProvider.future);
-  // Filter by enabled state
-  final enabledMap = ref.watch(pluginEnabledProvider);
-  return installed
-      .where((p) => p.hooks.contains(hook))
-      .where((p) => enabledMap[p.pluginId] ?? true)
-      .toList();
-});
+    FutureProvider.family<List<PluginManifest>, TriggerHook>((ref, hook) async {
+      // Re-run when the installed list changes (install / uninstall)
+      final installed = await ref.watch(installedPluginsProvider.future);
+      // Filter by enabled state
+      final enabledMap = ref.watch(pluginEnabledProvider);
+      return installed
+          .where((p) => p.hooks.contains(hook))
+          .where((p) => enabledMap[p.pluginId] ?? true)
+          .toList();
+    });
 
 // ─── Install / Uninstall Notifier ───────────────────────────────────────
 

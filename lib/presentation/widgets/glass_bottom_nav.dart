@@ -39,10 +39,7 @@ class GlassBottomNav extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: List.generate(
-              _items.length,
-              (index) => _buildTab(index),
-            ),
+            children: List.generate(_items.length, (index) => _buildTab(index)),
           ),
         ),
       ),

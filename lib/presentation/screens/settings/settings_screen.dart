@@ -283,7 +283,7 @@ class SettingsScreen extends ConsumerWidget {
     final plugins = pluginsAsync.when(
       data: (list) => list,
       loading: () => <dynamic>[],
-      error: (_, __) => <dynamic>[],
+      error: (_, _) => <dynamic>[],
     );
 
     // If the saved preferred ID doesn't match any loaded plugin (e.g. still
@@ -370,27 +370,179 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _handleImport(BuildContext context, WidgetRef ref) async {
+    // Two-stage import:
+    //   1. previewImport — parses the .spovies file, validates every plugin
+    //      manifest, returns a summary WITHOUT touching local storage.
+    //   2. confirmation dialog — shows the user exactly which plugins will
+    //      be installed (and which were rejected). The plugin list is the
+    //      high-risk surface; without an explicit per-plugin confirmation
+    //      a hostile `.spovies` backup could silently land an `intent://`
+    //      or `content://` `urlTemplate` that the user would later tap.
+    //   3. applyImport — only runs on the user's positive confirmation.
     try {
+      final preview = await ExportImportService.previewImport();
+      if (preview == null) {
+        // User cancelled the file picker — no toast needed.
+        return;
+      }
+      if (!context.mounted) return;
+
+      final confirmed = await _confirmImport(context, preview);
+      if (!confirmed || !context.mounted) return;
+
       _showSnackBar(context, 'Importing...', isLoading: true);
-      final success = await ExportImportService.importData();
+      await ExportImportService.applyImport(preview);
 
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
-      if (success) {
-        // Invalidate all data providers to refresh the UI
-        ref.invalidate(continueWatchingProvider);
-        ref.invalidate(watchlistProvider);
-        ref.invalidate(installedPluginsProvider);
-        _showSnackBar(context, 'Data imported successfully!');
-      } else {
-        _showSnackBar(context, 'Import cancelled or failed', isError: true);
-      }
+      // Refresh every provider that surfaces imported data.
+      ref.invalidate(continueWatchingProvider);
+      ref.invalidate(watchlistProvider);
+      ref.invalidate(installedPluginsProvider);
+
+      _showSnackBar(context, 'Data imported successfully!');
     } catch (e) {
       if (context.mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         _showSnackBar(context, 'Import failed: $e', isError: true);
       }
     }
+  }
+
+  /// Per-plugin confirmation dialog. Lists names + urlTemplates so the user
+  /// can see exactly what will be installed before any write occurs.
+  Future<bool> _confirmImport(
+    BuildContext context,
+    ImportPreview preview,
+  ) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceDark,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        ),
+        title: Text(
+          'Review backup contents',
+          style: AppTextStyles.cardTitle.copyWith(fontSize: 18),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _summaryRow('Watch history', preview.watchHistoryCount),
+              _summaryRow('Watchlist', preview.watchlistCount),
+              _summaryRow('Settings', preview.settingsCount),
+              const SizedBox(height: 12),
+              Text(
+                'Plugins to install (${preview.plugins.length})',
+                style: AppTextStyles.body.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (preview.plugins.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'None',
+                    style: AppTextStyles.body.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                )
+              else
+                ...preview.plugins.map(
+                  (p) => Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '• ${p.name}',
+                          style: AppTextStyles.body.copyWith(
+                            color: Colors.white,
+                          ),
+                        ),
+                        Text(
+                          '   ${p.urlTemplate}',
+                          style: AppTextStyles.body.copyWith(
+                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              if (preview.rejectedPlugins.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Rejected (${preview.rejectedPlugins.length})',
+                  style: AppTextStyles.body.copyWith(
+                    color: Colors.orangeAccent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  'These plugins failed validation and will be skipped. '
+                  'A backup with invalid plugins may have been tampered with.',
+                  style: AppTextStyles.body.copyWith(
+                    color: AppColors.textSecondary,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Text(
+                'Only import backups from sources you trust. Installed '
+                'plugins can launch arbitrary HTTPS URLs when tapped.',
+                style: AppTextStyles.body.copyWith(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  Widget _summaryRow(String label, int count) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: AppTextStyles.body.copyWith(color: Colors.white),
+            ),
+          ),
+          Text(
+            '$count',
+            style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
+          ),
+        ],
+      ),
+    );
   }
 
   void _confirmClear(

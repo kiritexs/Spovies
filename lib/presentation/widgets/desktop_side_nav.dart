@@ -28,7 +28,7 @@ class DesktopSideNav extends StatelessWidget {
                 Image.asset(
                   'assets/Layer_8.png',
                   height: 32,
-                  errorBuilder: (_, __, ___) => const Text(
+                  errorBuilder: (_, _, _) => const Text(
                     'SPOVIES',
                     style: TextStyle(
                       fontSize: 24,
@@ -88,7 +88,7 @@ class _NavItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = isSelected ? AppColors.primary : AppColors.textSecondary;
     final bgColor = isSelected
-        ? AppColors.primary.withValues(alpha:0.15)
+        ? AppColors.primary.withValues(alpha: 0.15)
         : Colors.transparent;
 
     return Padding(

@@ -32,13 +32,17 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
     final allItems = ref.watch(watchlistProvider);
     final statusEntries = _selectedStatus == null
         ? null
-        : ref.watch(libraryEntriesByStatusProvider(_selectedStatus!)).value ?? [];
+        : ref.watch(libraryEntriesByStatusProvider(_selectedStatus!)).value ??
+              [];
     final filteredItems = _selectedStatus == null
         ? allItems
         : allItems
-            .where((item) =>
-                statusEntries!.any((e) => e.mediaId == item.tmdbId.toString()))
-            .toList();
+              .where(
+                (item) => statusEntries!.any(
+                  (e) => e.mediaId == item.tmdbId.toString(),
+                ),
+              )
+              .toList();
 
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
@@ -64,8 +68,8 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
           child: _buildFilterBar(),
         ),
       ),
-      body: filteredItems.isEmpty 
-          ? _buildEmpty() 
+      body: filteredItems.isEmpty
+          ? _buildEmpty()
           : _buildGrid(context, filteredItems),
     );
   }
@@ -76,7 +80,9 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       padding: const EdgeInsets.only(bottom: 8),
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sectionPaddingH),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sectionPaddingH,
+        ),
         children: [
           _StatusFilterChip(
             label: 'All',
@@ -103,8 +109,8 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            _selectedStatus == null 
-                ? Icons.bookmark_border_rounded 
+            _selectedStatus == null
+                ? Icons.bookmark_border_rounded
                 : Icons.filter_list_off_rounded,
             size: 72,
             color: AppColors.textSecondary.withValues(alpha: 0.4),
@@ -119,7 +125,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            _selectedStatus == null 
+            _selectedStatus == null
                 ? 'Tap the bookmark icon on any title\nto save it here'
                 : 'Try selecting a different category',
             style: AppTextStyles.cardSubtitle,
@@ -191,9 +197,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
         title: Text('Clear Library', style: AppTextStyles.sectionTitle),
         content: Text(
           'Remove all saved titles from your library?',
-          style: AppTextStyles.body.copyWith(
-            color: AppColors.textSecondary,
-          ),
+          style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
@@ -313,8 +317,8 @@ class _WatchlistItem extends ConsumerWidget {
                       ? CachedNetworkImage(
                           imageUrl: posterUrl,
                           fit: BoxFit.cover,
-                          placeholder: (_, __) => const ShimmerPlaceholder(),
-                          errorWidget: (_, __, ___) =>
+                          placeholder: (_, _) => const ShimmerPlaceholder(),
+                          errorWidget: (_, _, _) =>
                               Container(color: AppColors.surfaceDark),
                         )
                       : Container(color: AppColors.surfaceDark),
@@ -369,7 +373,9 @@ class _WatchlistItem extends ConsumerWidget {
                               vertical: 3,
                             ),
                             decoration: BoxDecoration(
-                              color: AppColors.surfaceDark.withValues(alpha: 0.95),
+                              color: AppColors.surfaceDark.withValues(
+                                alpha: 0.95,
+                              ),
                               borderRadius: BorderRadius.circular(4),
                               border: Border.all(
                                 color: AppColors.primary.withValues(alpha: 0.5),

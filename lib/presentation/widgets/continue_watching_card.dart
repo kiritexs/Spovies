@@ -160,7 +160,7 @@ class ContinueWatchingCard extends StatelessWidget {
                   ? CachedNetworkImage(
                       imageUrl: thumbnailUrl!,
                       fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => _thumbPlaceholder(),
+                      errorWidget: (_, _, _) => _thumbPlaceholder(),
                     )
                   : _thumbPlaceholder(),
             ),

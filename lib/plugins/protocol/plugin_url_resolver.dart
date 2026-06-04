@@ -116,11 +116,14 @@ class PluginUrlResolver {
         // Last-resort: append before any query/fragment.
         final qIdx = url.indexOf('?');
         if (qIdx == -1) {
-          url = '${url.endsWith('/') ? url.substring(0, url.length - 1) : url}/$s/$e';
+          url =
+              '${url.endsWith('/') ? url.substring(0, url.length - 1) : url}/$s/$e';
         } else {
           final base = url.substring(0, qIdx);
           final query = url.substring(qIdx);
-          final trimmed = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+          final trimmed = base.endsWith('/')
+              ? base.substring(0, base.length - 1)
+              : base;
           url = '$trimmed/$s/$e$query';
         }
       }

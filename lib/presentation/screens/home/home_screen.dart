@@ -90,7 +90,7 @@ class _HomeContent extends ConsumerWidget {
                   )
                 : const SizedBox.shrink(),
             loading: () => const HeroCardShimmer(),
-            error: (_, __) => _ErrorCard(
+            error: (_, _) => _ErrorCard(
               onRetry: () {
                 ref.invalidate(trendingMoviesProvider);
                 ref.invalidate(topRatedMoviesProvider);
@@ -113,7 +113,7 @@ class _HomeContent extends ConsumerWidget {
               movies: [],
               isLoading: true,
             ),
-            error: (_, __) => _RetryRow(
+            error: (_, _) => _RetryRow(
               title: 'Now Trending',
               onRetry: () => ref.invalidate(trendingMoviesProvider),
             ),
@@ -136,7 +136,7 @@ class _HomeContent extends ConsumerWidget {
             ),
             loading: () =>
                 const MediaRow(title: 'Top Rated', movies: [], isLoading: true),
-            error: (_, __) => _RetryRow(
+            error: (_, _) => _RetryRow(
               title: 'Top Rated',
               onRetry: () => ref.invalidate(topRatedMoviesProvider),
             ),
@@ -254,9 +254,9 @@ Future<void> _openNextEpisode(
     media = await detailsAsync;
   } catch (_) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not load show')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not load show')));
     }
     return;
   }
@@ -264,9 +264,9 @@ Future<void> _openNextEpisode(
     pluginsForHookProvider(TriggerHook.mediaHeader).future,
   );
   if (plugins.isEmpty && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('No watch plugin available')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('No watch plugin available')));
     return;
   }
   final activePlugin = PluginUrlResolver.pickPlugin(
@@ -317,14 +317,15 @@ class _ContinueWatchingCardItem extends ConsumerWidget {
       remainingTime = item.remainingTime;
       onContinueTap = () => _continueWatching(context, ref, item);
     } else if (isTV && nextEpisode != null) {
-      remainingTime = 'Next: S${nextEpisode.seasonNumber} E${nextEpisode.episodeNumber}';
+      remainingTime =
+          'Next: S${nextEpisode.seasonNumber} E${nextEpisode.episodeNumber}';
       onContinueTap = () => _openNextEpisode(
-            context,
-            ref,
-            item,
-            nextEpisode.seasonNumber,
-            nextEpisode.episodeNumber,
-          );
+        context,
+        ref,
+        item,
+        nextEpisode.seasonNumber,
+        nextEpisode.episodeNumber,
+      );
     } else {
       remainingTime = isTV ? 'Up to date' : 'Finished';
       onContinueTap = null;
@@ -362,7 +363,7 @@ class _ContinueWatchingSection extends ConsumerWidget {
 
     return cwAsync.when(
       loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
       data: (items) {
         if (items.isEmpty) return const SizedBox.shrink();
 
@@ -396,15 +397,16 @@ class _ContinueWatchingSection extends ConsumerWidget {
                     crossAxisSpacing: 16,
                     mainAxisSpacing: 12,
                   ),
-                  itemBuilder: (context, index) => _ContinueWatchingCardItem(
-                    item: items[index],
-                  ),
+                  itemBuilder: (context, index) =>
+                      _ContinueWatchingCardItem(item: items[index]),
                 )
               else
-                ...items.map((item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _ContinueWatchingCardItem(item: item),
-                    )),
+                ...items.map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _ContinueWatchingCardItem(item: item),
+                  ),
+                ),
             ],
           ),
         );

@@ -294,7 +294,7 @@ class _DiscoveryContent extends ConsumerWidget {
                     movies: [],
                     isLoading: true,
                   ),
-                  error: (_, __) => const SizedBox.shrink(),
+                  error: (_, _) => const SizedBox.shrink(),
                 ),
           ),
 
@@ -324,7 +324,7 @@ class _DiscoveryContent extends ConsumerWidget {
                     movies: [],
                     isLoading: true,
                   ),
-                  error: (_, __) => const SizedBox.shrink(),
+                  error: (_, _) => const SizedBox.shrink(),
                 ),
           ),
 
@@ -363,7 +363,7 @@ class _DiscoveryContent extends ConsumerWidget {
                     movies: [],
                     isLoading: true,
                   ),
-                  error: (_, __) => const SizedBox.shrink(),
+                  error: (_, _) => const SizedBox.shrink(),
                 ),
           ),
 
@@ -393,7 +393,7 @@ class _DiscoveryContent extends ConsumerWidget {
                     movies: [],
                     isLoading: true,
                   ),
-                  error: (_, __) => const SizedBox.shrink(),
+                  error: (_, _) => const SizedBox.shrink(),
                 ),
           ),
         ],
@@ -569,7 +569,7 @@ class _TrendingSection extends ConsumerWidget {
             isLoading: true,
             showTitle: false,
           ),
-          error: (_, __) => const SizedBox.shrink(),
+          error: (_, _) => const SizedBox.shrink(),
         ),
       ],
     );
@@ -727,7 +727,7 @@ class _GenreGrid extends ConsumerWidget {
         const SizedBox(height: 14),
         genresAsync.when(
           loading: _buildShimmer,
-          error: (_, __) => const SizedBox.shrink(),
+          error: (_, _) => const SizedBox.shrink(),
           data: (genres) {
             return Padding(
               padding: const EdgeInsets.symmetric(
@@ -867,7 +867,7 @@ class _GenreGrid extends ConsumerWidget {
           mainAxisSpacing: 10,
         ),
         itemCount: 12,
-        itemBuilder: (_, __) =>
+        itemBuilder: (_, _) =>
             ShimmerPlaceholder(borderRadius: BorderRadius.circular(12)),
       ),
     );
@@ -910,7 +910,7 @@ class _GenreResults extends ConsumerWidget {
                 ),
           loading: () =>
               const MediaRow(title: 'Movies', movies: [], isLoading: true),
-          error: (_, __) => const SizedBox.shrink(),
+          error: (_, _) => const SizedBox.shrink(),
         ),
         const SizedBox(height: 28),
         tvAsync.when(
@@ -933,7 +933,7 @@ class _GenreResults extends ConsumerWidget {
                 ),
           loading: () =>
               const MediaRow(title: 'TV Shows', movies: [], isLoading: true),
-          error: (_, __) => const SizedBox.shrink(),
+          error: (_, _) => const SizedBox.shrink(),
         ),
       ],
     );

@@ -69,7 +69,7 @@ class MediaRow extends StatelessWidget {
                   physics: const BouncingScrollPhysics(),
                   padding: AppSpacing.sectionPadding,
                   itemCount: movies.length,
-                  separatorBuilder: (_, __) =>
+                  separatorBuilder: (_, _) =>
                       const SizedBox(width: AppSpacing.cardGap),
                   itemBuilder: (context, index) {
                     final movie = movies[index];
@@ -91,8 +91,8 @@ class MediaRow extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       padding: AppSpacing.sectionPadding,
       itemCount: 4,
-      separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.cardGap),
-      itemBuilder: (_, __) => const MediaCardShimmer(),
+      separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.cardGap),
+      itemBuilder: (_, _) => const MediaCardShimmer(),
     );
   }
 

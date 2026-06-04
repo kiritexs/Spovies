@@ -136,8 +136,8 @@ class _ShellScaffoldState extends ConsumerState<ShellScaffold> {
     // discover screen's old `deactivate()` reset of the provider, which was
     // the source of a stale-state bug where the back button would jump
     // tabs instead of clearing search after a round-trip through Home.
-    final isSearching = ref.watch(isSearchActiveProvider) &&
-        widget.shell.currentIndex == 1;
+    final isSearching =
+        ref.watch(isSearchActiveProvider) && widget.shell.currentIndex == 1;
     final isDesktop =
         MediaQuery.of(context).size.width >= 800; // Desktop breakpoint
 
@@ -182,8 +182,7 @@ class _ShellScaffoldState extends ConsumerState<ShellScaffold> {
                   child: AnimatedSlide(
                     duration: const Duration(milliseconds: 280),
                     curve: Curves.easeInOutCubic,
-                    offset:
-                        isSearching ? const Offset(0, 2.0) : Offset.zero,
+                    offset: isSearching ? const Offset(0, 2.0) : Offset.zero,
                     child: AnimatedOpacity(
                       duration: const Duration(milliseconds: 220),
                       opacity: isSearching ? 0.0 : 1.0,
@@ -193,8 +192,7 @@ class _ShellScaffoldState extends ConsumerState<ShellScaffold> {
                           currentIndex: widget.shell.currentIndex,
                           onTap: (index) => widget.shell.goBranch(
                             index,
-                            initialLocation:
-                                index == widget.shell.currentIndex,
+                            initialLocation: index == widget.shell.currentIndex,
                           ),
                         ),
                       ),

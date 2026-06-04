@@ -151,8 +151,8 @@ class _MediaCardState extends State<MediaCard>
     return CachedNetworkImage(
       imageUrl: url,
       fit: BoxFit.cover,
-      placeholder: (_, __) => const ShimmerPlaceholder(),
-      errorWidget: (_, __, ___) => Container(color: AppColors.surfaceDark),
+      placeholder: (_, _) => const ShimmerPlaceholder(),
+      errorWidget: (_, _, _) => Container(color: AppColors.surfaceDark),
     );
   }
 

@@ -81,13 +81,32 @@ final appRouter = GoRouter(
     ),
 
     // ── Full-screen routes (push over shell, no nav bar) ──────────────────
+    //
+    // Every route below is wrapped in [_PopToHomeOnSystemBack] so the
+    // Android system back gesture (and the in-app `Navigator.maybePop` it
+    // triggers) takes the user directly to /home instead of popping one
+    // level back to whatever tab they came from. Without this wrapper the
+    // user would see inconsistent behaviour: when they enter /details
+    // from the Home tab, system back lands on Home → shell PopScope fires
+    // → "press back again to exit". When they enter /details from
+    // Explore, system back lands on Explore → shell PopScope still fires
+    // BUT only switches the branch to Home (step 3 in `_handleSystemBack`)
+    // and never reaches the exit prompt on that first press. The result
+    // was the "sometimes the prompt appears, sometimes it doesn't" bug.
+    //
+    // The wrapper keeps in-app `context.pop()` calls (e.g. the player's
+    // × button → `_dismiss`) working as before — they go through
+    // `Navigator.pop`, which the wrapper's `canPop: false` does NOT
+    // intercept (those are explicit pops on the route stack, not pops
+    // initiated by the system). Only system-back / Navigator.maybePop is
+    // redirected here.
     GoRoute(
       path: '/details',
       parentNavigatorKey: _rootKey,
       builder: (context, state) {
         final media = state.extra;
         if (media is! MediaItem) return const _RouteErrorScreen('/details');
-        return DetailsScreen(media: media);
+        return _PopToHomeOnSystemBack(child: DetailsScreen(media: media));
       },
     ),
 
@@ -97,6 +116,10 @@ final appRouter = GoRouter(
       builder: (context, state) {
         final args = state.extra;
         if (args is! PlayerArgs) return const _RouteErrorScreen('/player');
+        // Player owns its own PopScope (window-manager + cleanup
+        // ordering). Do NOT wrap it again here — the inner PopScope wins
+        // and the outer wrapper would never fire. Player's PopScope
+        // already redirects system back through `_backToHome`.
         return WebViewPlayerScreen(
           url: args.url,
           media: args.media,
@@ -115,7 +138,7 @@ final appRouter = GoRouter(
       builder: (context, state) {
         final args = state.extra;
         if (args is! AllMediaArgs) return const _RouteErrorScreen('/all-media');
-        return AllMediaScreen(args: args);
+        return _PopToHomeOnSystemBack(child: AllMediaScreen(args: args));
       },
     ),
 
@@ -123,22 +146,51 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/plugins',
       parentNavigatorKey: _rootKey,
-      builder: (context, state) => const PluginManagementScreen(),
+      builder: (context, state) =>
+          const _PopToHomeOnSystemBack(child: PluginManagementScreen()),
     ),
 
     GoRoute(
       path: '/licenses',
       parentNavigatorKey: _rootKey,
-      builder: (context, state) => Theme(
-        data: ThemeData.dark(),
-        child: const LicensePage(
-          applicationName: 'Spovies',
-          applicationVersion: '1.0.0',
+      builder: (context, state) => _PopToHomeOnSystemBack(
+        child: Theme(
+          data: ThemeData.dark(),
+          child: const LicensePage(
+            applicationName: 'Spovies',
+            applicationVersion: '1.0.0',
+          ),
         ),
       ),
     ),
   ],
 );
+
+// ─── PopScope wrapper: system back → /home ────────────────────────────────────
+
+/// Wraps a full-screen route so the Android system back gesture takes
+/// the user to /home instead of popping one level back to the previous
+/// tab. See the comment above the routes for the full rationale.
+class _PopToHomeOnSystemBack extends StatelessWidget {
+  final Widget child;
+  const _PopToHomeOnSystemBack({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        // `.go()` resets the navigator stack to /home: the current pushed
+        // route is removed and the shell's Home branch becomes the live
+        // page. The shell's own PopScope then handles the next system
+        // back press (exit prompt + double-tap-to-exit).
+        context.go('/home');
+      },
+      child: child,
+    );
+  }
+}
 
 // ─── Route Error Screen ───────────────────────────────────────────────────────
 //

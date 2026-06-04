@@ -12,6 +12,19 @@ int? _toIntOrNull(dynamic v) {
   return null;
 }
 
+/// Allowed media types — anything outside this set is rejected by the
+/// `data['type']` fallback used to support Provider B's PLAYER_EVENT shape.
+/// Restricting the set means a future plugin sending an arbitrary `type`
+/// string inside `data` (for any reason other than the documented Provider B
+/// media-kind) can no longer poison `UserProgress.mediaType` and bypass
+/// the Continue-Watching filters that key on it.
+const _kValidMediaTypes = {'movie', 'tv', 'anime'};
+
+String? _validMediaType(dynamic v) {
+  if (v is! String) return null;
+  return _kValidMediaTypes.contains(v) ? v : null;
+}
+
 /// Parsed event from a plugin's WebView postMessage.
 class PlayerEvent {
   final String eventType; // timeupdate, play, pause, ended, seeked
@@ -44,22 +57,41 @@ class PlayerEvent {
   static PlayerEvent? tryParse(String rawMessage) {
     try {
       final decoded = jsonDecode(rawMessage);
-      final json = decoded is List && decoded.isNotEmpty && decoded.first is Map<String, dynamic>
+      final json =
+          decoded is List &&
+              decoded.isNotEmpty &&
+              decoded.first is Map<String, dynamic>
           ? decoded.first as Map<String, dynamic>
           : decoded is Map<String, dynamic>
-              ? decoded
-              : null;
+          ? decoded
+          : null;
       if (json == null) return null;
 
       final eventValue = json['event'];
 
-      // 1) Standard PLAYER_EVENT format (Provider A, Provider C, etc.)
-      //    Provider C omits "progress" and sends tmdbId:"false" — compute progress from currentTime/duration.
+      // 1) Standard PLAYER_EVENT format (Provider A, Provider C, Provider B …).
+      //    Provider C omits "progress" and sends tmdbId:"false" — compute
+      //    progress from currentTime/duration.
+      //    Provider A puts the current playback position in `data.currentTime`
+      //    and the media kind in `data.mediaType`. Provider B uses the exact
+      //    same outer wrapper but renames those two fields:
+      //      currentTime → timestamp
+      //      mediaType   → type        (inside `data` — outer `type` is the
+      //                                 literal "PLAYER_EVENT" we just
+      //                                 matched on)
+      //    Live confirmation in the player log on 2026-06-04, see
+      //    https://example.com/docs Watch-Progress-Tracking section.
+      //    The fallback `?? data['timestamp']` is what makes Provider B
+      //    progress save — without it, every Provider B timeupdate was being
+      //    stored as currentTime=0.
       final type = json['type'] as String?;
       if (type == 'PLAYER_EVENT') {
         final data = json['data'] as Map<String, dynamic>?;
         if (data == null) return null;
-        final currentTime = (data['currentTime'] as num?)?.toDouble() ?? 0;
+        final currentTime =
+            (data['currentTime'] as num?)?.toDouble() ??
+            (data['timestamp'] as num?)?.toDouble() ??
+            0;
         final duration = (data['duration'] as num?)?.toDouble() ?? 0;
         var progress = (data['progress'] as num?)?.toDouble();
         if (progress == null || (progress == 0 && duration > 0)) {
@@ -71,7 +103,10 @@ class PlayerEvent {
           duration: duration,
           progress: progress,
           mediaId: data['id']?.toString() ?? '',
-          mediaType: data['mediaType'] as String? ?? 'movie',
+          mediaType:
+              data['mediaType'] as String? ??
+              _validMediaType(data['type']) ??
+              'movie',
           season: _toIntOrNull(data['season']),
           episode: _toIntOrNull(data['episode']),
         );
@@ -83,8 +118,13 @@ class PlayerEvent {
         final event = eventValue;
         final currentTime = (json['time'] as num?)?.toDouble();
         final duration = (json['duration'] as num?)?.toDouble();
-        final percent = (json['percent'] as num?)?.toDouble() ?? (json['progress'] as num?)?.toDouble();
-        if (currentTime != null && duration != null && duration > 0 && percent != null) {
+        final percent =
+            (json['percent'] as num?)?.toDouble() ??
+            (json['progress'] as num?)?.toDouble();
+        if (currentTime != null &&
+            duration != null &&
+            duration > 0 &&
+            percent != null) {
           return PlayerEvent(
             eventType: event == 'time' ? 'timeupdate' : event.toString(),
             currentTime: currentTime,
@@ -101,10 +141,18 @@ class PlayerEvent {
       // 3) Provider C native format: {"event":"time"|"pause"|"paused"|"userpause","time":...,"data":...,"duration":...}
       //    No "type" or "channel"; current time in "time" or "data". Progress bar was 0 because we never parsed these.
       final durationVal = (json['duration'] as num?)?.toDouble();
-      final timeVal = (json['time'] as num?)?.toDouble() ?? (json['data'] as num?)?.toDouble();
-      if (eventValue != null && durationVal != null && durationVal > 0 && timeVal != null) {
+      final timeVal =
+          (json['time'] as num?)?.toDouble() ??
+          (json['data'] as num?)?.toDouble();
+      if (eventValue != null &&
+          durationVal != null &&
+          durationVal > 0 &&
+          timeVal != null) {
         final eventStr = eventValue.toString();
-        if (eventStr == 'time' || eventStr == 'pause' || eventStr == 'userpause' || eventStr == 'paused') {
+        if (eventStr == 'time' ||
+            eventStr == 'pause' ||
+            eventStr == 'userpause' ||
+            eventStr == 'paused') {
           final progressPct = (timeVal / durationVal) * 100;
           return PlayerEvent(
             eventType: eventStr == 'time' ? 'timeupdate' : 'pause',
@@ -123,7 +171,8 @@ class PlayerEvent {
     } catch (e) {
       if (kDebugMode) {
         // Only log if it's not a known non-JSON message from external scripts
-        if (!rawMessage.startsWith('__ym') && !rawMessage.startsWith('adscore')) {
+        if (!rawMessage.startsWith('__ym') &&
+            !rawMessage.startsWith('adscore')) {
           debugPrint('EventBridge: Failed to parse postMessage: $e');
         }
       }

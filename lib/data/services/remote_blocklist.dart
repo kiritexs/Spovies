@@ -343,8 +343,14 @@ class AdBlocklist {
       req.maxRedirects = 5;
       req.headers
         ..set(HttpHeaders.userAgentHeader, 'Spovies/1.0 (ad-blocklist)')
-        ..set(HttpHeaders.acceptEncodingHeader, 'gzip, deflate')
         ..set(HttpHeaders.acceptHeader, 'text/plain, */*');
+      // No manual Accept-Encoding. `HttpClient.autoUncompress` is on by
+      // default and Dart inserts `Accept-Encoding: gzip` itself, then
+      // transparently inflates the response. Advertising `deflate` here
+      // gave servers permission to pick a codec Dart does NOT auto-
+      // inflate — the body would reach `utf8.decoder` still compressed
+      // and throw `FormatException: Bad UTF-8 encoding`, killing the
+      // fetch for any source that happened to choose deflate.
       final resp = await req.close().timeout(_kResponseTimeout);
       if (resp.statusCode == 200) {
         // The .timeout() above only bounds req.close(); a slow streaming

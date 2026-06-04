@@ -7,11 +7,7 @@ abstract class WatchStatusRepository {
 
   /// Get status for a media item. For TV, pass [season] and [episode] for
   /// episode-level, or both null for show-level.
-  Future<MediaStatus?> getStatus(
-    String mediaId, {
-    int? season,
-    int? episode,
-  });
+  Future<MediaStatus?> getStatus(String mediaId, {int? season, int? episode});
 
   /// Get all status entries for a show (for episode list display).
   ///

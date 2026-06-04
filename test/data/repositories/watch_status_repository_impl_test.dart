@@ -42,21 +42,18 @@ void main() {
     WatchStatus status = WatchStatus.watching,
     int? season,
     int? episode,
-  }) =>
-      MediaStatus(
-        mediaId: mediaId,
-        mediaType: mediaType,
-        status: status,
-        season: season,
-        episode: episode,
-        updatedAt: DateTime(2025),
-      );
+  }) => MediaStatus(
+    mediaId: mediaId,
+    mediaType: mediaType,
+    status: status,
+    season: season,
+    episode: episode,
+    updatedAt: DateTime(2025),
+  );
 
   test('getStatusesForMedia filters by both mediaId and mediaType', () async {
     await repo.saveStatus(entry('123', mediaType: 'movie'));
-    await repo.saveStatus(
-      entry('123', mediaType: 'tv', season: 1, episode: 1),
-    );
+    await repo.saveStatus(entry('123', mediaType: 'tv', season: 1, episode: 1));
 
     final movies = await repo.getStatusesForMedia('123', mediaType: 'movie');
     final shows = await repo.getStatusesForMedia('123', mediaType: 'tv');
@@ -67,23 +64,25 @@ void main() {
     expect(shows.single.mediaType, 'tv');
   });
 
-  test('deleteAllStatusesForMedia only touches the matching mediaType',
-      () async {
-    await repo.saveStatus(entry('123', mediaType: 'movie'));
-    await repo.saveStatus(
-      entry('123', mediaType: 'tv', season: 1, episode: 1),
-    );
-    await repo.saveStatus(
-      entry('123', mediaType: 'tv', season: 1, episode: 2),
-    );
+  test(
+    'deleteAllStatusesForMedia only touches the matching mediaType',
+    () async {
+      await repo.saveStatus(entry('123', mediaType: 'movie'));
+      await repo.saveStatus(
+        entry('123', mediaType: 'tv', season: 1, episode: 1),
+      );
+      await repo.saveStatus(
+        entry('123', mediaType: 'tv', season: 1, episode: 2),
+      );
 
-    await repo.deleteAllStatusesForMedia('123', mediaType: 'movie');
+      await repo.deleteAllStatusesForMedia('123', mediaType: 'movie');
 
-    // Movie row is gone…
-    final movies = await repo.getStatusesForMedia('123', mediaType: 'movie');
-    expect(movies, isEmpty);
-    // …but both TV rows survive.
-    final shows = await repo.getStatusesForMedia('123', mediaType: 'tv');
-    expect(shows, hasLength(2));
-  });
+      // Movie row is gone…
+      final movies = await repo.getStatusesForMedia('123', mediaType: 'movie');
+      expect(movies, isEmpty);
+      // …but both TV rows survive.
+      final shows = await repo.getStatusesForMedia('123', mediaType: 'tv');
+      expect(shows, hasLength(2));
+    },
+  );
 }
