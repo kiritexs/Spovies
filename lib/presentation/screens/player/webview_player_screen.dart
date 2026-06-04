@@ -388,17 +388,32 @@ const String _kSpoviesIsAdJs = '''
   (function() {
     if (window.__spoviesIsAdReady) return;
     window.__spoviesIsAdReady = true;
-    
-    // Quick heuristic blocklist for JS-level instant blocking.
-    // Full blocklist (~35k+) is handled at the native layer.
+
+    // JS-level instant blocklist for fetch/XHR/WebSocket interception.
+    // The full ~35 k native blocklist (OISD / AdGuard / Steven Black) does
+    // the heavy lifting in shouldInterceptRequest; this list is just a
+    // belt-and-braces guard for substring matches that load before the
+    // Dart side has had a chance to intercept.
+    //
+    // SUBSTRING MATCH FOOTGUN: every entry below is matched as a raw
+    // substring against the *entire* URL. Generic words like \"ads\" must
+    // never appear here — they trigger false positives on innocuous paths
+    // (\"loads\", \"uploads\", \"headers\", \"payloads\", \"downloads\"…) and
+    // can starve legitimate API endpoints. Legitimate streaming-host
+    // domains (host-a / host-b / host-c / host-d / …) must never
+    // appear either — many aggregators fetch their server menu through
+    // those hosts, and blocking the fetch leaves the picker UI empty.
     var quickAds = [
-      'doubleclick', 'googlesyndication', 'adservice', 'popads', 'popcash',
-      'juicyads', 'exoclick', 'trafficjunky', 'propellerads', 'adsterra',
-      'onclkds', 'onclickmax', 'pushame', 'gamerhit', 'trakzon', 'goosebomb',
-      'etoro', 'gryphline', 'ads', 'hilltopads', 'adtng', 'adrunnr',
-      'adskeeper', 'clickadu', 'clickaine', 'vid-news', 'best-video',
-      'tr-video', 'host-c', 'dood', 'host-d', 'upstream', 'mixdrop',
-      'voe', 'wolfstream', 'gounlimited', 'host-a', 'host-b'
+      // Google ad stack
+      'doubleclick.net', 'googlesyndication', 'adservice.google',
+      'adsbygoogle',
+      // Pop/popunder networks
+      'popads.net', 'popcash.net', 'juicyads', 'exoclick',
+      'trafficjunky', 'propellerads', 'adsterra', 'onclkds.com',
+      'onclickmax', 'pushame', 'hilltopads', 'adtng', 'adrunnr',
+      'adskeeper', 'clickadu', 'clickaine',
+      // Aggressive ad redirector domains seen on streaming sites
+      'gamerhit', 'trakzon', 'goosebomb', 'gryphline'
     ];
 
     window.__spoviesIsAd = function(url) {
@@ -498,70 +513,124 @@ const _kAdRemovalJs = '''
   if (window.__spoviesAdBlock) return;
   window.__spoviesAdBlock = true;
 
-  // Comprehensive ad selectors — covers streaming-site overlay patterns.
+  // -------- Ad selectors --------
+  //
+  // SURGICAL ONLY. Generic UI words like \"popup\", \"modal\", or \"overlay\"
+  // (without an `ad-` qualifier) are EXCLUDED on purpose — streaming-site
+  // server-pickers, caption-pickers and quality-pickers virtually always
+  // ship with class names like `server-popup` / `quality-modal` /
+  // `caption-overlay`, and matching them shreds the player's own UI on
+  // Android & iOS (mobile content mode). EasyList convention is the
+  // template here: anchor every selector with `ad`, `ads`, `adsbygoogle`,
+  // or a known ad-network identifier.
   var adSelectors = [
     // --- iframes ---
-    'iframe[src*="ads"]', 'iframe[src*="doubleclick"]',
-    'iframe[src*="googlesyndication"]', 'iframe[src*="adservice"]',
+    'iframe[src*="doubleclick.net"]', 'iframe[src*="googlesyndication"]',
+    'iframe[src*="adservice.google"]', 'iframe[src*="adsbygoogle"]',
     'iframe[src*="popads"]', 'iframe[src*="popcash"]',
     'iframe[src*="juicyads"]', 'iframe[src*="exoclick"]',
     'iframe[src*="trafficjunky"]', 'iframe[src*="propellerads"]',
     'iframe[src*="adsterra"]', 'iframe[src*="onclkds"]',
     'iframe[src*="onclickmax"]', 'iframe[src*="pushame"]',
-    // --- div class/id patterns ---
+    // --- AdSense / Google Tag ---
+    'ins.adsbygoogle', 'div[id^="google_ads"]',
+    'div[class*="adsbygoogle"]',
+    // --- explicit ad containers (ad- / -ad / ads- / _ad_ / etc.) ---
     'div[class*="ad-overlay"]', 'div[class*="ad-container"]',
-    'div[class*="ads-"]', 'div[class*="-ads"]',
-    'div[class*="adsbygoogle"]', 'div[class*="ad-banner"]',
-    'div[class*="ad_"]', 'div[id*="ad_"]',
-    'div[class*="ads_"]', 'div[id*="ads_"]',
-    'div[class*="popup"]', 'div[id*="popup"]',
-    'div[class*="overlay-ad"]', 'div[id*="overlay-ad"]',
-    'div[class*="banner-ad"]', 'div[class*="ad-banner"]',
-    'div[class*="sticky-ad"]', 'div[class*="ad-sticky"]',
-    'div[class*="ad-float"]', 'div[class*="float-ad"]',
-    'div[class*="interstitial"]', 'div[class*="preroll"]',
+    'div[class*="ad-banner"]', 'div[class*="ad-banner-"]',
+    'div[class*="ad-block"]', 'div[class*="ad-slot"]',
+    'div[class*="ad-modal"]', 'div[class*="ad-popup"]',
+    'div[class*="ad-wrapper"]', 'div[class*="ad-frame"]',
+    'div[class*="ad-float"]', 'div[class*="ad-sticky"]',
+    'div[class~="ads"]', 'div[id~="ads"]',
+    'div[class*="banner-ad"]', 'div[class*="popup-ad"]',
+    'div[class*="modal-ad"]', 'div[class*="float-ad"]',
+    'div[class*="sticky-ad"]', 'div[class*="overlay-ad"]',
+    'div[id*="ad-popup"]', 'div[id*="popup-ad"]',
+    'div[id*="ad-overlay"]', 'div[id*="overlay-ad"]',
+    // --- popunders (kept; \"popunder\" is virtually never legitimate UI) ---
     'div[class*="popunder"]', 'div[id*="popunder"]',
-    'div[class*="modal-ad"]', 'div[class*="ad-modal"]',
-    // --- generic overlay/click-jacker patterns ---
-    'div[class*="overlay"][style*="z-index"]',
-    'div[id*="overlay"][style*="z-index"]',
-    // --- target blank + nofollow ---
-    'a[target="_blank"][rel*="nofollow"]',
-    'a[target="_blank"][href*="click"]',
-    'a[target="_blank"][href*="track"]',
-    '[onclick*="window.open"]',
-    // --- ins (Google AdSense containers) ---
-    'ins.adsbygoogle',
+    // --- pre-roll / interstitial ad slots ---
+    'div[class*="preroll-ad"]', 'div[class*="ad-preroll"]',
+    'div[class*="interstitial-ad"]', 'div[class*="ad-interstitial"]',
+    // --- anchor patterns specific to ad redirects ---
+    'a[target="_blank"][rel*="nofollow"][href*="click"]',
+    'a[target="_blank"][rel*="nofollow"][href*="track"]',
+    'a[target="_blank"][href*="redirect.php"]',
   ].join(',');
+
+  // -------- User-gesture tracking --------
+  //
+  // Click-jacker overlays usually appear *between* user gestures, while
+  // legitimate UI (server menu, caption menu) appears as a direct result
+  // of the user tapping a button. Recording the most recent user input
+  // lets the fixed-position sweep skip elements that almost certainly
+  // belong to the user's own interaction.
+  var __lastUserInput = 0;
+  ['pointerdown', 'mousedown', 'touchstart', 'click', 'keydown']
+    .forEach(function(ev) {
+      window.addEventListener(ev, function() {
+        __lastUserInput = Date.now();
+      }, { capture: true, passive: true });
+    });
+
+  // -------- Legitimate-UI heuristic --------
+  //
+  // The ARIA role list is taken from the WAI-ARIA \"widget\" roles plus
+  // common implicit dialog patterns. Elements containing interactive
+  // children are also exempt — popunders almost never have form controls
+  // or menu items inside them.
+  var __uiRoles = {
+    dialog: 1, alertdialog: 1, menu: 1, menubar: 1,
+    listbox: 1, combobox: 1, tablist: 1, tabpanel: 1,
+    tooltip: 1, tree: 1, treeitem: 1, grid: 1, group: 1
+  };
+  var __interactiveQ = 'button, select, input, textarea,' +
+    ' [role="button"], [role="menuitem"], [role="option"],' +
+    ' [role="tab"], [role="checkbox"], [role="radio"]';
+
+  function isLikelyUserUi(el) {
+    var role = (el.getAttribute('role') || '').toLowerCase();
+    if (__uiRoles[role]) return true;
+    if (el.querySelector(__interactiveQ)) return true;
+    if (el.hasAttribute('aria-modal')) return true;
+    // Recently-appeared element following a user tap is almost certainly
+    // a user-initiated menu/dialog, not a popunder.
+    if (Date.now() - __lastUserInput < 1500) return true;
+    return false;
+  }
 
   function removeAds() {
     var style = 'display:none!important;visibility:hidden!important;pointer-events:none!important;opacity:0!important;width:0px!important;height:0px!important;';
-    
+
     document.querySelectorAll(adSelectors).forEach(function(el) {
       if (el.style.display !== 'none') {
         el.setAttribute('style', style);
       }
     });
 
-    // Hide fixed-position overlays that cover the entire viewport
-    // (common click-jacker pattern) but skip the actual video player.
+    // Heuristic fixed-position sweep — only catches click-jackers that
+    // slipped past the selector list. The threshold is z-index >= 1000:
+    // legitimate menus & dialogs on streaming sites typically sit in the
+    // 100-999 range, while click-jacker overlays use 9999+.
     document.querySelectorAll('div, section, aside').forEach(function(el) {
-      if (el.getAttribute('id') === 'spovies-handled') return;
+      if (el.getAttribute('data-spovies') === 'handled') return;
       var cs = window.getComputedStyle(el);
-      if (cs.position === 'fixed' && cs.zIndex && parseInt(cs.zIndex) > 99) {
-        // Skip if it contains a video element (it's the actual player).
-        if (!el.querySelector('video') && !el.querySelector('iframe[src*="embed"]')) {
-          el.setAttribute('style', style);
-          el.setAttribute('id', 'spovies-handled');
-        }
-      }
+      if (cs.position !== 'fixed') return;
+      var z = parseInt(cs.zIndex, 10);
+      if (!z || z < 1000) return;
+      // Skip the actual video player and anything containing it.
+      if (el.querySelector('video') ||
+          el.querySelector('iframe[src*="embed"]')) return;
+      // Skip user UI (ARIA roles, interactive children, recent gesture).
+      if (isLikelyUserUi(el)) return;
+      el.setAttribute('style', style);
+      el.setAttribute('data-spovies', 'handled');
     });
   }
 
-  // Initial sweep.
   removeAds();
 
-  // Watch for dynamically-injected ad elements.
   var mo = new MutationObserver(function() { removeAds(); });
   mo.observe(document.documentElement, { childList: true, subtree: true });
 
@@ -576,7 +645,6 @@ const _kAdRemovalJs = '''
   document.createElement = function(tag) {
     var el = _origCreate(tag);
     if (tag.toLowerCase() === 'iframe') {
-      // Override the src setter to block ad iframes.
       var _origSrc = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src');
       if (_origSrc && _origSrc.set) {
         var origSet = _origSrc.set;
@@ -607,7 +675,24 @@ const _kAntiClickjackJs = '''
 
   var isAdUrl = window.__spoviesIsAd || function() { return false; };
 
-  // ── 1. Block <a> clicks to known ad domains ──────────────────────────
+  // ── 1. Block <a> clicks to known ad domains and about:blank ──────────
+  //
+  // Only reject anchors whose destination href matches a known ad pattern
+  // OR is the empty-page click-jacker. `about:blank` anchors overlaid on
+  // the player are how some streaming sites blank out the main frame when
+  // the user taps — onCreateWindow returns false on the Dart side, but
+  // Windows WebView2's fallback is to load the link in the current frame,
+  // killing playback. Catching it here prevents the navigation from being
+  // dispatched at all.
+  //
+  // Real user-initiated `target=\"_blank\"` clicks are still allowed —
+  // popup creation is blocked at the native onCreateWindow layer.
+  function isBlankishHref(h) {
+    if (!h) return true; // empty href = same-page anchor or click-jacker stub
+    var s = h.toLowerCase().trim();
+    return s === 'about:blank' || s === '#' || s === 'javascript:void(0)' ||
+           s === 'javascript:void(0);' || s.indexOf('about:') === 0;
+  }
   document.addEventListener('click', function(e) {
     var t = e.target;
     while (t && t.nodeName !== 'A' && t.nodeName !== 'BODY') {
@@ -615,7 +700,12 @@ const _kAntiClickjackJs = '''
     }
     if (t && t.nodeName === 'A') {
       var href = t.getAttribute('href') || '';
-      if (isAdUrl(href) || t.target === '_blank') {
+      var target = (t.getAttribute('target') || '').toLowerCase();
+      // about:blank / javascript:void(0) + target=_blank is the canonical
+      // click-jacker overlay shape — kill it. Pure same-page `#` anchors
+      // without target=_blank are left alone (legitimate scroll links).
+      if (isAdUrl(href) ||
+          (isBlankishHref(href) && target === '_blank')) {
         e.preventDefault();
         e.stopImmediatePropagation();
         return false;
@@ -729,17 +819,19 @@ const _kAntiClickjackJs = '''
   }
 
   // ── 5. Neuter programmatic clicks on unattached links and forms ──
+  //
+  // Drop the blanket `target === '_blank'` reject for the same reason as
+  // step 1 — many player UIs script `<a target=\"_blank\">.click()` to open
+  // server choices; popup creation itself is already blocked natively.
   var _origAnchorClick = HTMLAnchorElement.prototype.click;
   HTMLAnchorElement.prototype.click = function() {
-    var target = (this.getAttribute('target') || '').toLowerCase();
-    if (target === '_blank' || isAdUrl(this.href) || isSuspiciousNavigation(this.href)) return;
+    if (isAdUrl(this.href) || isSuspiciousNavigation(this.href)) return;
     return _origAnchorClick.apply(this, arguments);
   };
-  
+
   var _origFormSubmit = HTMLFormElement.prototype.submit;
   HTMLFormElement.prototype.submit = function() {
-    var target = (this.getAttribute('target') || '').toLowerCase();
-    if (target === '_blank' || isAdUrl(this.action) || isSuspiciousNavigation(this.action)) return;
+    if (isAdUrl(this.action) || isSuspiciousNavigation(this.action)) return;
     return _origFormSubmit.apply(this, arguments);
   };
 })();
@@ -876,6 +968,22 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     lastPlayedDate: DateTime.fromMillisecondsSinceEpoch(0),
   );
 
+  /// Cached `ProviderContainer` for use inside `dispose()`.
+  ///
+  /// Riverpod 3.x throws
+  /// `Bad state: Using "ref" when a widget is about to or has been unmounted`
+  /// if `ref` is touched during `dispose()` — `ref` depends on
+  /// `BuildContext`, which is being deactivated. The framework's own
+  /// error message points to the fix: cache the `ProviderContainer` in a
+  /// field while the widget is still active and call `.invalidate(...)`
+  /// on it directly.
+  ///
+  /// Captured in `initState` with `listen: false` so we don't register an
+  /// InheritedWidget dependency that would cause `didChangeDependencies`
+  /// to fire (and re-assign a `late final` — the previous source of the
+  /// `LateInitializationError`).
+  late final ProviderContainer _providerContainer;
+
   // ─── Gesture recognizers — transferred to the WebView ────────────────────
   // Giving explicit ownership of these gestures to the WebView prevents the
   // Flutter widget tree from competing, which is the root cause of scroll
@@ -887,6 +995,14 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    // Cache the ProviderContainer NOW (widget is mounted, context is
+    // active) so dispose() can call .invalidate() without touching `ref`.
+    // `listen: false` uses `getElementForInheritedWidgetOfExactType` under
+    // the hood, which — unlike `dependOnInheritedWidgetOfExactType` — is
+    // safe in `initState` and doesn't register a dependency that would
+    // make `didChangeDependencies` fire later.
+    _providerContainer = ProviderScope.containerOf(context, listen: false);
 
     // Fail-closed if the route handed us a URL with no resolvable host —
     // otherwise `_initialHostBase` is empty and the cross-domain navigation
@@ -925,12 +1041,16 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     // the OS sends us to the background we flush the Continue Watching row
     // ourselves so the Home screen reflects the latest saved progress on
     // the way back in.
+    //
+    // Uses the cached `_providerContainer` — same rationale as in dispose:
+    // the lifecycle callback can race with widget deactivation, and `ref`
+    // throws once the BuildContext is unmounted.
     if ((state == AppLifecycleState.paused ||
             state == AppLifecycleState.inactive ||
             state == AppLifecycleState.hidden) &&
         _progressDirty) {
-      ref.invalidate(continueWatchingProvider);
-      ref.invalidate(episodeProgressProvider);
+      _providerContainer.invalidate(continueWatchingProvider);
+      _providerContainer.invalidate(episodeProgressProvider);
       _progressDirty = false;
     }
   }
@@ -985,15 +1105,15 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     _cleanupWebView();
     // If progress was written during this session but never flushed via a
     // pause/ended event (e.g. the user just closed the player), refresh
-    // the Continue Watching row once on the way out. `ref` is still
-    // accessible inside dispose() for ConsumerState — no need to cache a
-    // ProviderContainer reference (the previous `late final _container`
-    // assigned in didChangeDependencies crashed with LateInitializationError
-    // when ancestor InheritedWidgets — e.g. MediaQuery on orientation
-    // change — caused didChangeDependencies to fire more than once).
+    // the Continue Watching row once on the way out.
+    //
+    // Use the cached `_providerContainer` directly — `ref.invalidate(...)`
+    // here throws `Bad state: Using "ref" when a widget is about to or has
+    // been unmounted is unsafe` in Riverpod 3.x because `ref` depends on
+    // the deactivating BuildContext.
     if (_progressDirty) {
-      ref.invalidate(continueWatchingProvider);
-      ref.invalidate(episodeProgressProvider);
+      _providerContainer.invalidate(continueWatchingProvider);
+      _providerContainer.invalidate(episodeProgressProvider);
     }
     // Skip the orientation restore when handing off to another player —
     // see [_navigatingToAnotherPlayer] for the iOS race this avoids.
@@ -1545,6 +1665,26 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
                   scheme != 'data' &&
                   scheme != 'about' &&
                   scheme != 'javascript') {
+                return NavigationActionPolicy.CANCEL;
+              }
+
+              // Click-jacker about:blank guard.
+              //
+              // A common pattern on streaming sites — especially visible
+              // on Windows WebView2 — is an invisible
+              // `<a href="about:blank" target="_blank">` overlaid on top of
+              // the player. The user click fires onCreateWindow (which we
+              // reject by returning false), but WebView2's fallback for a
+              // suppressed `target="_blank"` navigation is to load the
+              // link in the CURRENT frame instead, blanking out the video.
+              //
+              // After the initial load, any main-frame navigation to
+              // about:blank is treated as that hijack and cancelled. Sub-
+              // frames are left alone — some legitimate players use a
+              // brief about:blank intermediate inside iframes.
+              if (navigationAction.isForMainFrame &&
+                  _initialLoadComplete &&
+                  (url == 'about:blank' || scheme == 'about')) {
                 return NavigationActionPolicy.CANCEL;
               }
 

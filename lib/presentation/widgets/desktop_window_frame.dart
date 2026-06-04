@@ -48,7 +48,7 @@ class _CustomTitleBar extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 12.0),
                 child: Row(
                   children: [
-                    Image.asset('assets/logo.png', height: 16),
+                    Image.asset('assets/Group_1.png', height: 16),
                     const SizedBox(width: 8),
                     Text(
                       'Spovies',
