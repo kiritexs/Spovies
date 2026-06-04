@@ -15,6 +15,11 @@ abstract class WatchHistoryRepository {
   /// Get the "Continue Watching" list, sorted by last played, filtered < 90%.
   Future<List<UserProgress>> getContinueWatching({int limit = 10});
 
+  /// Remove every progress entry for a single media id (movie + all episodes).
+  /// Use when removing a title from the library — otherwise the just-removed
+  /// item lingers in the "Continue Watching" row.
+  Future<void> deleteProgressForMedia(String mediaId);
+
   /// Clear all watch history.
   Future<void> clearHistory();
 }

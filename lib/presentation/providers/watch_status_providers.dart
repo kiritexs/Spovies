@@ -4,6 +4,7 @@ import '../../data/repositories/watch_status_repository_impl.dart';
 import '../../domain/entities/media_item.dart';
 import '../../domain/entities/watch_status.dart';
 import '../../domain/repositories/watch_status_repository.dart';
+import 'watch_history_providers.dart';
 import 'watchlist_providers.dart';
 
 // ─── Infrastructure ─────────────────────────────────────────────────────
@@ -29,10 +30,14 @@ final mediaStatusProvider = FutureProvider.family<MediaStatus?, ({
 });
 
 /// All status entries for a show (for episode list).
-final mediaStatusesForShowProvider =
-    FutureProvider.family<List<MediaStatus>, String>((ref, mediaId) async {
+///
+/// The family arg includes `mediaType` because TMDB uses independent id
+/// spaces for movies and TV shows — see [WatchStatusRepository.getStatusesForMedia].
+final mediaStatusesForShowProvider = FutureProvider.family<
+    List<MediaStatus>,
+    ({String mediaId, String mediaType})>((ref, args) async {
   final repo = ref.watch(watchStatusRepositoryProvider);
-  return repo.getStatusesForMedia(mediaId);
+  return repo.getStatusesForMedia(args.mediaId, mediaType: args.mediaType);
 });
 
 /// All entries with a given status.
@@ -83,14 +88,33 @@ class WatchStatusNotifier extends Notifier<void> {
     ref.invalidate(libraryEntriesByStatusProvider);
   }
 
-  /// Remove all statuses for a media (show + all episodes). Use when removing from library.
-  Future<void> deleteAllStatusesForMedia(String mediaId) async {
-    final repo = ref.read(watchStatusRepositoryProvider);
-    await repo.deleteAllStatusesForMedia(mediaId);
+  /// Remove all statuses for a media (show + all episodes). Use when removing
+  /// from library.
+  ///
+  /// Also deletes any progress entries for the same media so the title stops
+  /// appearing in the "Continue Watching" row, then invalidates the related
+  /// list providers.
+  Future<void> deleteAllStatusesForMedia(
+    String mediaId, {
+    required String mediaType,
+  }) async {
+    final statusRepo = ref.read(watchStatusRepositoryProvider);
+    final historyRepo = ref.read(watchHistoryRepositoryProvider);
+
+    await statusRepo.deleteAllStatusesForMedia(
+      mediaId,
+      mediaType: mediaType,
+    );
+    await historyRepo.deleteProgressForMedia(mediaId);
+
     ref.invalidate(mediaStatusProvider);
     ref.invalidate(mediaStatusesForShowProvider);
     ref.invalidate(entriesByStatusProvider);
     ref.invalidate(libraryEntriesByStatusProvider);
+    // Continue Watching reads from watchHistoryBox; refresh it now so the
+    // just-removed title disappears from the Home row.
+    ref.invalidate(continueWatchingProvider);
+    ref.invalidate(episodeProgressProvider);
   }
 }
 

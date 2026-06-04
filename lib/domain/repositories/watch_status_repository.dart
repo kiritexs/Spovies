@@ -14,7 +14,14 @@ abstract class WatchStatusRepository {
   });
 
   /// Get all status entries for a show (for episode list display).
-  Future<List<MediaStatus>> getStatusesForMedia(String mediaId);
+  ///
+  /// [mediaType] disambiguates the TMDB id space: TMDB issues independent
+  /// ids for movies and TV shows, so id `123` can refer to two unrelated
+  /// titles. Pass `'movie'` or `'tv'` to avoid mixing.
+  Future<List<MediaStatus>> getStatusesForMedia(
+    String mediaId, {
+    required String mediaType,
+  });
 
   /// Get all entries with the given status (for filters/lists).
   Future<List<MediaStatus>> getEntriesByStatus(WatchStatus status);
@@ -24,5 +31,10 @@ abstract class WatchStatusRepository {
 
   /// Remove all status entries for a media (show-level + all episode-level).
   /// Use when removing a title from the library.
-  Future<void> deleteAllStatusesForMedia(String mediaId);
+  ///
+  /// [mediaType] disambiguates the TMDB id space — see [getStatusesForMedia].
+  Future<void> deleteAllStatusesForMedia(
+    String mediaId, {
+    required String mediaType,
+  });
 }

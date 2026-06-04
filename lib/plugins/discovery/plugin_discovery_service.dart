@@ -102,20 +102,38 @@ class PluginDiscoveryService {
     }
   }
 
-  /// Fetches the response body as bytes with a hard size cap.
+  /// Fetches the response body as bytes with a hard size cap enforced
+  /// **mid-stream** via Dio's `onReceiveProgress` + `CancelToken`.
   ///
-  /// Defends against hostile manifest URLs that would otherwise stream
-  /// arbitrarily large payloads and exhaust device memory.
+  /// Without mid-stream cancellation a hostile server that omits
+  /// `Content-Length` (or lies) would simply stream gigabytes — Dio buffers
+  /// the whole `ResponseType.bytes` body before returning, so a post-hoc
+  /// length check fires too late to prevent OOM. Here we abort the request
+  /// as soon as `received` crosses the cap.
   Future<List<int>> _fetchBytes(String url, Duration receiveTimeout) async {
+    final cancelToken = CancelToken();
     try {
+      // 1. Pre-flight content-length check: cheap reject if the server is
+      //    honest about the body size.
+      // (The progress-callback check below handles the dishonest cases.)
       final response = await _dio.get<List<int>>(
         url,
+        cancelToken: cancelToken,
         options: Options(
           receiveTimeout: receiveTimeout,
           responseType: ResponseType.bytes,
         ),
+        onReceiveProgress: (received, _) {
+          if (received > _maxManifestBytes && !cancelToken.isCancelled) {
+            cancelToken.cancel(
+              'Manifest body exceeded $_maxManifestBytes bytes',
+            );
+          }
+        },
       );
-      // 1. Reject early if the server advertises a too-large body.
+      // Defence-in-depth: also reject if Content-Length advertised too big,
+      // or if the cap was breached without our progress callback firing
+      // (very small bodies that arrive in a single chunk).
       final advertised =
           int.tryParse(response.headers.value('content-length') ?? '');
       if (advertised != null && advertised > _maxManifestBytes) {
@@ -127,7 +145,6 @@ class PluginDiscoveryService {
       if (bytes == null) {
         throw const InvalidManifestException('Empty response body');
       }
-      // 2. Belt-and-braces in case content-length was missing or wrong.
       if (bytes.length > _maxManifestBytes) {
         throw PluginNetworkException(
           'Manifest body too large (${bytes.length}B > ${_maxManifestBytes}B)',
@@ -135,8 +152,18 @@ class PluginDiscoveryService {
       }
       return bytes;
     } on DioException catch (e) {
+      // Our own cancellation surfaces as DioExceptionType.cancel — translate
+      // it back to PluginNetworkException so callers see the size-cap
+      // message instead of a generic "request cancelled".
+      if (CancelToken.isCancel(e)) {
+        throw PluginNetworkException(
+          'Manifest body exceeded $_maxManifestBytes bytes',
+        );
+      }
       if (kDebugMode) {
-        debugPrint('PluginDiscoveryService: DioException [${e.type}]: ${e.error}');
+        debugPrint(
+          'PluginDiscoveryService: DioException [${e.type}]: ${e.error}',
+        );
       }
       final message = switch (e.type) {
         DioExceptionType.connectionTimeout => 'Connection timed out',

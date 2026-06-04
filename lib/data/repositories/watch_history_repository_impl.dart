@@ -59,6 +59,23 @@ class WatchHistoryRepositoryImpl implements WatchHistoryRepository {
   }
 
   @override
+  Future<void> deleteProgressForMedia(String mediaId) async {
+    // Watch-history keys are either `$mediaId` (movie) or
+    // `${mediaId}_s${season}_e${episode}` (episode), so we can match on
+    // the stored mediaId field via the in-memory value cache — one
+    // traversal, one batched deleteAll.
+    final keysToRemove = <dynamic>[];
+    for (final entry in _box.toMap().entries) {
+      if (entry.value['mediaId']?.toString() == mediaId) {
+        keysToRemove.add(entry.key);
+      }
+    }
+    if (keysToRemove.isNotEmpty) {
+      await _box.deleteAll(keysToRemove);
+    }
+  }
+
+  @override
   Future<void> clearHistory() async {
     await _box.clear();
   }

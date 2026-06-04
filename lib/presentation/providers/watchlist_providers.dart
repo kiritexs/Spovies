@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../../data/datasources/local/hive_service.dart';
 import '../../domain/entities/media_item.dart';
 import '../../domain/entities/media_metadata.dart';
 import '../../domain/entities/media_type.dart';
@@ -8,9 +9,11 @@ import '../../domain/entities/media_type.dart';
 // ─── Watchlist Notifier ──────────────────────────────────────────────────
 
 class WatchlistNotifier extends Notifier<List<MediaItem>> {
-  static const String _boxName = 'watchlist';
-
-  Box<Map> get _box => Hive.box<Map>(_boxName);
+  // Box accessed through HiveService so the box-name constant lives in one
+  // place and the central init contract is honoured. A bare
+  // `Hive.box('watchlist')` would silently break if HiveService ever renamed
+  // or scoped the box.
+  Box<Map> get _box => HiveService.watchlistBox;
 
   @override
   List<MediaItem> build() {

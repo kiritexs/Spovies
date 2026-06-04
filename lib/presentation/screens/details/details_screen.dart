@@ -1107,9 +1107,17 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 if (current != null)
                   TextButton.icon(
                     onPressed: () {
-                      ref
-                          .read(watchStatusNotifierProvider.notifier)
-                          .deleteAllStatusesForMedia(details.tmdbId.toString());
+                      // Fire-and-forget — the notifier method also drops the
+                      // watch-progress entry and invalidates Continue Watching,
+                      // so the title vanishes from every list at once.
+                      unawaited(
+                        ref
+                            .read(watchStatusNotifierProvider.notifier)
+                            .deleteAllStatusesForMedia(
+                              details.tmdbId.toString(),
+                              mediaType: details.type.name,
+                            ),
+                      );
                       ref
                           .read(watchlistProvider.notifier)
                           .remove(details.tmdbId);

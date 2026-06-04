@@ -794,7 +794,8 @@ class WebViewPlayerScreen extends ConsumerStatefulWidget {
       _WebViewPlayerScreenState();
 }
 
-class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
+class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
+    with WidgetsBindingObserver {
   double _loadProgress = 0;
   bool _isNavigating = false;
 
@@ -858,13 +859,22 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
     Uri.tryParse(widget.url)?.host ?? '',
   );
 
-  late final ProviderContainer _container;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _container = ProviderScope.containerOf(context);
-  }
+  /// Stable cache key for [nextEpisodeForProgressProvider] — only mediaId,
+  /// mediaType, season, episode participate in `UserProgress.==`/`hashCode`,
+  /// so we don't need to allocate a new instance per build with a fresh
+  /// `DateTime.now()`. Hoisted into a field to remove allocator pressure
+  /// from the player-chrome rebuild hot path.
+  late final UserProgress _nextEpisodeKey = UserProgress(
+    mediaId: widget.media.tmdbId.toString(),
+    mediaType: 'tv',
+    title: widget.media.title,
+    percentage: 100,
+    currentTime: 0,
+    duration: 0,
+    season: widget.season,
+    episode: widget.episode,
+    lastPlayedDate: DateTime.fromMillisecondsSinceEpoch(0),
+  );
 
   // ─── Gesture recognizers — transferred to the WebView ────────────────────
   // Giving explicit ownership of these gestures to the WebView prevents the
@@ -876,6 +886,19 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
+    // Fail-closed if the route handed us a URL with no resolvable host —
+    // otherwise `_initialHostBase` is empty and the cross-domain navigation
+    // guard at the bottom of `shouldOverrideUrlLoading` silently disables
+    // itself, letting any cross-frame redirect through.
+    final initialHost = Uri.tryParse(widget.url)?.host ?? '';
+    if (initialHost.isEmpty) {
+      _hasError = true;
+      _errorMsg = 'Invalid stream URL (no host)';
+      return;
+    }
+
     // Delay the orientation lock until after the first frame on iOS to
     // prevent race conditions with the screen transition.
     if (Platform.isIOS) {
@@ -891,6 +914,25 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
       _checkFullScreen();
     }
     _resetControlsTimer();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // The WebView's JS bridge only forwards a `pause` event when the
+    // streaming provider's <video> element itself fires `pause` — that's
+    // unreliable across plugins (HLS.js wrappers, custom MSE, etc.). When
+    // the OS sends us to the background we flush the Continue Watching row
+    // ourselves so the Home screen reflects the latest saved progress on
+    // the way back in.
+    if ((state == AppLifecycleState.paused ||
+            state == AppLifecycleState.inactive ||
+            state == AppLifecycleState.hidden) &&
+        _progressDirty) {
+      ref.invalidate(continueWatchingProvider);
+      ref.invalidate(episodeProgressProvider);
+      _progressDirty = false;
+    }
   }
 
   void _resetControlsTimer() {
@@ -937,15 +979,21 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controlsTimer?.cancel();
     _overlayTimer?.cancel();
     _cleanupWebView();
     // If progress was written during this session but never flushed via a
     // pause/ended event (e.g. the user just closed the player), refresh
-    // the Continue Watching row once on the way out.
+    // the Continue Watching row once on the way out. `ref` is still
+    // accessible inside dispose() for ConsumerState — no need to cache a
+    // ProviderContainer reference (the previous `late final _container`
+    // assigned in didChangeDependencies crashed with LateInitializationError
+    // when ancestor InheritedWidgets — e.g. MediaQuery on orientation
+    // change — caused didChangeDependencies to fire more than once).
     if (_progressDirty) {
-      _container.invalidate(continueWatchingProvider);
-      _container.invalidate(episodeProgressProvider);
+      ref.invalidate(continueWatchingProvider);
+      ref.invalidate(episodeProgressProvider);
     }
     // Skip the orientation restore when handing off to another player —
     // see [_navigatingToAnotherPlayer] for the iOS race this avoids.
@@ -1647,20 +1695,10 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
   Widget _buildNextEpisodeOverlay() {
     if (!_showNextEpisodeOverlay) return const SizedBox.shrink();
 
+    // Use the cached sentinel so we don't allocate a fresh UserProgress (and
+    // a DateTime) on every player-chrome rebuild — see `_nextEpisodeKey`.
     final nextEpisodeAsync = ref.watch(
-      nextEpisodeForProgressProvider(
-        UserProgress(
-          mediaId: widget.media.tmdbId.toString(),
-          mediaType: 'tv',
-          title: widget.media.title,
-          percentage: 100,
-          currentTime: 0,
-          duration: 0,
-          season: widget.season,
-          episode: widget.episode,
-          lastPlayedDate: DateTime.now(),
-        ),
-      ),
+      nextEpisodeForProgressProvider(_nextEpisodeKey),
     );
 
     final nextEpisode = nextEpisodeAsync.value;
@@ -1808,7 +1846,15 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen> {
                             const SizedBox(width: 8),
                             IconButton(
                               onPressed: () {
+                                // Also flip _showNextEpisodeOverlay so the
+                                // build short-circuits at the top — leaving
+                                // it `true` keeps `ref.watch` subscribed to
+                                // nextEpisodeForProgressProvider for the rest
+                                // of the session even though the widget is
+                                // off-screen.
+                                _overlayTimer?.cancel();
                                 setState(() {
+                                  _showNextEpisodeOverlay = false;
                                   _overlayActive = false;
                                   _dismissedNextEpisodeOverlay = true;
                                 });

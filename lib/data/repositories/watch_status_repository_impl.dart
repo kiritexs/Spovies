@@ -38,14 +38,20 @@ class WatchStatusRepositoryImpl implements WatchStatusRepository {
   }
 
   @override
-  Future<List<MediaStatus>> getStatusesForMedia(String mediaId) async {
-    // Filter by the stored mediaId field rather than the Hive key prefix —
-    // this also avoids the false-positive case where a media id is a
-    // prefix of another (e.g. "1234" vs "12345").
+  Future<List<MediaStatus>> getStatusesForMedia(
+    String mediaId, {
+    required String mediaType,
+  }) async {
+    // Filter by the stored mediaId AND mediaType — TMDB issues independent
+    // id spaces for movies and TV, so id "123" can refer to both an
+    // unrelated movie and an unrelated show. The previous implementation
+    // only filtered by mediaId and would mix them up.
     final list = <MediaStatus>[];
     for (final data in _box.values) {
       final entry = MediaStatus.fromMap(data);
-      if (entry.mediaId == mediaId) list.add(entry);
+      if (entry.mediaId == mediaId && entry.mediaType == mediaType) {
+        list.add(entry);
+      }
     }
     return list;
   }
@@ -67,14 +73,19 @@ class WatchStatusRepositoryImpl implements WatchStatusRepository {
   }
 
   @override
-  Future<void> deleteAllStatusesForMedia(String mediaId) async {
+  Future<void> deleteAllStatusesForMedia(
+    String mediaId, {
+    required String mediaType,
+  }) async {
     // Collect matching keys via toMap() so we pay one box traversal and
     // then a single batched deleteAll instead of N awaited deletes.
+    // Filter on BOTH mediaId and mediaType — see getStatusesForMedia for
+    // why mediaType matters (independent TMDB id spaces).
     final keysToRemove = <dynamic>[];
-    // `_box` is Box<Map>, so entry.value is already a Map — no need for
-    // an extra `is Map` check.
     for (final entry in _box.toMap().entries) {
-      if (entry.value['mediaId']?.toString() == mediaId) {
+      final value = entry.value;
+      if (value['mediaId']?.toString() == mediaId &&
+          value['mediaType']?.toString() == mediaType) {
         keysToRemove.add(entry.key);
       }
     }

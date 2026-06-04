@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -161,9 +163,14 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
               item: item,
               onTap: () => context.push('/details', extra: item),
               onRemove: () {
-                ref
-                    .read(watchStatusNotifierProvider.notifier)
-                    .deleteAllStatusesForMedia(item.tmdbId.toString());
+                unawaited(
+                  ref
+                      .read(watchStatusNotifierProvider.notifier)
+                      .deleteAllStatusesForMedia(
+                        item.tmdbId.toString(),
+                        mediaType: item.type.name,
+                      ),
+                );
                 ref.read(watchlistProvider.notifier).remove(item.tmdbId);
               },
             );
@@ -209,15 +216,21 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       ),
     );
     if (confirmed == true) {
-      final ids =
-          ref.read(watchlistProvider).map((m) => m.tmdbId.toString()).toList();
+      // Snapshot the watchlist BEFORE we start mutating it so we keep the
+      // (tmdbId, type) pairs needed for per-item deletion.
+      final snapshot = ref
+          .read(watchlistProvider)
+          .map((m) => (id: m.tmdbId.toString(), type: m.type.name))
+          .toList();
       // Await each delete so failures surface (and so the watchlist clear
       // below happens only after status rows are gone).
-      for (final id in ids) {
+      for (final item in snapshot) {
+        if (!mounted) return;
         await ref
             .read(watchStatusNotifierProvider.notifier)
-            .deleteAllStatusesForMedia(id);
+            .deleteAllStatusesForMedia(item.id, mediaType: item.type);
       }
+      if (!mounted) return;
       ref.read(watchlistProvider.notifier).clearAll();
     }
   }
