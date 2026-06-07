@@ -26,7 +26,6 @@ class DiscoverScreen extends ConsumerStatefulWidget {
 
 class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   final _searchController = TextEditingController();
-  bool _isSearching = false;
 
   int? _selectedGenreId;
   String? _selectedGenreName;
@@ -36,6 +35,19 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   @override
   void initState() {
     super.initState();
+    // Riverpod is the source of truth for search text + active flag. If
+    // our State is being recreated (this happens after a
+    // `/player` → `/details` → back trip, because the player's
+    // SystemChrome orientation/immersive-UI changes propagate a
+    // MediaQuery rebuild that re-instantiates the IndexedStack child's
+    // State), restore the controller text from the provider so the
+    // search UI comes back exactly as the user left it. We then add
+    // the listener — order matters: setting `text` BEFORE attaching
+    // the listener avoids a spurious provider update.
+    final savedQuery = ref.read(searchQueryProvider);
+    if (savedQuery.isNotEmpty) {
+      _searchController.text = savedQuery;
+    }
     _searchController.addListener(_onSearchChanged);
   }
 
@@ -49,31 +61,24 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   void _onSearchChanged() {
     final query = _searchController.text;
     ref.read(searchQueryProvider.notifier).update(query);
-    final active = query.trim().isNotEmpty;
-    setState(() => _isSearching = active);
-    ref.read(isSearchActiveProvider.notifier).state = active;
+    ref.read(isSearchActiveProvider.notifier).state = query.trim().isNotEmpty;
+    // No setState — `isSearchActiveProvider` is watched in `build`, so the
+    // rebuild happens through Riverpod. Keeping the active-flag in the
+    // provider only (instead of mirrored to a local bool) means it
+    // CANNOT desync from the controller text if our State is recreated
+    // mid-session — which used to leave the UI showing Discovery content
+    // but with the bottom-nav still hidden.
   }
 
   void _clearSearch() {
     _searchController.clear();
     ref.read(searchQueryProvider.notifier).update('');
-    setState(() => _isSearching = false);
     ref.read(isSearchActiveProvider.notifier).state = false;
     // Drop focus too, so the soft keyboard goes away whether _clearSearch
     // was triggered by the X button, by the system back gesture (via the
     // shell's clear signal), or by leaving and returning to the tab.
     FocusManager.instance.primaryFocus?.unfocus();
   }
-
-  // NOTE: There used to be a `deactivate()` here that reset
-  // `isSearchActiveProvider` to false whenever the user left this tab. That
-  // produced a sneaky bug: the controller text and `_isSearching` would
-  // stay set, but the provider would lie. When the user came back and
-  // pressed system back, the shell read the provider, saw "no active
-  // search", and switched tabs instead of clearing search. The nav-bar
-  // visibility logic the deactivate was working around now lives in the
-  // shell and gates on the active tab index, so we no longer need this
-  // override at all.
 
   void _selectGenre(int id, String name) {
     setState(() {
@@ -90,11 +95,13 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   @override
   Widget build(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
+    final isSearching = ref.watch(isSearchActiveProvider);
 
     // Shell asks us to clear the search whenever the user presses system
     // back while typing. The signal increments; we just react to any change.
     ref.listen<int>(searchClearSignalProvider, (_, _) {
-      if (_searchController.text.isNotEmpty || _isSearching) {
+      if (_searchController.text.isNotEmpty ||
+          ref.read(isSearchActiveProvider)) {
         _clearSearch();
       }
     });
@@ -107,11 +114,11 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           SizedBox(height: topPad),
           _SearchBar(
             controller: _searchController,
-            isSearching: _isSearching,
+            isSearching: isSearching,
             onClear: _clearSearch,
           ),
           Expanded(
-            child: _isSearching
+            child: isSearching
                 ? _SearchResults(controller: _searchController)
                 : _DiscoveryContent(
                     trendingMovies: _trendingMovies,

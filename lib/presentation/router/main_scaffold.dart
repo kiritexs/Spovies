@@ -74,13 +74,22 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   DateTime? _lastBackPress;
 
   /// Tab subtrees built ONCE and cached for the lifetime of this
-  /// scaffold. Each is wrapped in [_KeepAliveTab] so its `State`
-  /// survives tab switches even if a parent decides to rebuild.
+  /// scaffold. Each carries an explicit `ValueKey` so Flutter's
+  /// reconciliation can't confuse them with a freshly-built sibling
+  /// when an ancestor rebuilds (e.g. when the player route on top
+  /// triggers a SystemChrome orientation change that propagates a
+  /// MediaQuery rebuild down through the whole tree). Without these
+  /// keys, the Explore tab's `_DiscoverScreenState` was getting
+  /// re-initialised after every player → details → back sequence,
+  /// dropping its `_searchController` and the local "is searching"
+  /// flag while the Riverpod `isSearchActiveProvider` survived —
+  /// which produced an inconsistent state (Discovery content shown
+  /// but bottom-nav still hidden).
   late final List<Widget> _tabs = const [
-    _KeepAliveTab(child: HomeScreen()),
-    _KeepAliveTab(child: DiscoverScreen()),
-    _KeepAliveTab(child: WatchlistScreen()),
-    _KeepAliveTab(child: SettingsScreen()),
+    _KeepAliveTab(key: ValueKey(0), child: HomeScreen()),
+    _KeepAliveTab(key: ValueKey(1), child: DiscoverScreen()),
+    _KeepAliveTab(key: ValueKey(2), child: WatchlistScreen()),
+    _KeepAliveTab(key: ValueKey(3), child: SettingsScreen()),
   ];
 
   @override
@@ -235,7 +244,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
 /// nested Navigator provided.
 class _KeepAliveTab extends StatefulWidget {
   final Widget child;
-  const _KeepAliveTab({required this.child});
+  const _KeepAliveTab({super.key, required this.child});
 
   @override
   State<_KeepAliveTab> createState() => _KeepAliveTabState();
