@@ -5,108 +5,56 @@ import 'package:go_router/go_router.dart';
 import '../../domain/entities/media_item.dart';
 import '../screens/details/details_screen.dart';
 import '../screens/explore/all_media_screen.dart';
-import '../screens/explore/discover_screen.dart';
-import '../screens/home/home_screen.dart';
 import '../screens/player/webview_player_screen.dart';
 import '../screens/settings/plugin_management_screen.dart';
-import '../screens/settings/settings_screen.dart';
-import '../screens/watchlist/watchlist_screen.dart';
-import 'shell_scaffold.dart';
+import 'main_scaffold.dart';
 
 // ─── Navigator Keys ───────────────────────────────────────────────────────────
-// The root key is used by full-screen routes (/details, /player) so they push
-// over the shell and the nav bar disappears automatically.
+//
+// Only one navigator now — the root. Full-screen routes (/details, /player,
+// /all-media, /plugins, /licenses) all push onto this navigator via
+// `parentNavigatorKey: _rootKey`, which means they overlay [MainScaffold]
+// and hide its bottom nav automatically.
 
 final _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
-final _homeKey = GlobalKey<NavigatorState>(debugLabel: 'home');
-final _exploreKey = GlobalKey<NavigatorState>(debugLabel: 'explore');
-final _browseKey = GlobalKey<NavigatorState>(debugLabel: 'browse');
-final _profileKey = GlobalKey<NavigatorState>(debugLabel: 'profile');
 
 // ─── Router ───────────────────────────────────────────────────────────────────
+//
+// Massively simpler than the prior `StatefulShellRoute.indexedStack` setup.
+// Tab state lives in `currentTabProvider` (Riverpod), driven by
+// [MainScaffold]'s `IndexedStack` — no branch navigators, no per-branch
+// keys, no back-button dispatcher.
+//
+// System-back is handled by [MainScaffold]'s single root `PopScope`. See
+// the long doc-comment at the top of that file for the full ladder.
 
 final appRouter = GoRouter(
   navigatorKey: _rootKey,
-  initialLocation: '/home',
+  initialLocation: '/',
   debugLogDiagnostics: false,
   routes: [
-    // ── Shell (tab bar always visible) ────────────────────────────────────
-    StatefulShellRoute.indexedStack(
-      builder: (context, state, shell) => ShellScaffold(shell: shell),
-      branches: [
-        // Tab 0 — Home
-        StatefulShellBranch(
-          navigatorKey: _homeKey,
-          routes: [
-            GoRoute(
-              path: '/home',
-              builder: (context, state) => const HomeScreen(),
-            ),
-          ],
-        ),
-
-        // Tab 1 — Explore (Discovery)
-        StatefulShellBranch(
-          navigatorKey: _exploreKey,
-          routes: [
-            GoRoute(
-              path: '/explore',
-              builder: (context, state) => const DiscoverScreen(),
-            ),
-          ],
-        ),
-
-        // Tab 2 — Browse (Watchlist)
-        StatefulShellBranch(
-          navigatorKey: _browseKey,
-          routes: [
-            GoRoute(
-              path: '/browse',
-              builder: (context, state) => const WatchlistScreen(),
-            ),
-          ],
-        ),
-
-        // Tab 3 — Profile (Settings)
-        StatefulShellBranch(
-          navigatorKey: _profileKey,
-          routes: [
-            GoRoute(
-              path: '/profile',
-              builder: (context, state) => const SettingsScreen(),
-            ),
-          ],
-        ),
-      ],
+    // ── Main app (4-tab IndexedStack) ─────────────────────────────────────
+    GoRoute(
+      path: '/',
+      builder: (context, state) => const MainScaffold(),
     ),
 
-    // ── Full-screen routes (push over shell, no nav bar) ──────────────────
+    // ── Full-screen routes pushed above the tab scaffold ──────────────────
     //
-    // Every route below is wrapped in [_PopToHomeOnSystemBack] so the
-    // Android system back gesture (and the in-app `Navigator.maybePop` it
-    // triggers) takes the user directly to /home instead of popping one
-    // level back to whatever tab they came from. Without this wrapper the
-    // user would see inconsistent behaviour: when they enter /details
-    // from the Home tab, system back lands on Home → shell PopScope fires
-    // → "press back again to exit". When they enter /details from
-    // Explore, system back lands on Explore → shell PopScope still fires
-    // BUT only switches the branch to Home (step 3 in `_handleSystemBack`)
-    // and never reaches the exit prompt on that first press. The result
-    // was the "sometimes the prompt appears, sometimes it doesn't" bug.
+    // Each uses `parentNavigatorKey: _rootKey` so it stacks above
+    // MainScaffold (hiding its nav bar). On back, the framework pops
+    // this route normally and reveals MainScaffold with whichever tab
+    // was active.
     //
-    // The wrapper keeps in-app `context.pop()` calls (e.g. the player's
-    // × button → `_dismiss`) working as before — they go through
-    // `Navigator.pop`, which the wrapper's `canPop: false` does NOT
-    // intercept (those are explicit pops on the route stack, not pops
-    // initiated by the system). Only system-back / Navigator.maybePop is
-    // redirected here.
+    // The player keeps its own `PopScope` for window-manager cleanup.
+    // The other routes just pop normally.
     GoRoute(
       path: '/details',
       parentNavigatorKey: _rootKey,
       builder: (context, state) {
         final media = state.extra;
         if (media is! MediaItem) return const _RouteErrorScreen('/details');
-        return _PopToHomeOnSystemBack(child: DetailsScreen(media: media));
+        return DetailsScreen(media: media);
       },
     ),
 
@@ -116,10 +64,6 @@ final appRouter = GoRouter(
       builder: (context, state) {
         final args = state.extra;
         if (args is! PlayerArgs) return const _RouteErrorScreen('/player');
-        // Player owns its own PopScope (window-manager + cleanup
-        // ordering). Do NOT wrap it again here — the inner PopScope wins
-        // and the outer wrapper would never fire. Player's PopScope
-        // already redirects system back through `_backToHome`.
         return WebViewPlayerScreen(
           url: args.url,
           media: args.media,
@@ -138,59 +82,29 @@ final appRouter = GoRouter(
       builder: (context, state) {
         final args = state.extra;
         if (args is! AllMediaArgs) return const _RouteErrorScreen('/all-media');
-        return _PopToHomeOnSystemBack(child: AllMediaScreen(args: args));
+        return AllMediaScreen(args: args);
       },
     ),
 
-    // Settings sub-pages — pushed over the shell so the nav bar is hidden
     GoRoute(
       path: '/plugins',
       parentNavigatorKey: _rootKey,
-      builder: (context, state) =>
-          const _PopToHomeOnSystemBack(child: PluginManagementScreen()),
+      builder: (context, state) => const PluginManagementScreen(),
     ),
 
     GoRoute(
       path: '/licenses',
       parentNavigatorKey: _rootKey,
-      builder: (context, state) => _PopToHomeOnSystemBack(
-        child: Theme(
-          data: ThemeData.dark(),
-          child: const LicensePage(
-            applicationName: 'Spovies',
-            applicationVersion: '1.0.0',
-          ),
+      builder: (context, state) => Theme(
+        data: ThemeData.dark(),
+        child: const LicensePage(
+          applicationName: 'Spovies',
+          applicationVersion: '1.0.0',
         ),
       ),
     ),
   ],
 );
-
-// ─── PopScope wrapper: system back → /home ────────────────────────────────────
-
-/// Wraps a full-screen route so the Android system back gesture takes
-/// the user to /home instead of popping one level back to the previous
-/// tab. See the comment above the routes for the full rationale.
-class _PopToHomeOnSystemBack extends StatelessWidget {
-  final Widget child;
-  const _PopToHomeOnSystemBack({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
-        // `.go()` resets the navigator stack to /home: the current pushed
-        // route is removed and the shell's Home branch becomes the live
-        // page. The shell's own PopScope then handles the next system
-        // back press (exit prompt + double-tap-to-exit).
-        context.go('/home');
-      },
-      child: child,
-    );
-  }
-}
 
 // ─── Route Error Screen ───────────────────────────────────────────────────────
 //

@@ -760,12 +760,12 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        // System back from inside the player jumps straight to /home
-        // (skipping any intermediate /details/etc. route) so it lines up
-        // with the shell-level "any page → home → exit prompt" contract.
-        // The X button keeps the old one-level-pop behaviour via
-        // [_dismiss] for users who want to return to the details screen.
-        _backToHome();
+        // System back pops one level back to wherever the player was
+        // pushed from (typically /details). Matches the history-aware
+        // contract: every full-screen route returns to its caller.
+        // [_dismiss] handles the window-manager cleanup + the actual
+        // `context.pop()`; the in-app × button uses the same path.
+        _dismiss();
       },
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -1348,29 +1348,6 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       // unwedge the screen so the user can try again.
       _isNavigating = false;
       if (kDebugMode) debugPrint('_dismiss failed: $e');
-    }
-  }
-
-  /// System-back handler — leaves the player AND jumps to /home in one
-  /// step. Uses `context.go('/home')` (not `pop`) so the user lands on
-  /// the app's root regardless of which tab they came from. Pairs with
-  /// the shell's `PopScope` which then arms the "press back again to
-  /// exit" prompt.
-  Future<void> _backToHome() async {
-    if (_isNavigating) return;
-    _isNavigating = true;
-    try {
-      if (PlayerPlatform.isWindows) {
-        await windowManager.setFullScreen(false);
-      }
-      if (!mounted) {
-        _isNavigating = false;
-        return;
-      }
-      context.go('/home');
-    } catch (e) {
-      _isNavigating = false;
-      if (kDebugMode) debugPrint('_backToHome failed: $e');
     }
   }
 

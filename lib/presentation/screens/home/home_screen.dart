@@ -19,6 +19,7 @@ import 'package:spovies/presentation/providers/media_providers.dart';
 import 'package:spovies/presentation/providers/plugin_providers.dart';
 import 'package:spovies/presentation/providers/settings_providers.dart';
 import 'package:spovies/presentation/providers/watch_history_providers.dart';
+import 'package:spovies/presentation/providers/tab_provider.dart';
 import 'package:spovies/presentation/router/app_router.dart';
 import 'package:spovies/presentation/widgets/app_header.dart';
 import 'package:spovies/presentation/widgets/continue_watching_card.dart';
@@ -29,9 +30,9 @@ import 'package:spovies/presentation/widgets/shimmer_placeholder.dart';
 /// Home tab — cinematic layout with Hero, Trending, Continue Watching,
 /// and Top Rated rows.
 ///
-/// Navigation is handled entirely by GoRouter:
-///   - Details  → context.push('/details', extra: media)
-///   - Search   → context.go('/explore')   (switches Explore tab)
+/// Navigation:
+///   - Details  → context.push('/details', extra: media)   (top-level route)
+///   - Search   → writes currentTabProvider = 1            (switches IndexedStack)
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -52,8 +53,11 @@ class HomeScreen extends ConsumerWidget {
             left: 0,
             right: 0,
             child: AppHeader(
-              // Switch to the Explore (search) tab instead of pushing a page
-              onSearchTap: () => context.go('/explore'),
+              // Switch to the Explore (search) tab. With the new
+              // MainScaffold + IndexedStack architecture, tab switching
+              // is just a provider write — no URL hop required.
+              onSearchTap: () =>
+                  ref.read(currentTabProvider.notifier).state = 1,
             ),
           ),
         ],

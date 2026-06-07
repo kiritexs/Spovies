@@ -69,6 +69,14 @@ class AppScrollBehavior extends MaterialScrollBehavior {
   };
 }
 
+/// Root app widget.
+///
+/// Now a plain `StatelessWidget` — all the back-handling and tab state
+/// lives inside [MainScaffold] (driven by `currentTabProvider`). This
+/// file used to register a global `BackButtonInterceptor`, a custom
+/// `RootBackButtonDispatcher`, and various per-tab handlers, all of
+/// which were replaced by the single `PopScope(canPop:false)` at the
+/// root of [MainScaffold]. See the doc-comment on that class for why.
 class SpoviesApp extends StatelessWidget {
   const SpoviesApp({super.key});
 
@@ -80,7 +88,7 @@ class SpoviesApp extends StatelessWidget {
       theme: AppTheme.darkTheme,
       themeMode: ThemeMode.dark,
       routerConfig: appRouter,
-      scrollBehavior: AppScrollBehavior(), // Apply the custom drag behavior
+      scrollBehavior: AppScrollBehavior(),
     );
   }
 }
