@@ -1,5 +1,5 @@
 #define MyAppName "Spovies"
-#define MyAppVersion "0.1.3"
+#define MyAppVersion "0.1.4"
 #define MyAppPublisher "Kiritex"
 #define MyAppURL "https://github.com/kiritexs"
 #define MyAppExeName "spovies.exe"
