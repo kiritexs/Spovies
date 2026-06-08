@@ -9,6 +9,7 @@ import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/responsive_grid.dart';
 import '../../../core/utils/tmdb_image_url.dart';
 import '../../../domain/entities/media_item.dart';
 import '../../providers/watchlist_providers.dart';
@@ -141,14 +142,6 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   Widget _buildGrid(BuildContext context, List<MediaItem> items) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Dynamic column count for Windows/Desktop improvement
-        int crossAxisCount = 3;
-        if (constraints.maxWidth > 1200) {
-          crossAxisCount = 6;
-        } else if (constraints.maxWidth > 800) {
-          crossAxisCount = 4;
-        }
-
         return GridView.builder(
           padding: const EdgeInsets.fromLTRB(
             AppSpacing.sectionPaddingH,
@@ -157,7 +150,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
             120,
           ),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount,
+            crossAxisCount: posterGridColumns(constraints.maxWidth),
             childAspectRatio: 0.58,
             crossAxisSpacing: 12,
             mainAxisSpacing: 16,

@@ -8,6 +8,7 @@ import 'package:spovies/core/config/app_config.dart';
 import 'package:spovies/core/theme/app_colors.dart';
 import 'package:spovies/core/theme/app_spacing.dart';
 import 'package:spovies/core/theme/app_text_styles.dart';
+import 'package:spovies/core/utils/responsive_grid.dart';
 import 'package:spovies/core/utils/tmdb_image_url.dart';
 import 'package:spovies/domain/entities/media_item.dart';
 import 'package:spovies/domain/entities/media_type.dart';
@@ -391,18 +392,23 @@ class _ContinueWatchingSection extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
               if (MediaQuery.of(context).size.width > 600)
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: items.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisExtent: AppSpacing.continueWatchingHeight,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 12,
-                  ),
-                  itemBuilder: (context, index) =>
-                      _ContinueWatchingCardItem(item: items[index]),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    return GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: items.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount:
+                            continueWatchingColumns(constraints.maxWidth),
+                        mainAxisExtent: AppSpacing.continueWatchingHeight,
+                        crossAxisSpacing: 16,
+                        mainAxisSpacing: 12,
+                      ),
+                      itemBuilder: (context, index) =>
+                          _ContinueWatchingCardItem(item: items[index]),
+                    );
+                  },
                 )
               else
                 ...items.map(

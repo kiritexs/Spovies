@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/responsive_grid.dart';
 import '../../../domain/entities/media_item.dart';
 import '../../providers/media_providers.dart';
 import '../../widgets/media_card.dart';
@@ -225,22 +226,17 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
               ),
               sliver: SliverLayoutBuilder(
                 builder: (context, constraints) {
-                  int columns = 3;
-                  if (constraints.crossAxisExtent > 800) {
-                    columns = 6;
-                  } else if (constraints.crossAxisExtent > 500) {
-                    columns = 4;
-                  }
+                  final cols = posterGridColumns(constraints.crossAxisExtent);
                   return SliverGrid(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns,
+                      crossAxisCount: cols,
                       childAspectRatio: 0.52,
                       crossAxisSpacing: 12,
                       mainAxisSpacing: 12,
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (_, _) => const ShimmerPlaceholder(),
-                      childCount: 12,
+                      childCount: cols * 4,
                     ),
                   );
                 },
@@ -256,15 +252,11 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
               ),
               sliver: SliverLayoutBuilder(
                 builder: (context, constraints) {
-                  int columns = 3;
-                  if (constraints.crossAxisExtent > 800) {
-                    columns = 6;
-                  } else if (constraints.crossAxisExtent > 500) {
-                    columns = 4;
-                  }
                   return SliverGrid(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns,
+                      crossAxisCount: posterGridColumns(
+                        constraints.crossAxisExtent,
+                      ),
                       childAspectRatio: 0.52,
                       crossAxisSpacing: 12,
                       mainAxisSpacing: 12,

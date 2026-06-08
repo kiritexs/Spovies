@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/responsive_grid.dart';
 import '../../../domain/entities/media_item.dart';
 import '../../providers/media_providers.dart';
 import '../../providers/search_providers.dart';
@@ -742,19 +743,11 @@ class _GenreGrid extends ConsumerWidget {
               ),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  // Determine columns based on available width
-                  int columns = 3; // mobile default
-                  if (constraints.maxWidth > 800) {
-                    columns = 6;
-                  } else if (constraints.maxWidth > 500) {
-                    columns = 4;
-                  }
-
                   return GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns,
+                      crossAxisCount: genreGridColumns(constraints.maxWidth),
                       childAspectRatio: 1.45,
                       crossAxisSpacing: 10,
                       mainAxisSpacing: 10,
@@ -864,18 +857,22 @@ class _GenreGrid extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sectionPaddingH,
       ),
-      child: GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          childAspectRatio: 1.45,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-        ),
-        itemCount: 12,
-        itemBuilder: (_, _) =>
-            ShimmerPlaceholder(borderRadius: BorderRadius.circular(12)),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: genreGridColumns(constraints.maxWidth),
+              childAspectRatio: 1.45,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            itemCount: 12,
+            itemBuilder: (_, _) =>
+                ShimmerPlaceholder(borderRadius: BorderRadius.circular(12)),
+          );
+        },
       ),
     );
   }
@@ -980,22 +977,29 @@ class _SearchResults extends ConsumerWidget {
   }
 
   Widget _shimmerGrid() {
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sectionPaddingH,
-        8,
-        AppSpacing.sectionPaddingH,
-        120,
-      ),
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        childAspectRatio: 0.52,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      itemCount: 9,
-      itemBuilder: (_, _) => const ShimmerPlaceholder(),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cols = posterGridColumns(constraints.maxWidth);
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sectionPaddingH,
+            8,
+            AppSpacing.sectionPaddingH,
+            120,
+          ),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cols,
+            childAspectRatio: 0.52,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+          ),
+          // Fill at least 2 rows worth of shimmer cards so the loading
+          // state looks the same density as the eventual results.
+          itemCount: cols * 3,
+          itemBuilder: (_, _) => const ShimmerPlaceholder(),
+        );
+      },
     );
   }
 
@@ -1059,32 +1063,36 @@ class _ResultsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sectionPaddingH,
-        8,
-        AppSpacing.sectionPaddingH,
-        120,
-      ),
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        childAspectRatio: 0.52,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      itemCount: results.length,
-      itemBuilder: (_, i) {
-        final item = results[i];
-        final genreText = item.metadata.genreIds
-            .take(2)
-            .map((id) => genreMap[id] ?? '')
-            .where((s) => s.isNotEmpty)
-            .join(' • ');
-        return MediaCard(
-          movie: item,
-          genreText: genreText,
-          onTap: () => context.push('/details', extra: item),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sectionPaddingH,
+            8,
+            AppSpacing.sectionPaddingH,
+            120,
+          ),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: posterGridColumns(constraints.maxWidth),
+            childAspectRatio: 0.52,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+          ),
+          itemCount: results.length,
+          itemBuilder: (_, i) {
+            final item = results[i];
+            final genreText = item.metadata.genreIds
+                .take(2)
+                .map((id) => genreMap[id] ?? '')
+                .where((s) => s.isNotEmpty)
+                .join(' • ');
+            return MediaCard(
+              movie: item,
+              genreText: genreText,
+              onTap: () => context.push('/details', extra: item),
+            );
+          },
         );
       },
     );
