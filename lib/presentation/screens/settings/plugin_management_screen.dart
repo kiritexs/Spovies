@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/config/feature_flags.dart';
 import '../../../core/errors/plugin_exception.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -19,11 +20,18 @@ import '../../providers/plugin_providers.dart';
 /// - "Add Plugin" FAB → glass bottom sheet with URL input
 /// - Swipe-to-delete with confirmation
 /// - Loading / error / success states
+///
+/// When [kPluginsEnabled] is `false`, the whole management UI is
+/// replaced with a friendly placeholder — the tile that opened this
+/// screen is already hidden in Settings, but state-restoration, saved
+/// links, or manual `/plugins` URLs could still land users here.
 class PluginManagementScreen extends ConsumerWidget {
   const PluginManagementScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (!kPluginsEnabled) return const _PluginsDisabledView();
+
     final pluginsAsync = ref.watch(installedPluginsProvider);
 
     return Scaffold(
@@ -546,5 +554,55 @@ class _AddPluginSheetState extends ConsumerState<_AddPluginSheet> {
         });
       }
     }
+  }
+}
+
+// ─── Disabled-state placeholder ───────────────────────────────────────────────
+
+/// Shown when [kPluginsEnabled] is `false` and the user still lands on
+/// `/plugins` (state restoration, deep link, manual push). Keeps a real
+/// AppBar with a back button so they can leave normally.
+class _PluginsDisabledView extends StatelessWidget {
+  const _PluginsDisabledView();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.backgroundDark,
+      appBar: AppBar(
+        backgroundColor: AppColors.backgroundDark,
+        surfaceTintColor: Colors.transparent,
+        title: Text('Plugins', style: AppTextStyles.appTitle),
+        centerTitle: false,
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.extension_off_rounded,
+                size: 64,
+                color: AppColors.textSecondary.withValues(alpha: 0.5),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                'Plugins are currently unavailable',
+                style: AppTextStyles.cardTitle,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'The plugin system is disabled in this build. Watchlist, '
+                'history, and browsing continue to work normally.',
+                style: AppTextStyles.cardSubtitle,
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

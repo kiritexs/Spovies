@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/config/feature_flags.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -50,13 +51,25 @@ class SettingsScreen extends ConsumerWidget {
             sliver: SliverList.list(
               children: [
                 // ── Plugins Section ────────────────────────────────
+                //
+                // Behaviour depends on [kPluginsEnabled]:
+                //   • enabled  → interactive tile that opens `/plugins`
+                //   • disabled → tile still shown (users know the
+                //                feature exists) but visually greyed and
+                //                the subtitle says "Currently
+                //                unavailable"; tapping still opens
+                //                `/plugins`, which then shows the
+                //                friendly disabled placeholder.
                 _buildSectionHeader('Plugins'),
                 const SizedBox(height: 12),
                 _buildGlassTile(
                   context,
                   icon: Icons.extension_rounded,
                   title: 'Manage Plugins',
-                  subtitle: 'Add, remove, and view installed plugins',
+                  subtitle: kPluginsEnabled
+                      ? 'Add, remove, and view installed plugins'
+                      : 'Currently unavailable',
+                  disabled: !kPluginsEnabled,
                   onTap: () => context.push('/plugins'),
                 ),
 
@@ -69,7 +82,12 @@ class SettingsScreen extends ConsumerWidget {
                   context,
                   icon: Icons.upload_rounded,
                   title: 'Export Data',
-                  subtitle: 'Back up history, watchlist, and plugins',
+                  // Subtitle reflects what's actually included in the
+                  // export — no point advertising plugins as backed up
+                  // when the plugin system is disabled.
+                  subtitle: kPluginsEnabled
+                      ? 'Back up history, watchlist, and plugins'
+                      : 'Back up history and watchlist',
                   onTap: () => _handleExport(context),
                 ),
                 const SizedBox(height: 8),
@@ -125,14 +143,28 @@ class SettingsScreen extends ConsumerWidget {
                 const SizedBox(height: AppSpacing.sectionGap),
 
                 // ── Playback Section ──────────────────────────────
+                //
+                // When [kPluginsEnabled] is false the interactive
+                // "Preferred Provider" dropdown is replaced with a
+                // static disabled tile — the section is still visible
+                // so users understand the feature exists.
                 _buildSectionHeader('Playback'),
                 const SizedBox(height: 12),
-                _buildPreferredProvider(
-                  context,
-                  ref,
-                  pluginsAsync,
-                  preferredPlugin,
-                ),
+                if (kPluginsEnabled)
+                  _buildPreferredProvider(
+                    context,
+                    ref,
+                    pluginsAsync,
+                    preferredPlugin,
+                  )
+                else
+                  _buildGlassTile(
+                    context,
+                    icon: Icons.play_circle_outline_rounded,
+                    title: 'Preferred Provider',
+                    subtitle: 'Currently unavailable',
+                    disabled: true,
+                  ),
 
                 const SizedBox(height: AppSpacing.sectionGap),
 
@@ -234,8 +266,13 @@ class SettingsScreen extends ConsumerWidget {
     required String subtitle,
     Widget? trailing,
     VoidCallback? onTap,
+    bool disabled = false,
   }) {
-    return ClipRRect(
+    // Disabled tiles still render (the user should know the feature
+    // exists) but with 50 % opacity, muted colours, and no chevron.
+    // The onTap fires so the user can land on the "unavailable"
+    // placeholder screen and read what's going on.
+    final Widget tile = ClipRRect(
       borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
@@ -251,25 +288,42 @@ class SettingsScreen extends ConsumerWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.15),
+                color: (disabled
+                        ? AppColors.textSecondary
+                        : AppColors.primary)
+                    .withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
               ),
-              child: Icon(icon, color: AppColors.primary, size: 20),
+              child: Icon(
+                icon,
+                color:
+                    disabled ? AppColors.textSecondary : AppColors.primary,
+                size: 20,
+              ),
             ),
             title: Text(title, style: AppTextStyles.cardTitle),
             subtitle: Text(subtitle, style: AppTextStyles.cardSubtitle),
             trailing:
                 trailing ??
-                (onTap != null
+                (disabled
                     ? const Icon(
-                        Icons.chevron_right_rounded,
-                        color: AppColors.textSecondary,
+                        Icons.block_rounded,
+                        color: AppColors.textMuted,
+                        size: 18,
                       )
-                    : null),
+                    : (onTap != null
+                          ? const Icon(
+                              Icons.chevron_right_rounded,
+                              color: AppColors.textSecondary,
+                            )
+                          : null)),
           ),
         ),
       ),
     );
+
+    if (!disabled) return tile;
+    return Opacity(opacity: 0.55, child: tile);
   }
 
   // ─── Preferred Provider ────────────────────────────────────────────

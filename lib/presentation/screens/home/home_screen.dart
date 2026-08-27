@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:spovies/core/config/app_config.dart';
+import 'package:spovies/core/config/feature_flags.dart';
 import 'package:spovies/core/theme/app_colors.dart';
 import 'package:spovies/core/theme/app_spacing.dart';
 import 'package:spovies/core/theme/app_text_styles.dart';
@@ -175,6 +176,10 @@ Future<void> _continueWatching(
   WidgetRef ref,
   UserProgress item,
 ) async {
+  if (!kPluginsEnabled) {
+    showPlaybackUnavailableSnack(context);
+    return;
+  }
   final tmdbId = int.tryParse(item.mediaId);
   if (tmdbId == null || tmdbId == 0) return;
 
@@ -249,6 +254,10 @@ Future<void> _openNextEpisode(
   int nextSeason,
   int nextEpisode,
 ) async {
+  if (!kPluginsEnabled) {
+    showPlaybackUnavailableSnack(context);
+    return;
+  }
   final tmdbId = int.tryParse(item.mediaId);
   if (tmdbId == null || tmdbId == 0) return;
   final detailsAsync = ref.read(

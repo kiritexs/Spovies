@@ -9,6 +9,7 @@ import 'package:window_manager/window_manager.dart';
 import 'dart:io';
 
 import '../../../core/config/app_config.dart';
+import '../../../core/config/feature_flags.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_styles.dart';
@@ -1256,6 +1257,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     int season,
     int episode,
   ) {
+    if (!kPluginsEnabled) {
+      showPlaybackUnavailableSnack(context);
+      return;
+    }
     final plugins =
         ref
             .read(pluginsForHookProvider(TriggerHook.mediaHeader))
@@ -1295,6 +1300,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     MediaItem details,
     PluginManifest plugin,
   ) {
+    if (!kPluginsEnabled) {
+      showPlaybackUnavailableSnack(context);
+      return;
+    }
     final isTV = details.type == MediaType.tv;
     final url = PluginUrlResolver.resolve(
       plugin,
@@ -1323,6 +1332,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     MediaItem details,
     UserProgress progress,
   ) {
+    if (!kPluginsEnabled) {
+      showPlaybackUnavailableSnack(context);
+      return;
+    }
     final plugins =
         ref
             .read(pluginsForHookProvider(TriggerHook.mediaHeader))
@@ -1363,6 +1376,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     int? season,
     int? episode,
   }) async {
+    if (!kPluginsEnabled) {
+      showPlaybackUnavailableSnack(context);
+      return;
+    }
     final url = PluginUrlResolver.resolve(
       plugin,
       media,

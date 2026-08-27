@@ -45,12 +45,33 @@
   }
 
   // 4. Patch WebSocket
+  //
+  // Wrapping the constructor is straightforward, but a NAKED wrapper
+  // loses two things every real site depends on:
+  //
+  //   • The static ready-state constants: `WebSocket.CONNECTING`,
+  //     `WebSocket.OPEN`, `WebSocket.CLOSING`, `WebSocket.CLOSED`.
+  //     Site code writes `if (ws.readyState === WebSocket.OPEN)`
+  //     literally everywhere; without these it evaluates to
+  //     `undefined === 1` and never fires the "socket ready" branch.
+  //   • The `.prototype` chain so `ws instanceof WebSocket` still
+  //     returns `true` for messages the site's own code creates.
+  //
+  // Both are fixed below. The static-property copy is explicit rather
+  // than a `for-in` on the original constructor because the spec-
+  // defined properties are enumerable-false in most engines and a
+  // `for-in` sweep would miss them.
   var _origWS = window.WebSocket;
-  window.WebSocket = function(url, protocols) {
+  var WrappedWS = function(url, protocols) {
     if (isBlocked(url)) {
       throw new Error('Blocked by Spovies AdGuard');
     }
     return new _origWS(url, protocols);
   };
-  window.WebSocket.prototype = _origWS.prototype;
+  WrappedWS.prototype = _origWS.prototype;
+  WrappedWS.CONNECTING = _origWS.CONNECTING;
+  WrappedWS.OPEN = _origWS.OPEN;
+  WrappedWS.CLOSING = _origWS.CLOSING;
+  WrappedWS.CLOSED = _origWS.CLOSED;
+  window.WebSocket = WrappedWS;
 })();
