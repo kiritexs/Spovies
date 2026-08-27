@@ -2,21 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// In-memory cache of the player's injected JS, loaded once from
-/// `assets/js/` at app startup.
+/// `assets/js/` at app startup by `main()`.
 ///
-/// Putting the scripts in real `.js` files (instead of inline Dart string
-/// constants) buys us:
-///   • syntax highlighting + ESLint / JSHint tooling on the source files
-///   • diff readability — JS changes don't move Dart line numbers
-///   • the ability to run a real JS test harness against each script
-///
-/// Lifecycle:
-///   1. `main()` awaits `PlayerScripts.load()` alongside `HiveService.init()`
-///      and `HostUtils.init()`. By the time `runApp` runs, all scripts are
-///      cached.
-///   2. The player screen reads them through `PlayerScripts.instance`.
-///      Accessing `.instance` before `load()` throws `StateError` — fail
-///      loudly rather than silently inject empty scripts.
+/// Accessing [instance] before [load] throws `StateError` — failing
+/// loudly beats silently injecting empty scripts.
+/// See `docs/architecture/PLAYER.md` § PlayerScripts.
 class PlayerScripts {
   PlayerScripts._({
     required this.bridge,
@@ -99,17 +89,11 @@ class PlayerScripts {
   final String userActivity;
   final String _videoProgressTemplate;
 
-  /// Returns the video-progress script with the runtime resume target
-  /// substituted into the placeholder.
+  /// The video-progress script with the resume target substituted in.
   ///
-  /// `resumeTime` is sanitised before substitution: `NaN`, `Infinity`, and
-  /// negative values all collapse to `0`. Dart's `double.toString()` emits
-  /// `'NaN'` / `'Infinity'` literally for those values, and both are valid
-  /// JS identifiers — without this sanitisation the resulting JS line
-  /// `var RESUME_TARGET = NaN;` would parse fine, every
-  /// `RESUME_TARGET >= video.duration` check would silently evaluate
-  /// false, and auto-resume would break with no error visible on either
-  /// side.
+  /// `NaN`, `Infinity`, and negatives collapse to `0` — Dart emits those
+  /// literally and both are valid JS identifiers, so the generated code
+  /// would parse fine and silently break auto-resume.
   String videoProgress(double resumeTime) {
     final safe = (resumeTime.isFinite && resumeTime >= 0) ? resumeTime : 0.0;
     return _videoProgressTemplate.replaceAll(

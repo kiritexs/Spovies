@@ -12,12 +12,9 @@ int? _toIntOrNull(dynamic v) {
   return null;
 }
 
-/// Allowed media types — anything outside this set is rejected by the
-/// `data['type']` fallback used to support Provider B's PLAYER_EVENT shape.
-/// Restricting the set means a future plugin sending an arbitrary `type`
-/// string inside `data` (for any reason other than the documented Provider B
-/// media-kind) can no longer poison `UserProgress.mediaType` and bypass
-/// the Continue-Watching filters that key on it.
+/// Gates the `data['type']` fallback added for Provider B. Without the
+/// restriction, a plugin sending an arbitrary `type` could poison
+/// `UserProgress.mediaType` and bypass the Continue-Watching filters.
 const _kValidMediaTypes = {'movie', 'tv', 'anime'};
 
 String? _validMediaType(dynamic v) {
@@ -47,13 +44,11 @@ class PlayerEvent {
     this.episode,
   });
 
-  /// Parse from the plugin's postMessage JSON payload.
+  /// Parse a plugin's postMessage payload.
   ///
-  /// Supports:
-  /// 1. Provider A/standard format: type "PLAYER_EVENT" with nested "data".
-  /// 2. Provider D format: flat object with "channel", "event":"time",
-  ///    "time", "duration", "percent" (used when the embed sends progress
-  ///    via spoviesEventBridge with channel e.g. "example-channel").
+  /// Three shapes are supported — standard `PLAYER_EVENT`, the flat
+  /// Provider D format, and the Provider C native format. Field
+  /// mappings per provider are in `docs/architecture/PLUGINS.md`.
   static PlayerEvent? tryParse(String rawMessage) {
     try {
       final decoded = jsonDecode(rawMessage);
@@ -69,21 +64,10 @@ class PlayerEvent {
 
       final eventValue = json['event'];
 
-      // 1) Standard PLAYER_EVENT format (Provider A, Provider C, Provider B …).
-      //    Provider C omits "progress" and sends tmdbId:"false" — compute
-      //    progress from currentTime/duration.
-      //    Provider A puts the current playback position in `data.currentTime`
-      //    and the media kind in `data.mediaType`. Provider B uses the exact
-      //    same outer wrapper but renames those two fields:
-      //      currentTime → timestamp
-      //      mediaType   → type        (inside `data` — outer `type` is the
-      //                                 literal "PLAYER_EVENT" we just
-      //                                 matched on)
-      //    Live confirmation in the player log on 2026-06-04, see
-      //    https://example.com/docs Watch-Progress-Tracking section.
-      //    The fallback `?? data['timestamp']` is what makes Provider B
-      //    progress save — without it, every Provider B timeupdate was being
-      //    stored as currentTime=0.
+      // 1) Standard PLAYER_EVENT (Provider A, Provider C, Provider B).
+      //    Provider C omits "progress" — compute it from currentTime/duration.
+      //    Provider B renames currentTime → timestamp and mediaType → type,
+      //    hence the fallbacks below.
       final type = json['type'] as String?;
       if (type == 'PLAYER_EVENT') {
         final data = json['data'] as Map<String, dynamic>?;
@@ -138,8 +122,7 @@ class PlayerEvent {
         }
       }
 
-      // 3) Provider C native format: {"event":"time"|"pause"|"paused"|"userpause","time":...,"data":...,"duration":...}
-      //    No "type" or "channel"; current time in "time" or "data". Progress bar was 0 because we never parsed these.
+      // 3) Provider C native: no "type" or "channel"; time in "time" or "data".
       final durationVal = (json['duration'] as num?)?.toDouble();
       final timeVal =
           (json['time'] as num?)?.toDouble() ??
@@ -195,16 +178,9 @@ class EventBridge {
     final event = PlayerEvent.tryParse(rawMessage);
     if (event == null) return;
 
-    // Only 'ended' and 'pause' skip the throttle — they are the only events
-    // where an immediate save is critical (user stopped or finished watching).
-    //
-    // 'seeked' is intentionally throttled: scrubbing fires it dozens of times
-    // per second, and writing on every one causes unnecessary Hive I/O with
-    // no UX benefit (the final resting currentTime is already captured by the
-    // next throttled timeupdate or by a subsequent pause/ended).
-    //
-    // 'play' is also throttled — it carries the same time value as the
-    // preceding timeupdate and adds nothing.
+    // Only 'ended' and 'pause' skip the throttle. 'seeked' fires dozens of
+    // times per second while scrubbing and 'play' repeats the preceding
+    // timeupdate — see PLUGINS.md § Throttling.
     if (event.eventType == 'ended' || event.eventType == 'pause') {
       onProgressUpdate(event);
       return;

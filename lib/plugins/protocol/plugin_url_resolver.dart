@@ -2,39 +2,15 @@ import '../../domain/entities/media_item.dart';
 import '../../domain/entities/media_type.dart';
 import '../../domain/entities/plugin_manifest.dart';
 
-/// Resolves a plugin's URL template with actual media data.
+/// Resolves a plugin's URL template against real media data.
 ///
-/// Supported explicit placeholders:
-///   `{{tmdbId}}`, `{{type}}`, `{{title}}`, `{{imdbId}}`,
-///   `{{season}}`, `{{episode}}`
-///
-/// **TV show fallback (no placeholders in template):**
-/// Many embed services (e.g. Provider A) use a path-based season/episode
-/// scheme — `…/tv/{id}/{season}/{episode}` — but the plugin author may
-/// write a short template without `{{season}}/{{episode}}`.  When a TV
-/// show is resolved and neither placeholder appears in the template, this
-/// resolver appends the season and episode automatically as extra path
-/// segments, defaulting to S1E1 when called from the media-header hook
-/// (no season/episode arguments passed).
-///
-/// Example
-/// ```
-/// template : https://example.com/embed/{{type}}/{{tmdbId}}?color=…
-/// movie    : https://example.com/embed/movie/12345?color=…       ✓
-/// tv header: https://example.com/embed/tv/12345/1/1?color=…     ✓ (S1E1)
-/// tv ep 3  : https://example.com/embed/tv/12345/1/3?color=…     ✓
-/// ```
+/// Placeholders: `{{tmdbId}}`, `{{type}}`, `{{title}}`, `{{imdbId}}`,
+/// `{{season}}`, `{{episode}}`. When a TV show is resolved and no
+/// season/episode placeholder appears, they are appended as path
+/// segments instead — see `docs/architecture/PLUGINS.md`.
 class PluginUrlResolver {
-  /// Pick the most appropriate plugin from [plugins] for the given preferences.
-  ///
-  /// Resolution order:
-  ///   1. [savedId] — the plugin previously used for this exact item (if any)
-  ///   2. [preferredId] — the user's globally preferred plugin (if any)
-  ///   3. `plugins.first` as a last resort
-  ///
-  /// Centralises the logic that was previously duplicated (and subtly diverged)
-  /// between the home screen's "Continue Watching" path and the in-player
-  /// "Play Next Episode" overlay. Returns `null` only when [plugins] is empty.
+  /// Picks a plugin: [savedId], then [preferredId], then `plugins.first`.
+  /// Returns `null` only when [plugins] is empty.
   static PluginManifest? pickPlugin(
     List<PluginManifest> plugins, {
     String? savedId,
@@ -96,8 +72,7 @@ class PluginUrlResolver {
     }
 
     // ── TV path-based fallback ─────────────────────────────────────────────
-    // When no season/episode placeholder exists but we're dealing with a TV show,
-    // append /season/episode as path segments before any query string.
+    // No placeholder but a TV show — append /season/episode as segments.
     if (media.type == MediaType.tv &&
         !hasSeasonPlaceholder &&
         !hasEpisodePlaceholder) {

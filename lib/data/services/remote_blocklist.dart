@@ -6,39 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
-// ─── Why a remote community blocklist ─────────────────────────────────────────
-//
-// A hand-curated list of ~70 domains can't cover the thousands of ad networks
-// seen across streaming sites. This service maintains a living, community-driven
-// blocklist that is refreshed automatically every 24 hours.
-//
-// Sources (ordered by preference):
-//
-//   1. OISD "small" — false-positive-aware, streaming-friendly, ~35k domains.
-//      Plain domain-per-line format. Updated daily.
-//      https://small.oisd.nl
-//
-//   2. OISD "big" — more aggressive, ~250k domains.  Tried if small fails.
-//      https://big.oisd.nl
-//
-//   3. Peter Lowe's Ad & Tracker server list — classic, ~4k high-confidence domains.
-//      Plain domain-per-line format. Low false-positives.
-//      https://pgl.yoyo.org/adservers/serverlist.php?hostformat=nohtml&...
-//
-//   4. AdGuard DNS filter — parses ||domain^ rules, ~60k entries.
-//      https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
-//
-//   5. Steven Black unified hosts — hosts-file format, ~100k domains.
-//      Fallback of last resort — large but very diverse.
-//      https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
-//
-//   6. NoCoin filter list — cryptocurrency mining scripts.
-//      https://raw.githubusercontent.com/hoshsadiq/adblock-nocoin-list/master/hosts.txt
-//
-// Lookup: O(1) HashSet — no performance cost per intercepted request.
-// Memory: ~35k entries ≈ 2–3 MB — negligible.
-// Network: background-only fetch, compressed to ~800 KB for OISD basic.
-// Cache: survives app restarts; expires after 24 h.
+// Community-maintained ad blocklist, refreshed every 24 h with a disk
+// cache and a built-in fallback. Source list, cost profile, and parsing
+// details in docs/architecture/AD_BLOCKING.md.
 
 // ─── Remote source definitions ────────────────────────────────────────────────
 
@@ -104,9 +74,7 @@ const _kConnectTimeout = Duration(seconds: 15);
 const _kResponseTimeout = Duration(seconds: 45);
 
 // ─── Built-in fallback ────────────────────────────────────────────────────────
-//
-// Always available immediately — used while remote fetch is in progress.
-// Covers the most aggressive ad networks on popular streaming sites.
+// Always available synchronously, used while the remote fetch runs.
 
 const _kFallbackDomains = <String>[
   // Google ad stack
@@ -205,9 +173,8 @@ class AdBlocklist {
       );
 
       // ── 1. Try disk cache ──────────────────────────────────────────────────
-      // existsSync is faster than the async variant for a single stat call
-      // — there is no concurrency win and the async wrapper just queues a
-      // microtask. Used only on startup, so blocking is negligible.
+      // existsSync: no concurrency win for one stat call, and this runs
+      // only at startup.
       if (cacheFile.existsSync() && metaFile.existsSync()) {
         try {
           final meta =
@@ -294,13 +261,8 @@ class AdBlocklist {
 
   /// Returns `true` if [url] should be blocked.
   ///
-  /// Check order:
-  ///   1. Exact hostname match — for domains stored as full subdomains.
-  ///   2. Suffix walk — catches CDN subdomains like `cdn2.acscdn.com` AND
-  ///      naturally covers the registered domain (eTLD+1) since the walk
-  ///      visits every suffix `parts[i..]`. The previous explicit eTLD+1
-  ///      step was redundant for 3+-part hosts and only added string
-  ///      allocations.
+  /// Exact hostname match first, then a suffix walk that catches CDN
+  /// subdomains and naturally covers the registered domain.
   bool isBlocked(String url) {
     if (url.isEmpty) return false;
     final host = _hostOf(url);
@@ -344,18 +306,14 @@ class AdBlocklist {
       req.headers
         ..set(HttpHeaders.userAgentHeader, 'Spovies/1.0 (ad-blocklist)')
         ..set(HttpHeaders.acceptHeader, 'text/plain, */*');
-      // No manual Accept-Encoding. `HttpClient.autoUncompress` is on by
-      // default and Dart inserts `Accept-Encoding: gzip` itself, then
-      // transparently inflates the response. Advertising `deflate` here
-      // gave servers permission to pick a codec Dart does NOT auto-
-      // inflate — the body would reach `utf8.decoder` still compressed
-      // and throw `FormatException: Bad UTF-8 encoding`, killing the
-      // fetch for any source that happened to choose deflate.
+      // Do NOT set Accept-Encoding. Dart sends gzip itself and
+      // auto-inflates; advertising deflate lets servers pick a codec it
+      // won't inflate, and the body reaches utf8.decoder still
+      // compressed. See AD_BLOCKING.md § The Accept-Encoding bug.
       final resp = await req.close().timeout(_kResponseTimeout);
       if (resp.statusCode == 200) {
-        // The .timeout() above only bounds req.close(); a slow streaming
-        // response could otherwise hold the connection open indefinitely
-        // while we drain the body. Bound the body read separately.
+        // The .timeout() above only bounds req.close() — bound the body
+        // read separately or a slow response holds the connection open.
         final body = await resp
             .transform(utf8.decoder)
             .join()
@@ -464,14 +422,14 @@ class AdBlocklist {
 
 // ─── Riverpod providers ───────────────────────────────────────────────────────
 
-/// Async provider — resolves to the full remote/cached list.
-/// While loading, widgets should fall back to [adBlocklistFallbackProvider].
+/// Resolves to the full remote/cached list. While loading, callers fall
+/// back to [adBlocklistFallbackProvider].
 final adBlocklistProvider = FutureProvider<AdBlocklist>(
   (ref) => AdBlocklist.load(),
 );
 
-/// Synchronous provider — always ready immediately (built-in ~70 domains).
-/// Use this for the first few requests while [adBlocklistProvider] warms up.
+/// Always ready — the built-in ~70 domains, for the first few requests
+/// while [adBlocklistProvider] warms up.
 final adBlocklistFallbackProvider = Provider<AdBlocklist>(
   (_) => AdBlocklist.fallback(),
 );

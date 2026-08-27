@@ -106,14 +106,11 @@ class PluginDiscoveryService {
     }
   }
 
-  /// Fetches the response body as bytes with a hard size cap enforced
-  /// **mid-stream** via Dio's `onReceiveProgress` + `CancelToken`.
+  /// Fetches the body with a size cap enforced **mid-stream**.
   ///
-  /// Without mid-stream cancellation a hostile server that omits
-  /// `Content-Length` (or lies) would simply stream gigabytes — Dio buffers
-  /// the whole `ResponseType.bytes` body before returning, so a post-hoc
-  /// length check fires too late to prevent OOM. Here we abort the request
-  /// as soon as `received` crosses the cap.
+  /// Dio buffers the whole `ResponseType.bytes` body before returning, so
+  /// a post-hoc length check fires too late to prevent OOM against a
+  /// server that omits or lies about `Content-Length`.
   Future<List<int>> _fetchBytes(String url, Duration receiveTimeout) async {
     final cancelToken = CancelToken();
     try {
@@ -222,10 +219,9 @@ class PluginDiscoveryService {
       }
     }
 
-    // urlTemplate is loaded directly in a WebView, so it must use a safe
-    // scheme — javascript:, data:, file:, etc. would otherwise execute in
-    // the WebView context. UrlValidator.validateUrlTemplate also bounds
-    // length to guard against pathological payloads.
+    // urlTemplate is loaded directly in a WebView, so `javascript:`,
+    // `data:`, `file:` etc. would execute in that context. The validator
+    // also bounds length against pathological payloads.
     final templateError = UrlValidator.validateUrlTemplate(
       json['urlTemplate'] as String,
     );

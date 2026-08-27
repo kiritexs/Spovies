@@ -1,9 +1,8 @@
 // AdGuard-style request interceptor — injected at document-start.
 //
-// Patches the browser's networking APIs (fetch, XHR, sendBeacon,
-// WebSocket) to block requests to known ad domains before they leave
-// the WebView. Mimics DNS-level blocking without the overhead of a
-// platform-channel round-trip per request.
+// Patches fetch, XHR, sendBeacon, and WebSocket to block known ad
+// domains before the request leaves the WebView. Windows only; see
+// docs/architecture/AD_BLOCKING.md.
 (function() {
   if (window.__spoviesAdGuard) return;
   window.__spoviesAdGuard = true;
@@ -46,21 +45,10 @@
 
   // 4. Patch WebSocket
   //
-  // Wrapping the constructor is straightforward, but a NAKED wrapper
-  // loses two things every real site depends on:
-  //
-  //   • The static ready-state constants: `WebSocket.CONNECTING`,
-  //     `WebSocket.OPEN`, `WebSocket.CLOSING`, `WebSocket.CLOSED`.
-  //     Site code writes `if (ws.readyState === WebSocket.OPEN)`
-  //     literally everywhere; without these it evaluates to
-  //     `undefined === 1` and never fires the "socket ready" branch.
-  //   • The `.prototype` chain so `ws instanceof WebSocket` still
-  //     returns `true` for messages the site's own code creates.
-  //
-  // Both are fixed below. The static-property copy is explicit rather
-  // than a `for-in` on the original constructor because the spec-
-  // defined properties are enumerable-false in most engines and a
-  // `for-in` sweep would miss them.
+  // The static constants and prototype MUST be carried over — site code
+  // writes `ws.readyState === WebSocket.OPEN` everywhere, and a naked
+  // wrapper makes that `undefined === 1`. Copied explicitly because the
+  // spec properties are enumerable-false, so `for-in` would miss them.
   var _origWS = window.WebSocket;
   var WrappedWS = function(url, protocols) {
     if (isBlocked(url)) {

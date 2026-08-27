@@ -9,45 +9,23 @@ import '../screens/player/webview_player_screen.dart';
 import '../screens/settings/plugin_management_screen.dart';
 import 'main_scaffold.dart';
 
-// ─── Navigator Keys ───────────────────────────────────────────────────────────
-//
-// Only one navigator now — the root. Full-screen routes (/details, /player,
-// /all-media, /plugins, /licenses) all push onto this navigator via
-// `parentNavigatorKey: _rootKey`, which means they overlay [MainScaffold]
-// and hide its bottom nav automatically.
-
+/// The only navigator. Full-screen routes push onto it via
+/// `parentNavigatorKey: _rootKey`, overlaying [MainScaffold] and hiding
+/// its bottom nav. See `docs/architecture/NAVIGATION.md`.
 final _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
-
-// ─── Router ───────────────────────────────────────────────────────────────────
-//
-// Massively simpler than the prior `StatefulShellRoute.indexedStack` setup.
-// Tab state lives in `currentTabProvider` (Riverpod), driven by
-// [MainScaffold]'s `IndexedStack` — no branch navigators, no per-branch
-// keys, no back-button dispatcher.
-//
-// System-back is handled by [MainScaffold]'s single root `PopScope`. See
-// the long doc-comment at the top of that file for the full ladder.
 
 final appRouter = GoRouter(
   navigatorKey: _rootKey,
   initialLocation: '/',
   debugLogDiagnostics: false,
   routes: [
-    // ── Main app (4-tab IndexedStack) ─────────────────────────────────────
+    // Main app — 4-tab IndexedStack.
     GoRoute(
       path: '/',
       builder: (context, state) => const MainScaffold(),
     ),
 
-    // ── Full-screen routes pushed above the tab scaffold ──────────────────
-    //
-    // Each uses `parentNavigatorKey: _rootKey` so it stacks above
-    // MainScaffold (hiding its nav bar). On back, the framework pops
-    // this route normally and reveals MainScaffold with whichever tab
-    // was active.
-    //
-    // The player keeps its own `PopScope` for window-manager cleanup.
-    // The other routes just pop normally.
+    // Full-screen routes, pushed above the tab scaffold.
     GoRoute(
       path: '/details',
       parentNavigatorKey: _rootKey,
@@ -106,11 +84,8 @@ final appRouter = GoRouter(
   ],
 );
 
-// ─── Route Error Screen ───────────────────────────────────────────────────────
-//
-// Shown when a route is reached with the wrong (or missing) `extra` argument,
-// e.g. via a deep link or after GoRouter's state restoration discards extras.
-
+/// Shown when a route is reached with a wrong or missing `extra` — a deep
+/// link, or after GoRouter's state restoration discards extras.
 class _RouteErrorScreen extends StatelessWidget {
   final String routeName;
   const _RouteErrorScreen(this.routeName);
@@ -148,8 +123,6 @@ class _RouteErrorScreen extends StatelessWidget {
     );
   }
 }
-
-// ─── Player Args ──────────────────────────────────────────────────────────────
 
 /// Passed as `extra` when pushing to `/player`.
 class PlayerArgs {

@@ -9,17 +9,12 @@ import 'package:file_picker/file_picker.dart';
 import '../datasources/local/hive_service.dart';
 import '../models/plugin_manifest_model.dart';
 
-/// A preview of what [ExportImportService.applyImport] would land in the
-/// local database, so the UI can show the user a confirmation dialog
-/// **before** anything is written.
+/// What [ExportImportService.applyImport] would write, so the UI can
+/// confirm with the user **before** anything lands.
 ///
-/// The [plugins] list is the high-risk surface — every entry becomes a
-/// potential `launchUrl` / `InAppWebView.initialUrlRequest` target on
-/// subsequent taps. Only manifests that pass
-/// `PluginManifestModel.fromJson`'s validation (urlTemplate is
-/// `http(s)://`, known actionType, required fields present) reach
-/// [plugins]; rejected entries are summarised in [rejectedPlugins] so the
-/// UI can warn the user about a tampered backup.
+/// [plugins] is the high-risk surface — each entry becomes a potential
+/// `launchUrl` target. Only validated manifests reach it; the rest are
+/// summarised in [rejectedPlugins]. See `docs/architecture/DATA.md`.
 final class ImportPreview {
   final int watchHistoryCount;
   final int watchlistCount;

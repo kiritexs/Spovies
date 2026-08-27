@@ -1,54 +1,18 @@
 // Safe-by-default ad + popup block — injected at document-start.
 //
-// Two layers, both deliberately small:
-//
-//   1. CSS-based DOM hide. A single `<style>` element with `display:none
-//      !important` rules for known ad selectors. The browser applies the
-//      rule to every matching element AS IT APPEARS in the DOM — no
-//      MutationObserver, no `querySelectorAll` sweeps, no
-//      `getComputedStyle` forced layouts. Dynamically-added ads are
-//      caught the moment they're inserted.
-//
-//   2. `window.open` allowlist. The only behaviour CSS can't replicate.
-//      Delegates to `__spoviesIsAd` so legitimate popups (Cloudflare
-//      Turnstile, OAuth, share dialogs) pass through unchanged.
-//
-// What this script DELIBERATELY does NOT do — and why we removed it:
-//
-//   • MutationObserver + `getComputedStyle` sweep — caused 30–100 ms
-//     forced-layout stalls on Android with Next.js pages.
-//   • `EventTarget.prototype.addEventListener` wrapper — broke sites
-//     whose own click handlers nested click dispatch; risk much greater
-//     than the popunder protection it bought us.
-//   • `document.createElement` override — broke site code that
-//     legitimately creates iframes.
-//   • `Object.defineProperty(iframe, 'src', …)` — broke site bundlers
-//     that redefine iframe descriptors for their own analytics.
-//   • `Location.prototype.assign/replace` patches — redundant with the
-//     native `shouldOverrideUrlLoading` scheme block, and the JS-side
-//     `getBase()` used a naive PSL heuristic that disagreed with the
-//     Dart side.
-//
-// All of the above were tried, all of them broke something. CSS + one
-// function override is the minimum that actually removes ads + popups
-// without becoming the cause of bigger problems than the ones it
-// solves.
+// Two layers: a CSS DOM hide and a window.open allowlist. Several other
+// approaches were tried and removed for breaking real sites — before
+// adding anything here, read docs/architecture/AD_BLOCKING.md.
 (function() {
   if (window.__spoviesAdBlock) return;
   window.__spoviesAdBlock = true;
 
   // ── 1. CSS-based ad hide ─────────────────────────────────────────────
   //
-  // Selector design rules:
-  //   • Anchor every match on a token specific to ads — `ad-`, `ads-`,
-  //     `adsbygoogle`, `popunder`, or a known ad-network identifier in
-  //     an iframe's src.
-  //   • NEVER use generic UI words alone — `popup`, `modal`, `overlay`,
-  //     `banner` — they catch the streaming site's own server picker /
-  //     quality menu / caption picker and shred the player UI.
-  //   • Use the `display:none !important` declaration plus
-  //     `pointer-events:none` so any element that escapes the hide via
-  //     `position:fixed; z-index:max` still can't intercept clicks.
+  // Anchor every selector on an ad-specific token (`ad-`, `adsbygoogle`,
+  // `popunder`, a known network in an iframe src). NEVER match generic UI
+  // words alone — `popup`, `modal`, `overlay`, `banner` catch the site's
+  // own server picker and quality menu.
   var rules = [
     // ── ad iframes ──
     'iframe[src*="doubleclick.net"]',
@@ -117,9 +81,7 @@
     var style = document.createElement('style');
     style.setAttribute('data-spovies', 'ad-block');
     style.textContent = rules;
-    // Append to <html> rather than <head> — at document-start <head>
-    // doesn't exist yet, but <html> always does, and CSS in a <style>
-    // attached anywhere in the document applies the same way.
+    // <html>, not <head> — at document-start <head> doesn't exist yet.
     document.documentElement.appendChild(style);
     return true;
   }
@@ -127,11 +89,8 @@
 
   // ── 2. window.open allowlist ─────────────────────────────────────────
   //
-  // The only thing CSS can't do. Site code that calls `window.open(url)`
-  // is checked against `__spoviesIsAd` — only ad-domain URLs are
-  // swallowed. Legitimate popups (Cloudflare Turnstile interactive
-  // challenge, OAuth login, "share" dialogs) pass through to the real
-  // window.open and reach `onCreateWindow` natively.
+  // Gated on __spoviesIsAd so Turnstile, OAuth, and share dialogs still
+  // reach onCreateWindow natively.
   var _origOpen = window.open;
   window.open = function(url, target, features) {
     var isAd = window.__spoviesIsAd || function() { return false; };

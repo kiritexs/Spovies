@@ -12,14 +12,9 @@ final isSearchActiveProvider = StateProvider<bool>((ref) => false);
 
 // ─── Clear-search signal ─────────────────────────────────────────────────
 
-/// One-shot signal: the shell increments this when the user presses system
-/// back while a search is active. The owner of the search controller (the
-/// Discover screen) listens to it and calls its own clear logic.
-///
-/// Why a signal rather than driving the controller from a provider: the
-/// controller's text and selection state are widget-owned and short-lived,
-/// while this provider is app-lifetime. Inverting that would force the
-/// provider to track ephemeral UI state for no benefit.
+/// Incremented when system back is pressed with an active search;
+/// DiscoverScreen listens and runs its own clear logic. A signal rather
+/// than provider-owned controller state — see `docs/architecture/DATA.md`.
 class SearchClearSignal extends Notifier<int> {
   @override
   int build() => 0;
@@ -45,11 +40,9 @@ final searchQueryProvider = NotifierProvider<SearchQueryNotifier, String>(
   SearchQueryNotifier.new,
 );
 
-/// Thrown by [searchResultsProvider] when a newer query supersedes the
-/// in-flight one during the debounce window. The UI catches this and shows
-/// the shimmer placeholder instead of an error message — string-matching the
-/// exception text would silently break if this class moved or its message
-/// changed, which is why it's a dedicated type.
+/// Thrown when a newer query supersedes the in-flight one during the
+/// debounce window. A dedicated type, not a string match — the UI shows
+/// the shimmer instead of an error.
 class SearchCancelledException implements Exception {
   const SearchCancelledException();
 
