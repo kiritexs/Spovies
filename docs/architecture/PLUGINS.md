@@ -131,7 +131,7 @@ throttles progress writes.
 
 ### Supported payload shapes
 
-**1. Standard `PLAYER_EVENT`** (Provider A, Provider C, Provider B). Provider C omits
+**1. Standard `PLAYER_EVENT`** (Providers A, B and C). Provider C omits
 `progress` and sends `tmdbId: "false"`, so progress is computed from
 `currentTime / duration`.
 
@@ -146,12 +146,12 @@ The outer `type` is still the literal `"PLAYER_EVENT"` that was matched
 on. The `?? data['timestamp']` fallback is what makes Provider B progress
 save at all — without it every Provider B `timeupdate` stored
 `currentTime = 0`. Confirmed in the player log 2026-06-04; see the
-Watch-Progress-Tracking section of the Provider B docs.
+Watch-Progress-Tracking section of that provider's docs.
 
-**2. Provider D flat format** —
+**2. Flat channel format** —
 `{"channel":"example-channel","event":"time","time":…,"duration":…,"percent":…}`
 
-**3. Provider C native format** —
+**3. Native time-event format** —
 `{"event":"time"|"pause"|"paused"|"userpause","time":…,"data":…,"duration":…}`
 with no `type` or `channel`; current time in `time` or `data`. The
 progress bar read 0 until these were parsed.

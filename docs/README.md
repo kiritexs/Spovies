@@ -7,7 +7,8 @@ Architecture and specification documents for the Spovies app.
 | Document | Description |
 |----------|-------------|
 | [**TECHNICAL_SPECIFICATION.md**](./TECHNICAL_SPECIFICATION.md) | Full TSD: system vision, architecture, data models, roadmap, Riverpod flow, local-first data strategy |
-| [**PLUGIN_SPECIFICATION.md**](./PLUGIN_SPECIFICATION.md) | Guide for 3rd party developers building Spovies plugins |
+| [**PLUGIN_SPECIFICATION.md**](./PLUGIN_SPECIFICATION.md) | Plugin manifest and Event Bridge specification (playback is disabled in this build) |
+| [**architecture/**](./architecture/README.md) | Design rationale per subsystem: navigation, player, platform policy, ad blocking, plugins, data, layout |
 
 ## Quick Links
 
@@ -19,7 +20,7 @@ Architecture and specification documents for the Spovies app.
 
 ## Design Reference
 
-The `stitch/code.html` file is the visual and interaction quality bar for the entire app.
+The visual and interaction quality bar for the app was the original Stitch design mockup (not included in this repository).
 Every screen must match or exceed this standard in:
 
 - Glass morphism effects (backdrop-filter blur)

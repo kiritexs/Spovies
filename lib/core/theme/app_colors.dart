@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Spovies color palette — extracted from stitch/code.html design reference.
+/// Spovies color palette — extracted from the original Stitch design mockup (not included in this repository).
 ///
 /// Every color token is mapped 1:1 from the Tailwind config in the HTML template.
 abstract final class AppColors {

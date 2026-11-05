@@ -47,7 +47,7 @@ class PlayerEvent {
   /// Parse a plugin's postMessage payload.
   ///
   /// Three shapes are supported — standard `PLAYER_EVENT`, the flat
-  /// Provider D format, and the Provider C native format. Field
+  /// channel format, and the native time-event format. Field
   /// mappings per provider are in `docs/architecture/PLUGINS.md`.
   static PlayerEvent? tryParse(String rawMessage) {
     try {
@@ -64,7 +64,9 @@ class PlayerEvent {
 
       final eventValue = json['event'];
 
-      // 1) Standard PLAYER_EVENT (Provider A, Provider C, Provider B).
+      // TODO(plugin): configure your own source — the three payload shapes
+      // below were written against specific embed providers.
+      // 1) Standard PLAYER_EVENT (Providers A, B and C).
       //    Provider C omits "progress" — compute it from currentTime/duration.
       //    Provider B renames currentTime → timestamp and mediaType → type,
       //    hence the fallbacks below.
@@ -96,7 +98,7 @@ class PlayerEvent {
         );
       }
 
-      // 2) Provider D format: {"channel":"example-channel","event":"time","time":...,"duration":...,"percent":...}
+      // 2) Flat channel format: {"channel":"example-channel","event":"time","time":...,"duration":...,"percent":...}
       final channel = json['channel'];
       if (channel != null && eventValue != null) {
         final event = eventValue;
@@ -122,7 +124,7 @@ class PlayerEvent {
         }
       }
 
-      // 3) Provider C native: no "type" or "channel"; time in "time" or "data".
+      // 3) Native time-event format: no "type" or "channel"; time in "time" or "data".
       final durationVal = (json['duration'] as num?)?.toDouble();
       final timeVal =
           (json['time'] as num?)?.toDouble() ??

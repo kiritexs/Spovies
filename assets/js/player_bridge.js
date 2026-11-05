@@ -1,4 +1,4 @@
-// Forwards postMessage events from the page's own scripts (e.g. Provider A's
+// Forwards postMessage events from the page's own scripts (e.g. a provider's
 // PLAYER_EVENT) to the Dart side. Kept as a supplementary source; the
 // primary tracking lives in player_video_progress.js.
 (function() {
@@ -9,10 +9,11 @@
   // care about. Each forwarded message is one platform-channel IPC +
   // one failed PlayerEvent parse on the Dart side, so dropping these at
   // the JS edge directly improves Android frame budget.
+  // TODO(plugin): configure your own source — tune this noise list for it.
   var NOISE_PREFIXES = ['__ym', 'adscore'];
   var NOISE_SOURCES = [
     '"source":"cloudflare-challenge"', // Turnstile invisible captcha
-    '"type":"MEDIA_DATA"',             // Provider B internal watch-history sync —
+    '"type":"MEDIA_DATA"',             // Provider-internal watch-history sync —
                                         // not a per-event progress update; real
                                         // tracking comes from player_video_progress.js
                                         // hooking the <video> element directly.

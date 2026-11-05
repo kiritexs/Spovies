@@ -125,13 +125,13 @@ repeatedly for one warning; `about:blank` fires several
 `onUpdateVisitedHistory` callbacks during the transition. Keying by
 recovery type means an `about:blank` recovery does not silence the
 SmartScreen recovery firing milliseconds later for the same root
-incident (Provider D → bad redirect → both signals together).
+incident (embed page → bad redirect → both signals together).
 
 **Circuit breaker** is a true sliding window over
 `_kRecoveryWindowDuration`. Each recovery's timestamp goes into
 `_recentRecoveries`; every call prunes stale entries and trips when the
 live count crosses `_kMaxRecoveriesPerWindow`. This protects against
-backends like `example.com` that 522 + redirect to a flagged ad
+backends that 522 + redirect to a flagged ad
 domain in a loop — after 3 attempts in 15 s the user gets an error and
 can pick a different plugin.
 

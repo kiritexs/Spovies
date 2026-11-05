@@ -40,7 +40,7 @@ The **SpoviesPlugin** interface is the contract between the app and any media pr
 | `episode_item` | Play icon next to each episode in a list | Per-episode streaming |
 | `media_card_context` | Long-press menu or quick-play overlay on home/search cards | Quick access from discovery |
 
-**Multiplicity:** A single plugin (e.g., Provider A) can register for multiple hooks via `hooks: ["media_header", "episode_item"]`.
+**Multiplicity:** A single plugin (e.g., an example source) can register for multiple hooks via `hooks: ["media_header", "episode_item"]`.
 
 ---
 
@@ -264,7 +264,7 @@ class MediaItem {
 {
   "pluginId": "example-source",
   "version": "1.2.0",
-  "name": "Provider A",
+  "name": "Example Source",
   "description": "Stream movies and shows",
   "iconUrl": "https://example.com/icon.png",
   "hooks": ["media_header", "episode_item"],
@@ -410,7 +410,7 @@ API responses are cached locally in Hive with configurable TTLs via `TmdbCacheIn
 
 - [x] Project setup: Flutter, dependencies (Riverpod, Hive, Dio, `google_fonts`, `cached_network_image`)
 - [x] Folder structure per Clean Architecture
-- [x] Design system: `AppTheme`, `AppColors`, `AppTextStyles`, `AppSpacing` matching `stitch/code.html` tokens
+- [x] Design system: `AppTheme`, `AppColors`, `AppTextStyles`, `AppSpacing` matching the original design mockup's tokens
 - [x] TMDB API wrapper: `TmdbApi` class with Bearer token auth, retry & cache interceptors
 - [x] Image loading with `CachedNetworkImage` + shimmer placeholder
 - [x] Core entities: `MediaItem`, `Episode`, `CastMember`, `MediaMetadata`
@@ -448,7 +448,7 @@ API responses are cached locally in Hive with configurable TTLs via `TmdbCacheIn
 ### Phase 4: WebView Player & Progress Tracking ✅
 
 - [x] Full-screen WebView container with landscape support
-- [x] EventBridge: `postMessage` listener with multi-format support (Provider A, Provider D, Provider C)
+- [x] EventBridge: `postMessage` listener with multi-format support (PLAYER_EVENT, flat channel, native time-event)
 - [x] Universal HTML5 `<video>` element tracker (fallback for all plugins)
 - [x] `WatchHistoryRepository` + Hive persistence for `UserProgress`
 - [x] Auto-resume: seeks to last saved position
@@ -470,7 +470,7 @@ API responses are cached locally in Hive with configurable TTLs via `TmdbCacheIn
 - [x] Shimmer/skeleton loading states on all screens
 - [x] Watch status system (watching, completed, dropped, on-hold, plan-to-watch)
 - [x] Watchlist with status filtering
-- [x] Desktop support: Windows, macOS, Linux (window_manager, side nav, window frame)
+- [x] Desktop support: Windows (window_manager, side nav, window frame); macOS/Linux runners are not configured in this repository
 - [x] Search screen with live TMDB results
 - [x] All Media paginated browsing screen
 
@@ -765,7 +765,7 @@ final exportImportServiceProvider = Provider<ExportImportService>((ref) => ...);
 
 ## 8. UI/UX Design System
 
-> **Reference:** `stitch/code.html` — The delivered app must match or exceed the visual and interaction quality of this reference at every screen. No component should feel "less polished" than the reference. This section is a binding constraint, not a suggestion.
+> **Reference:** the original Stitch design mockup (not included in this repository) — The delivered app must match or exceed the visual and interaction quality of this reference at every screen. No component should feel "less polished" than the reference. This section is a binding constraint, not a suggestion.
 
 ---
 

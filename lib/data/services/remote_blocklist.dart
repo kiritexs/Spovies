@@ -92,7 +92,7 @@ const _kFallbackDomains = <String>[
   'adskeeper.co.uk', 'a-ads.com', 'ad-maven.com', 'admaven.co',
   'revcontent.com', 'mgid.com', 'bidvertiser.com', 'richpush.co',
   'galaksion.com', 'acint.net',
-  // ACS / example.com specific
+  // ACS ad CDN
   'acscdn.com', 'adexchangeclear.com', 'crcdn.org',
   // Streaming-site aggressive redirectors
   'gamerhit.co', 'trakzon.com', 'goosebomb.com', 'gryphline.com',

@@ -77,7 +77,7 @@ final appRouter = GoRouter(
         data: ThemeData.dark(),
         child: const LicensePage(
           applicationName: 'Spovies',
-          applicationVersion: '1.0.0',
+          applicationVersion: '0.1.4',
         ),
       ),
     ),

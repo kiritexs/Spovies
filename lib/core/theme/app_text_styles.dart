@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Spovies typography system — Spline Sans, matching stitch/code.html spec.
+/// Spovies typography system — Spline Sans, matching the original Stitch design mockup (not included in this repository).
 abstract final class AppTextStyles {
   static String get _fontFamily => GoogleFonts.splineSans().fontFamily!;
 

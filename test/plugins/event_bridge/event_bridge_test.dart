@@ -56,7 +56,7 @@ void main() {
     });
   });
 
-  group('PlayerEvent.tryParse — Provider D format', () {
+  group('PlayerEvent.tryParse — flat channel format', () {
     test('parses channel + event + percent', () {
       final raw = jsonEncode({
         'channel': 'example-channel',
@@ -73,7 +73,7 @@ void main() {
     });
   });
 
-  group('PlayerEvent.tryParse — Provider C native format', () {
+  group('PlayerEvent.tryParse — native time-event format', () {
     test('parses event/time/duration into 0-100 progress', () {
       final raw = jsonEncode({
         'event': 'time',

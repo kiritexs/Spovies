@@ -1,5 +1,5 @@
 name: spovies
-description: "A new Flutter project."
+description: "Cross-platform movie & TV discovery app built with Flutter, Riverpod and the TMDB API."
 publish_to: 'none'
 version: 0.1.4
 

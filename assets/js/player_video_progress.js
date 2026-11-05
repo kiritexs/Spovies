@@ -2,7 +2,8 @@
 //
 // Hooks directly into the HTML5 <video> element's native events so watch
 // progress is tracked for **every** plugin — not just those that emit
-// their own postMessage events (like Provider A).
+// their own postMessage events (as some providers do).
+// TODO(plugin): configure your own source.
 //
 // Also handles auto-resume: if RESUME_TARGET > 0, the script seeks the
 // <video> to that position as soon as the media metadata is loaded.

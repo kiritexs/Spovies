@@ -1,7 +1,7 @@
 #define MyAppName "Spovies"
 #define MyAppVersion "0.1.4"
 #define MyAppPublisher "Kiritex"
-#define MyAppURL "https://github.com/kiritexs"
+#define MyAppURL "https://github.com/kiritexs/Spovies"
 #define MyAppExeName "spovies.exe"
 #define BuildPath "..\..\build\windows\x64\runner\Release"
 

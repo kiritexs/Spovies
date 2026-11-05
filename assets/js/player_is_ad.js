@@ -5,7 +5,7 @@
 //
 // FOOTGUN: entries match as raw substrings against the ENTIRE URL.
 // Never add generic words ("ads" matches "uploads", "payloads") and
-// never add streaming hosts (host-a, host-b, …) — aggregators
+// never add streaming hosts (embed/CDN domains) — aggregators
 // fetch their server menu through those. See AD_BLOCKING.md.
 (function() {
   if (window.__spoviesIsAdReady) return;
@@ -22,7 +22,7 @@
     'adskeeper', 'clickadu', 'clickaine',
     // Aggressive ad redirector domains seen on streaming sites
     'gamerhit', 'trakzon', 'goosebomb', 'gryphline',
-    // example.com's redirect target. SmartScreen blocks it and replaces
+    // An embed host's redirect target. SmartScreen blocks it and replaces
     // the player with a red warning — block it before that fires.
     'brightadnetwork'
   ];

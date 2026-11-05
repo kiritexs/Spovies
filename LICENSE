@@ -1,0 +1,325 @@
+Spovies Source-Available Portfolio License
+==========================================
+(based on the Kiritex Proprietary Software License)
+
+Copyright (c) 2026 Kiritex.
+All Rights Reserved Worldwide.
+
+Spovies is a cross-platform movie and TV discovery app. This software,
+together with its source code, design, user interface, architecture,
+injected scripts (assets/js), configuration, documentation, and every
+other file in this repository that is not listed under Section 4
+(collectively, the "Work"), is the proprietary property of its author,
+who publishes under the name "Kiritex" (the "Author"). "You" means any
+person or entity that accesses, views, clones, builds, or otherwise uses
+the Work.
+
+The Work is published in source-available form as a portfolio project,
+so that people can read it, study it, and build it to evaluate the
+Author's work. Public visibility is NOT an open-source license and does
+NOT place the Work in the public domain. The Author reserves all rights
+in and to the Work except those expressly granted in Section 2.
+
+The Work does not host, provide, or include any video content or content
+source. Playback is disabled in the published Work.
+
+BY ACCESSING, VIEWING, CLONING, BUILDING, OR OTHERWISE USING THE WORK,
+YOU ACKNOWLEDGE THAT YOU HAVE READ AND AGREE TO BE BOUND BY THIS LICENSE.
+IF YOU DO NOT AGREE, YOU MUST NOT ACCESS OR USE THE WORK.
+
+
+1. OWNERSHIP
+------------
+
+The Work is owned exclusively by the Author. All intellectual property
+rights in the Work — including copyright, design rights, moral rights,
+trade secrets, trade dress, and trademarks — belong solely to the
+Author. The Work is protected worldwide under the Berne Convention for
+the Protection of Literary and Artistic Works, the WIPO Copyright
+Treaty, the TRIPS Agreement, and the national laws of every country in
+which protection is available. Nothing in this LICENSE transfers or
+assigns any ownership, in whole or in part, to anyone.
+
+
+2. PERMITTED USE
+----------------
+
+You MAY, free of charge and without asking:
+
+  (a) Read and study the source code and documentation.
+
+  (b) Clone the official repository and build the Work on your own
+      devices, solely to evaluate it — for example, to review the
+      Author's skills for hiring, collaboration, or a technical
+      discussion. Running a build requires your own TMDB credentials;
+      see Section 4.
+
+  (c) Quote short excerpts of code (up to 25 lines in total per article,
+      review, or other work) in good-faith commentary, education, or
+      review, provided that clear attribution to "Spovies by Kiritex
+      (https://github.com/kiritexs/Spovies)" is given, the excerpt is
+      not the substantive content of your work, and the use is not
+      commercial.
+
+  (d) Link to the official repository and share it with others.
+
+Forks created with GitHub's fork feature, as GitHub's Terms of Service
+allow, may be used only to view the Work and to propose contributions
+to the official repository (Section 5). They grant no further right:
+they must not be built for, distributed to, or used by anyone else, or
+published anywhere else.
+
+
+3. PROHIBITED USE
+-----------------
+
+Except as expressly allowed in Section 2, you MAY NOT, anywhere in the
+world, in any form or medium, in whole or in part, without the prior
+written permission of the Author:
+
+  (a) Copy, mirror, republish, or redistribute the Work or any
+      substantial portion of it — as source code or as a build,
+      installer, or package — including on another repository or
+      website.
+
+  (b) Publish or distribute the Work, or any modified or rebranded
+      version of it, to any app store, marketplace, package registry,
+      download site, or other platform.
+
+  (c) Sell, sublicense, lease, rent, bundle, or otherwise commercialize
+      the Work, or use it in any commercial product or service, or in
+      work for clients.
+
+  (d) Create and distribute derivative works, or reuse the Work's
+      architecture, design system, layout, component anatomy, color
+      tokens, typography, copy, or trade dress as the basis of your own
+      product, project, or service.
+
+  (e) Train, fine-tune, evaluate, or otherwise use the Work as input to
+      any machine-learning model, dataset, embedding, or AI system, for
+      any purpose, commercial or non-commercial.
+
+  (f) Strip, remove, alter, or obscure any copyright notice,
+      attribution, branding, or this LICENSE file from any copy or
+      excerpt of the Work.
+
+  (g) Use the name "Spovies" for a media or streaming application, or
+      the name "Kiritex", the Author's name, or any associated mark or
+      visual identity, in any way that suggests the official app,
+      endorsement, partnership, or origin where none exists.
+
+  (h) Re-enable the Work's plugin or playback system, or connect it to
+      any content source, in order to access, stream, or distribute
+      content you are not authorized to access, or distribute any build
+      of the Work with such a source configured.
+
+  (i) Reverse-engineer, decompile, or disassemble any compiled build of
+      the Work published by the Author, or circumvent any technical or
+      license measure that protects it.
+
+Any use of the Work beyond Section 2 requires a separate, written
+license granted by the Author.
+
+
+4. THIRD-PARTY DATA AND COMPONENTS
+----------------------------------
+
+The following are NOT part of the Work, are not owned by the Author, and
+are not licensed by this LICENSE. Each stays under its own terms:
+
+  (a) Movie and TV metadata and images from The Movie Database (TMDB),
+      which the Work fetches at run time with credentials you supply.
+      Their use is governed by TMDB's Terms of Use and API Terms. This
+      product uses the TMDB API but is not endorsed or certified by
+      TMDB.
+
+  (b) The Public Suffix List bundled in assets/public_suffix_list.dat,
+      maintained by the Mozilla Foundation and contributors, under the
+      Mozilla Public License 2.0 (notice kept at the top of that file).
+
+  (c) The Spline Sans typeface, loaded through the google_fonts package,
+      under the SIL Open Font License 1.1.
+
+  (d) Ad-blocking lists the Work may download at run time (OISD, Peter
+      Lowe's list, AdGuard DNS filter, Steven Black's hosts, NoCoin),
+      each under the terms published by its maintainers.
+
+  (e) Every software library, SDK, and package the Work depends on, as
+      listed in pubspec.yaml and pubspec.lock (MIT, BSD, Apache-2.0, and
+      others).
+
+Nothing in this LICENSE grants additional rights to those components or
+modifies their original licenses.
+
+
+5. CONTRIBUTIONS
+----------------
+
+Bug reports, ideas, and pull requests are welcome. By submitting a
+contribution (code, documentation, design, or any other material), you
+confirm that it is your own original work and that you have the right
+to submit it, and you grant the Author a free, perpetual, irrevocable,
+worldwide, non-exclusive license to use, modify, publish, and sublicense
+it as part of the Work. You keep the copyright in your contribution. The
+Author may credit contributors but is not obliged to accept, use, or
+keep any contribution.
+
+
+6. TRADEMARKS
+-------------
+
+"Kiritex" and the Kiritex wordmark and visual identity, and the name
+"Spovies" with its icon as used for this app, identify the Author's
+work. They are not licensed under this LICENSE. Use of these names for
+identification, attribution, or critical commentary in good faith is
+permitted. All other uses — including in app names, domain names,
+project names, social handles, or marketing material for a media or
+streaming application — require explicit prior written permission.
+
+
+7. RESERVATION OF RIGHTS
+------------------------
+
+All rights not expressly granted in Section 2 are reserved by the
+Author. No license or right is granted by implication, estoppel, or
+otherwise under any patent, trademark, or other intellectual property
+right of the Author. The Author may change, withdraw, relicense, or stop
+distributing the Work at any time without notice.
+
+
+8. TERMINATION
+--------------
+
+The permissions in Section 2 terminate automatically and immediately,
+without notice, upon any breach of this LICENSE. Upon termination you
+must cease all use of the Work and destroy all copies in your possession
+or control. Sections 1, 3, 4, 5, 6, 7, 9, 11, 12, and 13 survive
+termination.
+
+
+9. ENFORCEMENT
+--------------
+
+Unauthorized use of the Work is a violation of copyright law, trademark
+law, and (where applicable) the terms of this LICENSE. The Author
+reserves the right to pursue all available legal remedies, in any
+jurisdiction where infringement occurs, including (where available) DMCA
+and equivalent takedown notices, cease-and-desist demands, statutory and
+actual damages, account of profits, injunctive relief, and recovery of
+legal fees, against any party found in violation.
+
+If you discover unauthorized copies, derivatives, or redeployments of
+the Work, please report them through https://kiritex.com or
+https://github.com/kiritexs.
+
+
+10. PERMISSION REQUESTS
+-----------------------
+
+For any use not expressly permitted above — including redistribution,
+publishing a build, commercial licensing, or extensive code reuse —
+contact the Author:
+
+  Kiritex
+  https://kiritex.com
+  https://github.com/kiritexs
+
+Permission, if granted, will be in writing and will specify the scope,
+duration, territory, and any compensation involved.
+
+
+11. DISCLAIMER OF WARRANTY AND LIMITATION OF LIABILITY
+------------------------------------------------------
+
+THE WORK IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
+NON-INFRINGEMENT. THE AUTHOR MAKES NO REPRESENTATION ABOUT THE
+AVAILABILITY OR ACCURACY OF ANY THIRD-PARTY DATA OR SERVICE THE WORK
+USES, INCLUDING TMDB.
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL THE AUTHOR BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR
+EXEMPLARY DAMAGES, OR FOR ANY CLAIM OR LIABILITY WHATSOEVER, WHETHER IN
+CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
+WITH THE WORK OR THE USE OR OTHER DEALINGS IN THE WORK. IN ANY EVENT,
+THE AUTHOR'S TOTAL AGGREGATE LIABILITY SHALL NOT EXCEED THE AMOUNT YOU
+PAID FOR THE WORK, WHICH FOR A NO-CHARGE LICENSE IS ZERO (USD 0).
+
+
+12. INTERNATIONAL PROTECTION, GOVERNING LAW, AND JURISDICTION
+-------------------------------------------------------------
+
+  (a) Worldwide protection. The Work is protected by copyright and
+      related rights worldwide under the international treaties named in
+      Section 1, as implemented by the national laws of each country.
+      The Author may assert and enforce these rights in every country in
+      which the Work is protected.
+
+  (b) Governing law. This LICENSE is governed by and construed under the
+      laws of the Arab Republic of Egypt, without regard to its
+      conflict-of-laws rules, together with the international treaties
+      referenced above.
+
+  (c) Non-exclusive jurisdiction. The competent courts of Cairo, Egypt
+      have jurisdiction over disputes arising under this LICENSE. This
+      jurisdiction is NON-EXCLUSIVE: the Author may, at the Author's sole
+      option, bring proceedings, seek relief, or enforce any judgment
+      against an infringing party in any other competent court or
+      jurisdiction — including where the infringer resides, is
+      established, or holds assets, or where the infringement occurs —
+      and you submit to the jurisdiction of any such forum chosen by the
+      Author.
+
+  (d) Equitable relief. You acknowledge that any breach may cause the
+      Author irreparable harm for which monetary damages are inadequate,
+      and that the Author is entitled to seek injunctive and other
+      equitable relief in any competent jurisdiction, without the need
+      to post bond.
+
+
+13. GENERAL
+-----------
+
+  (a) Entire agreement. This LICENSE is the entire agreement between you
+      and the Author concerning the Work and supersedes all prior or
+      contemporaneous understandings regarding it.
+
+  (b) No waiver. The Author's failure to enforce any provision is not a
+      waiver of the right to enforce it later.
+
+  (c) Severability. If any provision is held invalid or unenforceable,
+      it shall be limited or severed to the minimum extent necessary,
+      and the remaining provisions shall continue in full force and
+      effect.
+
+  (d) Assignment. The Author may freely assign or transfer this LICENSE
+      and all rights in the Work. You may not assign or transfer any
+      rights or obligations under this LICENSE without the Author's
+      prior written consent.
+
+  (e) Headings. Headings are for convenience only and do not affect
+      interpretation.
+
+  (f) No waiver of mandatory rights. Nothing in this LICENSE excludes or
+      limits any right or remedy that cannot be excluded or limited
+      under applicable mandatory law; this LICENSE applies to the
+      maximum extent permitted by such law.
+
+  (g) Notices. Legal notices to the Author may be sent through
+      https://kiritex.com or https://github.com/kiritexs and are deemed
+      given when sent.
+
+  (h) License versions. The Author may publish revised versions of this
+      LICENSE. The version distributed with a given copy of the Work
+      governs that copy.
+
+
+--------------------------------------------------------------------------------
+
+  Last updated: 2026-11-05
+  Copyright:    Kiritex  (All Rights Reserved Worldwide)
+  Contact:      https://github.com/kiritexs
+  Trade name:   Kiritex
+  Site:         https://kiritex.com
+  SPDX-Id:      LicenseRef-Spovies-Portfolio

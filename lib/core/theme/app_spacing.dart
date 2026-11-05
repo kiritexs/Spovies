@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Spacing and border-radius tokens from stitch/code.html Tailwind config.
+/// Spacing and border-radius tokens from the original Stitch design mockup (not included in this repository).
 abstract final class AppSpacing {
   // ─── Border Radii ─────────────────────────────────────────────────────
   static const double radiusBase = 8.0; // 0.5rem

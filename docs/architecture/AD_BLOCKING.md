@@ -30,11 +30,11 @@ Two rules follow from that:
 - **Never add generic words.** `ads` matches `loads`, `uploads`,
   `headers`, `payloads`, `downloads` — false positives that starve
   legitimate API endpoints.
-- **Never add streaming hosts.** `host-a`, `host-b`, `host-c`,
-  `host-d` and friends are how aggregators fetch their server menu.
+- **Never add streaming hosts.** Embed and streaming-CDN domains
+  are how aggregators fetch their server menu.
   Blocking those leaves the picker UI empty.
 
-`brightadnetwork` deserves special mention: it is `example.com`'s
+`brightadnetwork` deserves special mention: it is an embed host's
 server-side redirect target. Microsoft Defender SmartScreen blocks the
 domain outright and replaces the player with a red warning page when the
 redirect fires. Blocking it client-side stops the redirect before

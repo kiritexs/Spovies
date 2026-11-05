@@ -50,3 +50,6 @@ app.*.map.json
 
 # IDA Pro MCP (local, machine-specific paths)
 .mcp.json
+
+# Local archive of scratch files and removed values (not part of the portfolio)
+_archive/

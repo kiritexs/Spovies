@@ -206,8 +206,8 @@ The Event Bridge auto-detects multiple postMessage formats:
 | Format | Structure | Used By |
 |--------|-----------|---------|
 | **PLAYER_EVENT** (recommended) | `{ type: "PLAYER_EVENT", data: { event, currentTime, duration, ... } }` | Provider A, custom plugins |
-| **Provider D** | `{ channel, event, time, duration, percent }` | Provider D |
-| **Provider C native** | `{ event: "time"\|"pause"\|"userpause", time, duration }` | Provider C |
+| **Flat channel** | `{ channel, event, time, duration, percent }` | Provider D |
+| **Native time-event** | `{ event: "time"\|"pause"\|"userpause", time, duration }` | Provider C |
 
 ### Throttling Behavior
 
@@ -346,7 +346,7 @@ Spovies validates your manifest against the schema. Invalid manifests are reject
 {
   "pluginId": "example-source",
   "version": "1.2.0",
-  "name": "Provider A",
+  "name": "Example Source",
   "description": "Stream movies and shows",
   "iconUrl": "https://example.com/icon.png",
   "hooks": ["media_header", "episode_item"],
@@ -391,8 +391,8 @@ Spovies validates your manifest against the schema. Invalid manifests are reject
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2025-03-02 | Initial specification |
-| 2.0 | 2026-04-21 | Updated placeholder format to `{{tmdbId}}`/`{{type}}`, added registry support, documented multi-format Event Bridge (Provider A, Provider D, Provider C), added universal HTML5 fallback, corrected required/optional fields |
+| 2.0 | 2026-04-21 | Updated placeholder format to `{{tmdbId}}`/`{{type}}`, added registry support, documented multi-format Event Bridge (PLAYER_EVENT, flat channel, native time-event), added universal HTML5 fallback, corrected required/optional fields |
 
 ---
 
-*For questions or to submit your plugin for inclusion in the official Spovies plugin directory, contact the Spovies team.*
+*Spovies is a portfolio project: playback is disabled in this build and there is no plugin directory. This specification documents the plugin system for review.*
