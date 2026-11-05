@@ -30,13 +30,27 @@
 
 ## Screenshots
 
-| Home | Explore | Details |
-|---|---|---|
-| _screenshot coming soon_ | _screenshot coming soon_ | _screenshot coming soon_ |
+<p align="center">
+  <img src="https://kiritex.com/spovies/sv-hero.jpg" alt="Three phones showing Spovies — home, a title detail page, and the genre browser — with the app icon" width="720" />
+</p>
 
-| Watchlist | Settings | Desktop |
+### Mobile
+
+| Home | Discover | Details |
 |---|---|---|
-| _screenshot coming soon_ | _screenshot coming soon_ | _screenshot coming soon_ |
+| <img src="https://kiritex.com/spovies/sv-m-home.jpg" alt="Spovies mobile home with a featured hero and glass bottom nav" width="240" /> | <img src="https://kiritex.com/spovies/sv-m-discover.jpg" alt="Spovies mobile discover with search, trending, and genre grid" width="240" /> | <img src="https://kiritex.com/spovies/sv-m-detail.jpg" alt="Spovies mobile title detail with synopsis and cast" width="240" /> |
+
+### Desktop
+
+| Home | Discover |
+|---|---|
+| <img src="https://kiritex.com/spovies/sv-home.jpg" alt="Spovies desktop home with sidebar navigation and a featured hero" /> | <img src="https://kiritex.com/spovies/sv-discover.jpg" alt="Spovies desktop discover with trending row and genre grid" /> |
+
+| Details | Library | Settings |
+|---|---|---|
+| <img src="https://kiritex.com/spovies/sv-detail.jpg" alt="Spovies desktop title detail with cast and crew" /> | <img src="https://kiritex.com/spovies/sv-watchlist.jpg" alt="Spovies desktop library with watch-status tabs" /> | <img src="https://kiritex.com/spovies/sv-settings.jpg" alt="Spovies desktop settings" /> |
+
+More on the [project page](https://kiritex.com/work/spovies).
 
 ## Tech stack
 
