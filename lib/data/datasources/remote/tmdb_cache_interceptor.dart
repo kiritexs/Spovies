@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -10,7 +11,10 @@ import '../local/hive_service.dart';
 ///
 /// - On request: check cache, return cached response if fresh
 /// - On response: store response in cache
-/// - On error: return stale cache as fallback (offline support)
+/// - On a network or server error: return stale cache as a fallback
+///   (offline support)
+///
+/// [prune] runs at startup so the box doesn't grow forever.
 class TmdbCacheInterceptor extends Interceptor {
   /// TTL rules by URL path pattern (first match wins).
   static final List<_CacheRule> _rules = [
@@ -25,7 +29,50 @@ class TmdbCacheInterceptor extends Interceptor {
 
   static const Duration _defaultTtl = Duration(hours: 1);
 
+  /// How long an expired entry is kept as an offline fallback.
+  static const Duration staleWindow = Duration(days: 7);
+
+  /// Most entries kept after [prune]. Each is one TMDB response.
+  static const int maxEntries = 500;
+
   Box<Map> get _box => HiveService.tmdbCacheBox;
+
+  /// Drop entries that expired more than [staleWindow] ago (or are
+  /// malformed), then keep only the [maxEntries] that expire last.
+  static Future<void> prune(Box<Map> box, {DateTime? now}) async {
+    final cutoff =
+        (now ?? DateTime.now()).millisecondsSinceEpoch -
+        staleWindow.inMilliseconds;
+    final drop = <dynamic>[];
+    final kept = <({dynamic key, int expiresAt})>[];
+    for (final key in box.keys) {
+      final expiresAt = box.get(key)?['expiresAt'];
+      if (expiresAt is! int || expiresAt < cutoff) {
+        drop.add(key);
+      } else {
+        kept.add((key: key, expiresAt: expiresAt));
+      }
+    }
+    if (kept.length > maxEntries) {
+      kept.sort((a, b) => b.expiresAt.compareTo(a.expiresAt));
+      drop.addAll(kept.skip(maxEntries).map((e) => e.key));
+    }
+    if (drop.isNotEmpty) await box.deleteAll(drop);
+  }
+
+  /// Decode a cached body, or `null` (and evict it) if it is corrupt.
+  dynamic _decode(String key, Map cached) {
+    final body = cached['body'];
+    if (body is String) {
+      try {
+        return jsonDecode(body);
+      } on FormatException {
+        // fall through
+      }
+    }
+    unawaited(_box.delete(key));
+    return null;
+  }
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
@@ -41,12 +88,12 @@ class TmdbCacheInterceptor extends Interceptor {
       final expiresAt = cached['expiresAt'] as int? ?? 0;
       final now = DateTime.now().millisecondsSinceEpoch;
 
-      if (now < expiresAt) {
+      final data = now < expiresAt ? _decode(key, cached) : null;
+      if (data != null) {
         // Cache hit — return cached response
         if (kDebugMode) {
           debugPrint('[Cache] HIT: ${options.uri.path}');
         }
-        final data = jsonDecode(cached['body'] as String);
         handler.resolve(
           Response(
             requestOptions: options,
@@ -70,10 +117,12 @@ class TmdbCacheInterceptor extends Interceptor {
       final expiresAt =
           DateTime.now().millisecondsSinceEpoch + ttl.inMilliseconds;
 
-      _box.put(key, {
-        'body': jsonEncode(response.data),
-        'expiresAt': expiresAt,
-      });
+      unawaited(
+        _box.put(key, {
+          'body': jsonEncode(response.data),
+          'expiresAt': expiresAt,
+        }),
+      );
     }
 
     handler.next(response);
@@ -81,16 +130,21 @@ class TmdbCacheInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
-    // On network error, try to serve stale cache
-    if (err.requestOptions.method == 'GET') {
+    // On a network or server error, try to serve stale cache. A 4xx is a
+    // real answer (bad id, bad token), so it is passed through.
+    final status = err.response?.statusCode;
+    final offlineOrServer = status == null || status >= 500;
+    if (err.requestOptions.method == 'GET' &&
+        offlineOrServer &&
+        err.type != DioExceptionType.cancel) {
       final key = _cacheKey(err.requestOptions);
       final cached = _box.get(key);
+      final data = cached == null ? null : _decode(key, cached);
 
-      if (cached != null) {
+      if (data != null) {
         if (kDebugMode) {
           debugPrint('[Cache] STALE fallback: ${err.requestOptions.uri.path}');
         }
-        final data = jsonDecode(cached['body'] as String);
         handler.resolve(
           Response(
             requestOptions: err.requestOptions,

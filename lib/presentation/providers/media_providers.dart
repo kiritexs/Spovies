@@ -36,7 +36,8 @@ final dioProvider = Provider<Dio>((ref) {
   if (kDebugMode) {
     dio.interceptors.add(
       LogInterceptor(
-        requestHeader: true,
+        // Headers carry the TMDB bearer token; keep it out of logs.
+        requestHeader: false,
         responseHeader: true,
         requestBody: false,
         error: true,

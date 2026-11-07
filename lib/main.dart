@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -9,6 +10,7 @@ import 'package:window_manager/window_manager.dart';
 import 'core/theme/app_theme.dart';
 import 'core/utils/host_utils.dart';
 import 'data/datasources/local/hive_service.dart';
+import 'data/datasources/remote/tmdb_cache_interceptor.dart';
 import 'presentation/router/app_router.dart';
 import 'presentation/screens/player/player_scripts.dart';
 
@@ -27,6 +29,8 @@ void main() async {
     HostUtils.init(),
     PlayerScripts.load(),
   ]);
+  // Not awaited: trimming old TMDB responses must not delay startup.
+  unawaited(TmdbCacheInterceptor.prune(HiveService.tmdbCacheBox));
 
   // Desktop Specific Initialization
   if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
@@ -57,7 +61,16 @@ void main() async {
     await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   }
 
-  runApp(const ProviderScope(child: SpoviesApp()));
+  runApp(
+    ProviderScope(
+      // Riverpod retries failed providers up to 10 times by default. Dio's
+      // RetryInterceptor already retries network and 5xx errors, so a
+      // second layer only delays the error screen (minutes when offline).
+      // Retry buttons invalidate the provider instead.
+      retry: (_, _) => null,
+      child: const SpoviesApp(),
+    ),
+  );
 }
 
 // Enable Mouse dragging for Desktop Web/Windows
