@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/config/feature_flags.dart';
+import '../../providers/app_info_provider.dart';
+import '../../widgets/app_snack_bar.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -139,7 +141,7 @@ class SettingsScreen extends ConsumerWidget {
                   context,
                   icon: Icons.palette_outlined,
                   title: 'Theme',
-                  subtitle: 'Dark',
+                  subtitle: 'Dark (only)',
                   trailing: const Icon(
                     Icons.check_circle,
                     color: AppColors.primaryOnDark,
@@ -182,7 +184,10 @@ class SettingsScreen extends ConsumerWidget {
                   context,
                   icon: Icons.info_outline_rounded,
                   title: 'Spovies',
-                  subtitle: 'v0.1.4 • A KIRITEX PROJECT',
+                  subtitle: switch (ref.watch(appVersionProvider)) {
+                    AsyncData(:final value) => 'v$value • A KIRITEX PROJECT',
+                    _ => 'A KIRITEX PROJECT',
+                  },
                 ),
                 const SizedBox(height: 8),
                 _buildGlassTile(
@@ -194,13 +199,13 @@ class SettingsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 8),
 
-                // _buildGlassTile(
-                //   context,
-                //   icon: Icons.gavel_rounded,
-                //   title: 'Open Source Licenses',
-                //   subtitle: 'View third-party library licenses',
-                //   onTap: () => context.push('/licenses'),
-                // ),
+                _buildGlassTile(
+                  context,
+                  icon: Icons.gavel_rounded,
+                  title: 'Open Source Licenses',
+                  subtitle: 'Libraries and the Spline Sans font',
+                  onTap: () => context.push('/licenses'),
+                ),
                 const SizedBox(height: AppSpacing.sectionGap + 8),
 
                 // ── App badge ─────────────────────────────────────
@@ -297,39 +302,46 @@ class SettingsScreen extends ConsumerWidget {
             borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
             border: Border.all(color: AppColors.glassBorder),
           ),
-          child: ListTile(
-            onTap: onTap,
-            leading: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+          // Transparent Material so the ListTile's hover, focus and splash
+          // ink paints above the glass gradient instead of behind it.
+          child: Material(
+            type: MaterialType.transparency,
+            child: ListTile(
+              onTap: onTap,
+              focusColor: AppColors.focus.withValues(alpha: 0.15),
+              hoverColor: Colors.white.withValues(alpha: 0.04),
+              leading: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+                ),
+                child: Icon(
+                  icon,
+                  color: accent == AppColors.primary
+                      ? AppColors.primaryOnDark
+                      : accent,
+                  size: 20,
+                ),
               ),
-              child: Icon(
-                icon,
-                color: accent == AppColors.primary
-                    ? AppColors.primaryOnDark
-                    : accent,
-                size: 20,
-              ),
+              title: Text(title, style: AppTextStyles.cardTitle),
+              subtitle: Text(subtitle, style: AppTextStyles.cardSubtitle),
+              trailing:
+                  trailing ??
+                  (disabled
+                      ? const Icon(
+                          Icons.block_rounded,
+                          color: AppColors.textMuted,
+                          size: 18,
+                        )
+                      : (onTap != null
+                            ? const Icon(
+                                Icons.chevron_right_rounded,
+                                color: AppColors.textSecondary,
+                              )
+                            : null)),
             ),
-            title: Text(title, style: AppTextStyles.cardTitle),
-            subtitle: Text(subtitle, style: AppTextStyles.cardSubtitle),
-            trailing:
-                trailing ??
-                (disabled
-                    ? const Icon(
-                        Icons.block_rounded,
-                        color: AppColors.textMuted,
-                        size: 18,
-                      )
-                    : (onTap != null
-                          ? const Icon(
-                              Icons.chevron_right_rounded,
-                              color: AppColors.textSecondary,
-                            )
-                          : null)),
           ),
         ),
       ),
@@ -424,14 +436,25 @@ class SettingsScreen extends ConsumerWidget {
 
   Future<void> _handleExport(BuildContext context) async {
     try {
-      _showSnackBar(context, 'Preparing export...', isLoading: true);
+      showAppSnackBar(
+        context,
+        'Preparing export…',
+        aboveNav: true,
+        showProgress: true,
+        duration: const Duration(seconds: 30),
+      );
       await ExportImportService.exportData();
       if (context.mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
       }
     } catch (e) {
       if (context.mounted) {
-        _showSnackBar(context, 'Export failed: $e', isError: true);
+        showAppSnackBar(
+          context,
+          'Export failed: $e',
+          aboveNav: true,
+          isError: true,
+        );
       }
     }
   }
@@ -457,7 +480,13 @@ class SettingsScreen extends ConsumerWidget {
       final confirmed = await _confirmImport(context, preview);
       if (!confirmed || !context.mounted) return;
 
-      _showSnackBar(context, 'Importing...', isLoading: true);
+      showAppSnackBar(
+        context,
+        'Importing…',
+        aboveNav: true,
+        showProgress: true,
+        duration: const Duration(seconds: 30),
+      );
       await ExportImportService.applyImport(preview);
 
       if (!context.mounted) return;
@@ -468,11 +497,16 @@ class SettingsScreen extends ConsumerWidget {
       ref.invalidate(watchlistProvider);
       ref.invalidate(installedPluginsProvider);
 
-      _showSnackBar(context, 'Data imported successfully!');
+      showAppSnackBar(context, 'Backup imported', aboveNav: true);
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        _showSnackBar(context, 'Import failed: $e', isError: true);
+        showAppSnackBar(
+          context,
+          'Import failed: $e',
+          aboveNav: true,
+          isError: true,
+        );
       }
     }
   }
@@ -646,9 +680,10 @@ class SettingsScreen extends ConsumerWidget {
               Navigator.pop(ctx);
               await onConfirm();
               if (context.mounted) {
-                _showSnackBar(
+                showAppSnackBar(
                   context,
                   '${dataName[0].toUpperCase()}${dataName.substring(1)} cleared',
+                  aboveNav: true,
                 );
               }
             },
@@ -656,44 +691,6 @@ class SettingsScreen extends ConsumerWidget {
             child: const Text('Clear'),
           ),
         ],
-      ),
-    );
-  }
-
-  void _showSnackBar(
-    BuildContext context,
-    String message, {
-    bool isError = false,
-    bool isLoading = false,
-  }) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            if (isLoading)
-              const Padding(
-                padding: EdgeInsets.only(right: 12),
-                child: SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            Expanded(child: Text(message)),
-          ],
-        ),
-        backgroundColor: isError ? Colors.red.shade900 : AppColors.surfaceDark,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-        ),
-        duration: isLoading
-            ? const Duration(seconds: 30)
-            : const Duration(seconds: 3),
       ),
     );
   }

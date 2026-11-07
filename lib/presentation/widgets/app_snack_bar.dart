@@ -19,13 +19,31 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showAppSnackBar(
   SnackBarAction? action,
   bool aboveNav = false,
   bool isError = false,
+  bool showProgress = false,
   Duration duration = const Duration(seconds: 3),
 }) {
   final hasBottomNav =
       aboveNav && MediaQuery.sizeOf(context).width < kDesktopBreakpoint;
   return (ScaffoldMessenger.of(context)..hideCurrentSnackBar()).showSnackBar(
     SnackBar(
-      content: Text(message),
+      content: showProgress
+          ? Row(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(right: 12),
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                Expanded(child: Text(message)),
+              ],
+            )
+          : Text(message),
       action: action,
       persist: false,
       duration: duration,
@@ -43,5 +61,20 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showAppSnackBar(
         borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
       ),
     ),
+  );
+}
+
+/// "Playback is disabled in this build", shown from every `/player` entry
+/// point while `kPluginsEnabled` is `false`. Pass [aboveNav] from tab
+/// screens (Home), not from pushed routes (Details).
+void showPlaybackUnavailableSnack(
+  BuildContext context, {
+  bool aboveNav = false,
+}) {
+  showAppSnackBar(
+    context,
+    'Playback is disabled in this build',
+    aboveNav: aboveNav,
+    duration: const Duration(seconds: 2),
   );
 }

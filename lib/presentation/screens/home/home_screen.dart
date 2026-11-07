@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:spovies/core/config/app_config.dart';
 import 'package:spovies/core/config/feature_flags.dart';
+import 'package:spovies/presentation/widgets/app_snack_bar.dart';
 import 'package:spovies/core/theme/app_colors.dart';
 import 'package:spovies/core/theme/app_spacing.dart';
 import 'package:spovies/core/theme/app_text_styles.dart';
@@ -177,7 +178,7 @@ Future<void> _continueWatching(
   UserProgress item,
 ) async {
   if (!kPluginsEnabled) {
-    showPlaybackUnavailableSnack(context);
+    showPlaybackUnavailableSnack(context, aboveNav: true);
     return;
   }
   final tmdbId = int.tryParse(item.mediaId);
@@ -255,7 +256,7 @@ Future<void> _openNextEpisode(
   int nextEpisode,
 ) async {
   if (!kPluginsEnabled) {
-    showPlaybackUnavailableSnack(context);
+    showPlaybackUnavailableSnack(context, aboveNav: true);
     return;
   }
   final tmdbId = int.tryParse(item.mediaId);
@@ -408,8 +409,9 @@ class _ContinueWatchingSection extends ConsumerWidget {
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: items.length,
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount:
-                            continueWatchingColumns(constraints.maxWidth),
+                        crossAxisCount: continueWatchingColumns(
+                          constraints.maxWidth,
+                        ),
                         mainAxisExtent: AppSpacing.continueWatchingHeight,
                         crossAxisSpacing: 16,
                         mainAxisSpacing: 12,
@@ -462,7 +464,9 @@ class _ErrorCard extends StatelessWidget {
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh, size: 18),
                 label: const Text('Retry'),
-                style: TextButton.styleFrom(foregroundColor: AppColors.primaryOnDark),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primaryOnDark,
+                ),
               ),
             ],
           ),

@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/config/feature_flags.dart';
+import '../../widgets/app_snack_bar.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_styles.dart';
@@ -686,7 +687,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.star_rounded, color: AppColors.primaryOnDark, size: 16),
+            const Icon(
+              Icons.star_rounded,
+              color: AppColors.primaryOnDark,
+              size: 16,
+            ),
             const SizedBox(width: 4),
             Text(
               details.metadata.rating!.toStringAsFixed(1),
@@ -970,7 +975,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 children: [
                   Icon(
                     current?.status.icon ?? Icons.playlist_add_rounded,
-                    color: isInLibrary ? AppColors.primaryOnDark : Colors.white70,
+                    color: isInLibrary
+                        ? AppColors.primaryOnDark
+                        : Colors.white70,
                     size: 22,
                   ),
                   const SizedBox(width: 10),
@@ -978,7 +985,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                     child: Text(
                       current?.status.displayName ?? 'Add to Library',
                       style: AppTextStyles.labelSmall.copyWith(
-                        color: isInLibrary ? AppColors.primaryOnDark : Colors.white70,
+                        color: isInLibrary
+                            ? AppColors.primaryOnDark
+                            : Colors.white70,
                         fontWeight: isInLibrary
                             ? FontWeight.w600
                             : FontWeight.normal,

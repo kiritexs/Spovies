@@ -28,7 +28,8 @@ the features exist:
 | Home → Continue Watching tap | Same snackbar |
 | `/plugins` deep link | `_PluginsDisabledView` placeholder with a back-navigable AppBar |
 
-`showPlaybackUnavailableSnack(context)` centralises the snackbar so the
+`showPlaybackUnavailableSnack(context)` (in
+`presentation/widgets/app_snack_bar.dart`) centralises the snackbar so the
 flag is checked once per entry point rather than at every
 `_executePlugin` / `_openFromStart` / `_openContinue` /
 `_openNextEpisode` call site.
