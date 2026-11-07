@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/config/feature_flags.dart';
@@ -427,6 +429,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           ),
         ),
 
+        _buildWindowDragStrip(),
+
         // Back Button
         _buildBackButton(context),
       ],
@@ -629,9 +633,26 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           ),
         ),
 
+        _buildWindowDragStrip(),
+
         // Back button
         _buildBackButton(context),
       ],
+    );
+  }
+
+  /// Details has no title bar (it's full-bleed), so on Windows the top
+  /// strip drags the window. Placed under the back button so it never
+  /// swallows its taps.
+  Widget _buildWindowDragStrip() {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) {
+      return const SizedBox.shrink();
+    }
+    return const Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: DragToMoveArea(child: SizedBox(height: 80)),
     );
   }
 

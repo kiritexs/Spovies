@@ -79,6 +79,12 @@ void main() async {
   );
 }
 
+/// Routes that draw edge-to-edge without the desktop title bar: the
+/// player (its own window controls, can go fullscreen) and Details (a
+/// full-bleed backdrop with its own drag area).
+bool _showsTitleBar(String path) =>
+    !path.startsWith('/player') && !path.startsWith('/details');
+
 // Enable Mouse dragging for Desktop Web/Windows
 class AppScrollBehavior extends MaterialScrollBehavior {
   @override
@@ -111,9 +117,9 @@ class SpoviesApp extends StatelessWidget {
       builder: (context, child) => ListenableBuilder(
         listenable: appRouter.routerDelegate,
         builder: (context, _) => DesktopWindowFrame(
-          // The player draws its own window controls and can go fullscreen.
-          showTitleBar: !appRouter.routerDelegate.currentConfiguration.uri.path
-              .startsWith('/player'),
+          showTitleBar: _showsTitleBar(
+            appRouter.routerDelegate.currentConfiguration.uri.path,
+          ),
           child: child ?? const SizedBox.shrink(),
         ),
       ),
