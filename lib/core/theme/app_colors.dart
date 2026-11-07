@@ -23,7 +23,6 @@ abstract final class AppColors {
 
   // ─── Backgrounds ──────────────────────────────────────────────────────
   static const Color backgroundDark = Color(0xFF0A0A0C);
-  static const Color backgroundLight = Color(0xFFF6F6F8);
   static const Color surfaceDark = Color(0xFF1A1A1E);
 
   // ─── Glass morphism ───────────────────────────────────────────────────
@@ -41,7 +40,6 @@ abstract final class AppColors {
   // ─── Interactive ──────────────────────────────────────────────────────
   static const Color buttonGlass = Color(0x1AFFFFFF); // white/10
   static const Color buttonGlassBorder = Color(0x33FFFFFF); // white/20
-  static const Color buttonGlassHover = Color(0x33FFFFFF); // white/20
   static const Color ratingBadgeBg = Color(0x99000000); // black/60
 
   // ─── Glow & Shadows ───────────────────────────────────────────────────

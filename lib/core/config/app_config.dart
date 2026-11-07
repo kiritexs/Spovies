@@ -10,15 +10,8 @@ abstract final class AppConfig {
   static const String backdropSmall = 'w300';
   static const String backdropMedium = 'w780';
   static const String backdropLarge = 'w1280';
-  static const String imageOriginal = 'original';
 
   // Timeouts
   static const Duration connectTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 15);
-
-  // Cache TTLs
-  static const Duration configCacheTtl = Duration(hours: 24);
-  static const Duration genreCacheTtl = Duration(hours: 24);
-  static const Duration trendingCacheTtl = Duration(minutes: 30);
-  static const Duration detailsCacheTtl = Duration(hours: 1);
 }

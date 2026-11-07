@@ -31,9 +31,6 @@ class UrlValidator {
     return null; // Valid
   }
 
-  /// Returns true if the URL is valid HTTPS.
-  static bool isValid(String url) => validate(url) == null;
-
   /// Validates a plugin URL template (the `urlTemplate` field of a manifest).
   ///
   /// Templates contain placeholders like `{{tmdbId}}`, `{{type}}`, etc., so

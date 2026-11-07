@@ -4,7 +4,6 @@ import '../../core/errors/plugin_exception.dart';
 import '../../domain/entities/plugin_manifest.dart';
 import '../../domain/repositories/plugin_repository.dart';
 import '../../plugins/discovery/plugin_discovery_service.dart';
-import '../../plugins/protocol/trigger_hook.dart';
 import '../datasources/local/hive_service.dart';
 import '../models/plugin_manifest_model.dart';
 
@@ -67,11 +66,5 @@ class PluginRepositoryImpl implements PluginRepository {
       }
     }
     return manifests;
-  }
-
-  @override
-  Future<List<PluginManifest>> getForHook(TriggerHook hook) async {
-    final installed = await getInstalled();
-    return installed.where((p) => p.hooks.contains(hook)).toList();
   }
 }

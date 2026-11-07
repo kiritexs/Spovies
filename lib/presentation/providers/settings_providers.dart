@@ -1,34 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/datasources/local/hive_service.dart';
-
-// ─── Theme Mode ─────────────────────────────────────────────────────────
-
-class ThemeModeNotifier extends Notifier<ThemeMode> {
-  @override
-  ThemeMode build() {
-    final stored = HiveService.settingsBox.get('themeMode') as String?;
-    switch (stored) {
-      case 'light':
-        return ThemeMode.light;
-      case 'dark':
-        return ThemeMode.dark;
-      default:
-        return ThemeMode.system;
-    }
-  }
-
-  Future<void> setThemeMode(ThemeMode mode) async {
-    state = mode;
-    await HiveService.settingsBox.put('themeMode', mode.name);
-  }
-}
-
-/// Persisted theme mode provider.
-final themeModeProvider = NotifierProvider<ThemeModeNotifier, ThemeMode>(
-  ThemeModeNotifier.new,
-);
 
 // ─── Preferred Plugin ───────────────────────────────────────────────────
 

@@ -701,19 +701,22 @@ User picks .spovies file (via file_picker)
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "exportedAt": "2026-03-02T14:30:00Z",
-  "appVersion": "1.0.0",
   "watchHistory": [ /* UserProgress[] */ ],
-  "watchlist": [ /* MediaItem[] (id, type, title, posterPath) */ ],
+  "watchlist": [ /* MediaItem[] (tmdbId, type, title, posterPath, ...) */ ],
+  "listStatus": [ /* MediaStatus[] (v2+) */ ],
   "plugins": [ /* PluginManifest[] */ ],
   "settings": {
-    "preferredProvider": "example-source",
-    "themeMode": "dark",
-    "language": "en-US"
+    "preferredPlugin": "example-source",
+    "plugin_enabled:example-source": true
   }
 }
 ```
+
+Gzipped JSON. Import re-validates every entry and re-keys it as
+`<type>_<id>`; only the settings shown above are accepted. v1 files
+(without `listStatus`) still import.
 
 ---
 

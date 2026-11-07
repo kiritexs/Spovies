@@ -202,8 +202,6 @@ class ExportImportService {
       final key = entry.key.toString();
       final value = entry.value;
       final ok = switch (key) {
-        'themeMode' => value is String &&
-            const ['system', 'light', 'dark'].contains(value),
         'preferredPlugin' => value == null || value is String,
         _ => key.startsWith(_pluginEnabledPrefix) && value is bool,
       };

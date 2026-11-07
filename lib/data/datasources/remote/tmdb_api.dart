@@ -126,9 +126,7 @@ class TmdbApi {
   Future<MediaItemModel> getMovieDetails(int id) async {
     final response = await _dio.get(
       '/movie/$id',
-      queryParameters: {
-        'append_to_response': 'credits,videos,release_dates',
-      },
+      queryParameters: {'append_to_response': 'credits,videos,release_dates'},
     );
     return MediaItemModel.fromTmdbDetailJson(response.data);
   }

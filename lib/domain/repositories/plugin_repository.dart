@@ -1,5 +1,4 @@
 import '../../domain/entities/plugin_manifest.dart';
-import '../../plugins/protocol/trigger_hook.dart';
 
 /// Abstract repository for plugin CRUD operations.
 abstract class PluginRepository {
@@ -17,7 +16,4 @@ abstract class PluginRepository {
 
   /// Get all currently installed plugin manifests.
   Future<List<PluginManifest>> getInstalled();
-
-  /// Get plugins that support a specific [hook].
-  Future<List<PluginManifest>> getForHook(TriggerHook hook);
 }
