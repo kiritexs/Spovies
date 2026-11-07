@@ -136,7 +136,10 @@ void main() {
       int at(Duration d) => now.add(d).millisecondsSinceEpoch;
       await box().putAll({
         'fresh': {'body': '1', 'expiresAt': at(const Duration(hours: 1))},
-        'recent-stale': {'body': '1', 'expiresAt': at(const Duration(days: -1))},
+        'recent-stale': {
+          'body': '1',
+          'expiresAt': at(const Duration(days: -1)),
+        },
         'old': {'body': '1', 'expiresAt': at(const Duration(days: -30))},
         'malformed': {'body': '1'},
       });

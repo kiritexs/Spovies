@@ -36,7 +36,8 @@ enum WatchStatus {
   IconData get icon => switch (this) {
     WatchStatus.watching => Icons.visibility_rounded,
     WatchStatus.completed => Icons.check_circle_rounded,
-    WatchStatus.dropped => Icons.delete_sweep_rounded,
+    // Not a delete icon: dropping a title is a status, not a removal.
+    WatchStatus.dropped => Icons.stop_circle_rounded,
     WatchStatus.onHold => Icons.pause_circle_rounded,
     WatchStatus.planToWatch => Icons.bookmark_add_rounded,
   };

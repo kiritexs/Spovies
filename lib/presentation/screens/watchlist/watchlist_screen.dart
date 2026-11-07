@@ -12,12 +12,35 @@ import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/responsive_grid.dart';
 import '../../../core/utils/tmdb_image_url.dart';
 import '../../../domain/entities/media_item.dart';
-import '../../router/app_tabs.dart';
+import '../../../domain/entities/media_type.dart';
+import '../../../domain/entities/watch_status.dart';
+import '../../providers/details_providers.dart';
+import '../../providers/watch_status_providers.dart';
 import '../../providers/watchlist_providers.dart';
+import '../../router/app_tabs.dart';
+import '../../widgets/app_snack_bar.dart';
 import '../../widgets/shimmer_placeholder.dart';
 
-import '../../../domain/entities/watch_status.dart';
-import '../../providers/watch_status_providers.dart';
+/// One card in the Library: a saved title, a title with a watch status,
+/// or both. Titles that only have a status (no saved item) load their
+/// poster and name from TMDB.
+class _LibraryEntry {
+  final int tmdbId;
+  final MediaType type;
+  final MediaItem? item;
+  final WatchStatus? status;
+
+  const _LibraryEntry({
+    required this.tmdbId,
+    required this.type,
+    this.item,
+    this.status,
+  });
+
+  String get key => '${type.name}_$tmdbId';
+}
+
+enum _LibraryMenu { clear }
 
 class WatchlistScreen extends ConsumerStatefulWidget {
   const WatchlistScreen({super.key});
@@ -29,22 +52,34 @@ class WatchlistScreen extends ConsumerStatefulWidget {
 class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   WatchStatus? _selectedStatus;
 
+  /// Removed but still undoable: hidden now, deleted when the snackbar
+  /// closes without Undo.
+  final Set<String> _pendingRemoval = {};
+
   @override
   Widget build(BuildContext context) {
-    final allItems = ref.watch(watchlistProvider);
-    final titleStatuses = ref.watch(titleStatusesProvider).value ?? const [];
-    final filteredItems = _selectedStatus == null
-        ? allItems
-        : allItems
-              .where(
-                (item) => titleStatuses.any(
-                  (e) =>
-                      e.status == _selectedStatus &&
-                      e.mediaId == item.tmdbId.toString() &&
-                      e.mediaType == item.type.name,
-                ),
-              )
-              .toList();
+    final saved = ref.watch(watchlistProvider);
+    final statusesAsync = ref.watch(titleStatusesProvider);
+    final entries = _entries(saved, statusesAsync.value ?? const []);
+    final visible = _selectedStatus == null
+        ? entries
+        : entries.where((e) => e.status == _selectedStatus).toList();
+
+    final Widget body;
+    if (statusesAsync.hasError && !statusesAsync.hasValue) {
+      body = _buildError();
+    } else if (statusesAsync.isLoading && !statusesAsync.hasValue) {
+      body = const Center(
+        child: CircularProgressIndicator(
+          color: AppColors.primary,
+          strokeWidth: 2,
+        ),
+      );
+    } else if (visible.isEmpty) {
+      body = _buildEmpty();
+    } else {
+      body = _buildGrid(context, visible);
+    }
 
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
@@ -54,26 +89,86 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
         title: Text(AppTab.library.label, style: AppTextStyles.appTitle),
         centerTitle: false,
         actions: [
-          if (allItems.isNotEmpty)
-            TextButton(
-              onPressed: () => _confirmClearAll(context),
-              child: Text(
-                'Clear All',
-                style: AppTextStyles.labelSmall.copyWith(
-                  color: AppColors.danger,
-                ),
+          if (entries.isNotEmpty)
+            // Values are non-null: PopupMenuButton treats null as "cancelled".
+            PopupMenuButton<_LibraryMenu>(
+              tooltip: 'More options',
+              icon: const Icon(
+                Icons.more_vert_rounded,
+                color: AppColors.textSecondary,
               ),
+              color: AppColors.surfaceDark,
+              onSelected: (_) => _confirmClearAll(context),
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: _LibraryMenu.clear,
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.delete_sweep_rounded,
+                        color: AppColors.danger,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Clear Library',
+                        style: AppTextStyles.label.copyWith(
+                          color: AppColors.danger,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
+          const SizedBox(width: 4),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(50),
           child: _buildFilterBar(),
         ),
       ),
-      body: filteredItems.isEmpty
-          ? _buildEmpty()
-          : _buildGrid(context, filteredItems),
+      body: body,
     );
+  }
+
+  /// Saved titles first (in saved order), then titles that only have a
+  /// status, most recently updated first.
+  List<_LibraryEntry> _entries(
+    List<MediaItem> saved,
+    List<MediaStatus> statuses,
+  ) {
+    final statusByKey = {
+      for (final s in statuses) '${s.mediaType}_${s.mediaId}': s,
+    };
+    final out = <_LibraryEntry>[];
+    final seen = <String>{};
+    for (final item in saved) {
+      final entry = _LibraryEntry(
+        tmdbId: item.tmdbId,
+        type: item.type,
+        item: item,
+        status: statusByKey['${item.type.name}_${item.tmdbId}']?.status,
+      );
+      seen.add(entry.key);
+      if (!_pendingRemoval.contains(entry.key)) out.add(entry);
+    }
+    final statusOnly =
+        statuses
+            .where((s) => !seen.contains('${s.mediaType}_${s.mediaId}'))
+            .toList()
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    for (final s in statusOnly) {
+      final id = int.tryParse(s.mediaId);
+      if (id == null) continue;
+      final entry = _LibraryEntry(
+        tmdbId: id,
+        type: s.mediaType == 'tv' ? MediaType.tv : MediaType.movie,
+        status: s.status,
+      );
+      if (!_pendingRemoval.contains(entry.key)) out.add(entry);
+    }
+    return out;
   }
 
   Widget _buildFilterBar() {
@@ -103,44 +198,79 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
     );
   }
 
-  // ─── Empty State ───────────────────────────────────────────────────────────
+  // ─── Empty / Error ─────────────────────────────────────────────────────────
 
   Widget _buildEmpty() {
+    final filtered = _selectedStatus != null;
+    return _message(
+      icon: filtered
+          ? Icons.filter_list_off_rounded
+          : Icons.bookmark_border_rounded,
+      title: filtered
+          ? 'Nothing marked ${_selectedStatus!.displayName}'
+          : 'Your library is empty',
+      body: filtered
+          ? 'Set a status from a title\'s page and it shows up here.'
+          : 'Open any title and choose Add to Library to save it here.',
+    );
+  }
+
+  Widget _buildError() {
+    return _message(
+      icon: Icons.error_outline_rounded,
+      title: 'Couldn\'t load your library',
+      body: 'Your saved titles are still on this device.',
+      action: TextButton.icon(
+        onPressed: () => ref.invalidate(titleStatusesProvider),
+        icon: const Icon(Icons.refresh_rounded, size: 18),
+        label: const Text('Retry'),
+        style: TextButton.styleFrom(foregroundColor: AppColors.primaryOnDark),
+      ),
+    );
+  }
+
+  Widget _message({
+    required IconData icon,
+    required String title,
+    required String body,
+    Widget? action,
+  }) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            _selectedStatus == null
-                ? Icons.bookmark_border_rounded
-                : Icons.filter_list_off_rounded,
-            size: 72,
-            color: AppColors.textSecondary.withValues(alpha: 0.4),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            _selectedStatus == null ? 'No saved titles' : 'No titles found',
-            style: AppTextStyles.cardTitle.copyWith(
-              color: AppColors.textSecondary,
-              fontSize: 18,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 72,
+              color: AppColors.textSecondary.withValues(alpha: 0.4),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _selectedStatus == null
-                ? 'Tap the bookmark icon on any title\nto save it here'
-                : 'Try selecting a different category',
-            style: AppTextStyles.cardSubtitle,
-            textAlign: TextAlign.center,
-          ),
-        ],
+            const SizedBox(height: 16),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: AppTextStyles.cardTitle.copyWith(
+                color: AppColors.textSecondary,
+                fontSize: 18,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              body,
+              style: AppTextStyles.cardSubtitle,
+              textAlign: TextAlign.center,
+            ),
+            if (action != null) ...[const SizedBox(height: 12), action],
+          ],
+        ),
       ),
     );
   }
 
   // ─── Grid ──────────────────────────────────────────────────────────────────
 
-  Widget _buildGrid(BuildContext context, List<MediaItem> items) {
+  Widget _buildGrid(BuildContext context, List<_LibraryEntry> entries) {
     return LayoutBuilder(
       builder: (context, constraints) {
         return GridView.builder(
@@ -156,27 +286,55 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
             crossAxisSpacing: 12,
             mainAxisSpacing: 16,
           ),
-          itemCount: items.length,
+          itemCount: entries.length,
           itemBuilder: (context, index) {
-            final item = items[index];
-            return _WatchlistItem(
-              item: item,
-              onTap: () => context.push('/details', extra: item),
-              onRemove: () {
-                unawaited(
-                  ref
-                      .read(watchStatusNotifierProvider.notifier)
-                      .deleteAllStatusesForMedia(
-                        item.tmdbId.toString(),
-                        mediaType: item.type.name,
-                      ),
-                );
-                ref.read(watchlistProvider.notifier).remove(item);
-              },
+            final entry = entries[index];
+            return _LibraryCard(
+              key: ValueKey(entry.key),
+              entry: entry,
+              onRemove: () => _remove(entry),
             );
           },
         );
       },
+    );
+  }
+
+  /// Hide the card now and offer Undo; delete only once the snackbar
+  /// closes without it. Removing also clears the title's statuses and
+  /// watch progress.
+  void _remove(_LibraryEntry entry) {
+    final key = entry.key;
+    setState(() => _pendingRemoval.add(key));
+
+    // Captured now: the deletion runs after the snackbar closes.
+    final watchlist = ref.read(watchlistProvider.notifier);
+    final statuses = ref.read(watchStatusNotifierProvider.notifier);
+
+    final controller = showAppSnackBar(
+      context,
+      'Removed from Library',
+      aboveNav: true,
+      duration: const Duration(seconds: 5),
+      action: SnackBarAction(
+        label: 'Undo',
+        textColor: AppColors.primaryOnDark,
+        onPressed: () {},
+      ),
+    );
+
+    unawaited(
+      controller.closed.then((reason) async {
+        if (reason != SnackBarClosedReason.action) {
+          final item = entry.item;
+          if (item != null) watchlist.remove(item);
+          await statuses.deleteAllStatusesForMedia(
+            entry.tmdbId.toString(),
+            mediaType: entry.type.name,
+          );
+        }
+        if (mounted) setState(() => _pendingRemoval.remove(key));
+      }),
     );
   }
 
@@ -190,7 +348,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
         ),
         title: Text('Clear Library', style: AppTextStyles.sectionTitle),
         content: Text(
-          'Remove all saved titles from your library?',
+          'Remove every saved title and watch status? This can\'t be undone.',
           style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
         ),
         actions: [
@@ -213,24 +371,9 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
         ],
       ),
     );
-    if (confirmed == true) {
-      // Snapshot the watchlist BEFORE we start mutating it so we keep the
-      // (tmdbId, type) pairs needed for per-item deletion.
-      final snapshot = ref
-          .read(watchlistProvider)
-          .map((m) => (id: m.tmdbId.toString(), type: m.type.name))
-          .toList();
-      // Await each delete so failures surface (and so the watchlist clear
-      // below happens only after status rows are gone).
-      for (final item in snapshot) {
-        if (!mounted) return;
-        await ref
-            .read(watchStatusNotifierProvider.notifier)
-            .deleteAllStatusesForMedia(item.id, mediaType: item.type);
-      }
-      if (!mounted) return;
-      ref.read(watchlistProvider.notifier).clearAll();
-    }
+    if (confirmed != true || !mounted) return;
+    ref.read(watchlistProvider.notifier).clearAll();
+    await ref.read(watchStatusNotifierProvider.notifier).clearAll();
   }
 }
 
@@ -262,7 +405,7 @@ class _StatusFilterChip extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
           side: BorderSide(
-            color: isSelected ? AppColors.primary : Colors.transparent,
+            color: isSelected ? AppColors.primaryOnDark : Colors.transparent,
           ),
         ),
         showCheckmark: false,
@@ -271,138 +414,178 @@ class _StatusFilterChip extends StatelessWidget {
   }
 }
 
-// ─── Individual Grid Item ──────────────────────────────────────────────────
+// ─── Library Card ────────────────────────────────────────────────────────────
 
-class _WatchlistItem extends ConsumerWidget {
-  final MediaItem item;
-  final VoidCallback onTap;
+class _LibraryCard extends ConsumerWidget {
+  final _LibraryEntry entry;
   final VoidCallback onRemove;
 
-  const _WatchlistItem({
-    required this.item,
-    required this.onTap,
-    required this.onRemove,
-  });
+  const _LibraryCard({super.key, required this.entry, required this.onRemove});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final posterUrl = buildImageUrl(item.posterPath, AppConfig.posterMedium);
-    final statusAsync = ref.watch(
-      mediaStatusProvider((
-        mediaId: item.tmdbId.toString(),
-        mediaType: item.type.name,
-        season: null,
-        episode: null,
-      )),
-    );
-    final status = statusAsync.value;
+    // Status-only titles have no saved metadata; fetch it (cached by Dio).
+    final AsyncValue<MediaItem> itemAsync = entry.item != null
+        ? AsyncData(entry.item!)
+        : ref.watch(
+            mediaDetailsProvider((tmdbId: entry.tmdbId, type: entry.type)),
+          );
+    final item = itemAsync.value;
+    final title = item?.title ?? (itemAsync.hasError ? 'Unavailable' : '');
+    final posterUrl = buildImageUrl(item?.posterPath, AppConfig.posterMedium);
+    final status = entry.status;
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-                  child: posterUrl.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: posterUrl,
-                          fit: BoxFit.cover,
-                          placeholder: (_, _) => const ShimmerPlaceholder(),
-                          errorWidget: (_, _, _) =>
-                              Container(color: AppColors.surfaceDark),
-                        )
-                      : Container(color: AppColors.surfaceDark),
-                ),
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: GestureDetector(
-                    onTap: onRemove,
-                    child: Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(
-                        Icons.close_rounded,
-                        size: 16,
-                        color: Colors.white,
-                      ),
+    final description = [
+      title,
+      entry.type.displayName,
+      ?item?.year,
+      ?status?.displayName,
+    ].join(', ');
+
+    return Semantics(
+      container: true,
+      label: description,
+      button: item != null,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: item == null
+              ? null
+              : () => context.push('/details', extra: item),
+          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+          focusColor: AppColors.focus.withValues(alpha: 0.2),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                      child: itemAsync.isLoading && item == null
+                          ? const ShimmerPlaceholder()
+                          : posterUrl.isNotEmpty
+                          ? CachedNetworkImage(
+                              imageUrl: posterUrl,
+                              fit: BoxFit.cover,
+                              placeholder: (_, _) => const ShimmerPlaceholder(),
+                              errorWidget: (_, _, _) =>
+                                  Container(color: AppColors.surfaceDark),
+                            )
+                          : Container(color: AppColors.surfaceDark),
                     ),
-                  ),
-                ),
-                Positioned(
-                  bottom: 6,
-                  left: 6,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
+                    // 48px target; the visible circle stays 28px.
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: IconButton(
+                        tooltip: 'Remove from Library',
+                        onPressed: onRemove,
+                        style: IconButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(48, 48),
                         ),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.85),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          item.type.displayName.toUpperCase(),
-                          style: AppTextStyles.tag.copyWith(fontSize: 9),
-                        ),
-                      ),
-                      if (status != null) ...[
-                        const SizedBox(width: 4),
-                        Tooltip(
-                          message: status.status.displayName,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 5,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceDark.withValues(
-                                alpha: 0.95,
-                              ),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(
-                                color: AppColors.primary.withValues(alpha: 0.5),
-                              ),
-                            ),
-                            child: Icon(
-                              status.status.icon,
-                              size: 12,
-                              color: AppColors.primaryOnDark,
-                            ),
+                        icon: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close_rounded,
+                            size: 16,
+                            color: Colors.white,
                           ),
                         ),
-                      ],
-                    ],
+                      ),
+                    ),
+                    Positioned(
+                      left: 6,
+                      right: 6,
+                      bottom: 6,
+                      child: ExcludeSemantics(
+                        child: Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: [
+                            _Badge(
+                              text: entry.type.displayName.toUpperCase(),
+                              background: AppColors.primary.withValues(
+                                alpha: 0.85,
+                              ),
+                              foreground: Colors.white,
+                            ),
+                            if (status != null)
+                              _Badge(
+                                text: status.displayName,
+                                background: AppColors.surfaceDark.withValues(
+                                  alpha: 0.95,
+                                ),
+                                foreground: AppColors.primaryOnDark,
+                                border: AppColors.primary.withValues(
+                                  alpha: 0.5,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 6),
+              ExcludeSemantics(
+                child: Text(
+                  title,
+                  style: AppTextStyles.cardTitle.copyWith(fontSize: 12),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (item?.year != null)
+                ExcludeSemantics(
+                  child: Text(
+                    item!.year!,
+                    style: AppTextStyles.cardSubtitle.copyWith(fontSize: 11),
                   ),
                 ),
-              ],
-            ),
+            ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            item.title,
-            style: AppTextStyles.cardTitle.copyWith(fontSize: 12),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          if (item.year != null)
-            Text(
-              item.year!,
-              style: AppTextStyles.cardSubtitle.copyWith(fontSize: 11),
-            ),
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  final String text;
+  final Color background;
+  final Color foreground;
+  final Color? border;
+
+  const _Badge({
+    required this.text,
+    required this.background,
+    required this.foreground,
+    this.border,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(4),
+        border: border == null ? null : Border.all(color: border!),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTextStyles.tag.copyWith(fontSize: 9, color: foreground),
       ),
     );
   }
