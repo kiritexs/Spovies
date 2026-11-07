@@ -122,12 +122,12 @@ class TmdbApi {
 
   // ─── Details ──────────────────────────────────────────────────────────
 
-  /// Movie details with appended credits, videos, images, release_dates.
+  /// Movie details with appended credits, videos and release_dates.
   Future<MediaItemModel> getMovieDetails(int id) async {
     final response = await _dio.get(
       '/movie/$id',
       queryParameters: {
-        'append_to_response': 'credits,videos,images,release_dates',
+        'append_to_response': 'credits,videos,release_dates',
       },
     );
     return MediaItemModel.fromTmdbDetailJson(response.data);
@@ -135,12 +135,12 @@ class TmdbApi {
 
   // ─── TV Details ───────────────────────────────────────────────────────
 
-  /// TV show details with seasons list + credits + videos.
+  /// TV show details with seasons, credits, videos and external ids (IMDb).
   Future<MediaItemModel> getTvDetails(int id) async {
     final response = await _dio.get(
       '/tv/$id',
       queryParameters: {
-        'append_to_response': 'credits,videos,aggregate_credits',
+        'append_to_response': 'credits,videos,aggregate_credits,external_ids',
       },
     );
     return MediaItemModel.fromTmdbTvDetailJson(response.data);

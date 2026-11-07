@@ -63,6 +63,10 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
   final _scrollController = ScrollController();
 
   final List<MediaItem> _items = [];
+
+  /// Keys of titles already shown. Trending is followed by popular pages,
+  /// which overlap it, so later pages can repeat a title.
+  final Set<String> _seen = {};
   int _page = 0;
   bool _isLoading = false;
   bool _hasMore = true;
@@ -83,6 +87,9 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
   }
 
   void _onScroll() {
+    // After an error only the Retry button loads again, so scrolling near
+    // the bottom doesn't fire a request on every scroll event.
+    if (_error != null) return;
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 300) {
       _loadNextPage();
@@ -161,8 +168,11 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
       if (!mounted) return;
       setState(() {
         _page = nextPage;
-        _items.addAll(newItems);
-        // TMDB returns 20 results per page max; fewer = last page
+        _items.addAll(
+          newItems.where((m) => _seen.add('${m.type.name}_${m.tmdbId}')),
+        );
+        // TMDB returns 20 results per page max; fewer = last page. Count the
+        // raw page, not what survived de-duplication.
         if (newItems.length < 20) _hasMore = false;
         _isLoading = false;
       });
@@ -209,7 +219,7 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
                 AppSpacing.sectionPaddingH,
                 16,
               ),
-              child: _items.isEmpty && _isLoading
+              child: _items.isEmpty
                   ? const SizedBox.shrink()
                   : Text(
                       '${_items.length} titles${_hasMore ? '+' : ''}',
@@ -295,7 +305,9 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'Failed to load more',
+                        _items.isEmpty
+                            ? "Couldn't load titles"
+                            : "Couldn't load more titles",
                         style: AppTextStyles.cardSubtitle,
                       ),
                       const SizedBox(height: 8),
