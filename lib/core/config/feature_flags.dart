@@ -14,14 +14,14 @@ import '../theme/app_spacing.dart';
 /// See `docs/architecture/PLUGINS.md#feature-gating`.
 const bool kPluginsEnabled = false;
 
-/// "Playback is currently unavailable" snackbar, shown from every
+/// "Playback is disabled in this build" snackbar, shown from every
 /// `/player` entry point when [kPluginsEnabled] is `false`.
 void showPlaybackUnavailableSnack(BuildContext context) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(
       SnackBar(
-        content: const Text('Playback is currently unavailable'),
+        content: const Text('Playback is disabled in this build'),
         behavior: SnackBarBehavior.floating,
         backgroundColor: AppColors.surfaceDark,
         margin: const EdgeInsets.fromLTRB(

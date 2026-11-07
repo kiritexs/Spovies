@@ -55,8 +55,8 @@ class SettingsScreen extends ConsumerWidget {
                 //   • enabled  → interactive tile that opens `/plugins`
                 //   • disabled → tile still shown (users know the
                 //                feature exists) but visually greyed and
-                //                the subtitle says "Currently
-                //                unavailable"; tapping still opens
+                //                the subtitle says "Disabled in
+                //                this build"; tapping still opens
                 //                `/plugins`, which then shows the
                 //                friendly disabled placeholder.
                 _buildSectionHeader('Plugins'),
@@ -67,7 +67,7 @@ class SettingsScreen extends ConsumerWidget {
                   title: 'Manage Plugins',
                   subtitle: kPluginsEnabled
                       ? 'Add, remove, and view installed plugins'
-                      : 'Currently unavailable',
+                      : 'Disabled in this build',
                   disabled: !kPluginsEnabled,
                   onTap: () => context.push('/plugins'),
                 ),
@@ -167,7 +167,7 @@ class SettingsScreen extends ConsumerWidget {
                     context,
                     icon: Icons.play_circle_outline_rounded,
                     title: 'Preferred Provider',
-                    subtitle: 'Currently unavailable',
+                    subtitle: 'Disabled in this build',
                     disabled: true,
                   ),
 

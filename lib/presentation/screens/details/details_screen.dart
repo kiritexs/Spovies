@@ -436,6 +436,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         isTV &&
         nextEpisode != null &&
         plugins.isNotEmpty;
+    final showWatch = _showWatch(activePlugin, showResume, showNextEp);
 
     return Row(
       children: [
@@ -516,19 +517,19 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           ),
           const SizedBox(width: 12),
         ],
-        if (!showResume && !showNextEp && activePlugin != null) ...[
+        if (showWatch) ...[
           SizedBox(
             width: 220,
             height: 56,
             child: OutlinedButton.icon(
-              onPressed: () => _executePlugin(context, activePlugin, details),
+              onPressed: _watchAction(context, activePlugin, details),
               icon: const Icon(Icons.play_arrow_rounded, size: 24),
               label: Text(
                 isTV ? 'Watch Series' : 'Watch Movie',
                 style: AppTextStyles.label.copyWith(fontSize: 16),
               ),
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white,
+                foregroundColor: _watchForeground,
                 side: const BorderSide(color: AppColors.glassBorder),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
@@ -763,6 +764,30 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   // ─── Watch Button ─────────────────────────────────────────────────────
 
+  /// The plain Watch button shows when there's no Continue / Next button.
+  /// With playback disabled it still shows, muted, so the action is
+  /// discoverable and explains itself on tap.
+  bool _showWatch(
+    PluginManifest? activePlugin,
+    bool showResume,
+    bool showNextEp,
+  ) => !showResume && !showNextEp && (activePlugin != null || !kPluginsEnabled);
+
+  static const Color _watchForeground = kPluginsEnabled
+      ? Colors.white
+      : AppColors.textSecondary;
+
+  VoidCallback _watchAction(
+    BuildContext context,
+    PluginManifest? activePlugin,
+    MediaItem details,
+  ) {
+    if (!kPluginsEnabled || activePlugin == null) {
+      return () => showPlaybackUnavailableSnack(context);
+    }
+    return () => _executePlugin(context, activePlugin, details);
+  }
+
   Widget _buildActionRow(
     BuildContext context,
     MediaItem details,
@@ -785,6 +810,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         details.type == MediaType.tv &&
         nextEpisode != null &&
         plugins.isNotEmpty;
+    final showWatch = _showWatch(activePlugin, showResume, showNextEp);
 
     return Row(
       children: [
@@ -866,7 +892,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           ),
         ],
 
-        if (!showResume && !showNextEp && activePlugin != null)
+        if (showWatch)
           Expanded(
             child: Container(
               height: AppSpacing.buttonHeight,
@@ -875,7 +901,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 border: Border.all(color: AppColors.glassBorder),
               ),
               child: OutlinedButton.icon(
-                onPressed: () => _executePlugin(context, activePlugin, details),
+                onPressed: _watchAction(context, activePlugin, details),
                 icon: const Icon(Icons.play_arrow_rounded, size: 24),
                 label: Text(
                   details.type == MediaType.tv ? 'Watch Series' : 'Watch Movie',
@@ -883,7 +909,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
+                  foregroundColor: _watchForeground,
                   side: const BorderSide(color: AppColors.glassBorder),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
@@ -893,7 +919,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             ),
           ),
 
-        if (plugins.isNotEmpty) const SizedBox(width: 12),
+        if (showResume || showNextEp || showWatch) const SizedBox(width: 12),
 
         // Consolidated Library/Status Button
         Expanded(child: _buildLibraryAction(context, details)),
@@ -1677,6 +1703,11 @@ class _EpisodeRow extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: InkWell(
             onTap: () {
+              if (!kPluginsEnabled) {
+                // Don't mark the episode as Watching: nothing will play.
+                showPlaybackUnavailableSnack(context);
+                return;
+              }
               if (onPlay != null) {
                 if (!isWatched && status != WatchStatus.watching) {
                   ref
@@ -1694,7 +1725,7 @@ class _EpisodeRow extends ConsumerWidget {
                       );
                 }
                 onPlay!();
-              } else if (!isWatched && !isWatching) {
+              } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: const Text('No playback source configured'),

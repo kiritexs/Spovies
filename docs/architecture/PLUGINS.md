@@ -21,9 +21,10 @@ the features exist:
 
 | Surface | Disabled behaviour |
 |---|---|
-| Settings → Manage Plugins | Tile at 55 % opacity, muted colours, block icon, "Currently unavailable" |
+| Settings → Manage Plugins | Tile at 55 % opacity, muted colours, block icon, "Disabled in this build" |
 | Settings → Preferred Provider | Same treatment, replaces the dropdown |
-| Details → Watch Movie/Series | "Playback is currently unavailable" snackbar |
+| Details → Watch Movie/Series | Button always shown, muted; tap shows a "Playback is disabled in this build" snackbar |
+| Details → episode row tap | Same snackbar; the episode is not marked Watching |
 | Home → Continue Watching tap | Same snackbar |
 | `/plugins` deep link | `_PluginsDisabledView` placeholder with a back-navigable AppBar |
 

@@ -588,7 +588,7 @@ class _PluginsDisabledView extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                'Plugins are currently unavailable',
+                'Plugins are disabled in this build',
                 style: AppTextStyles.cardTitle,
                 textAlign: TextAlign.center,
               ),
