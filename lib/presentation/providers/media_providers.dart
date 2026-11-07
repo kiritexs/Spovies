@@ -26,11 +26,18 @@ final dioProvider = Provider<Dio>((ref) {
     ),
   );
 
-  // 1. Cache interceptor (checks Hive before network, serves stale on error)
-  dio.interceptors.add(TmdbCacheInterceptor());
-
-  // 2. Retry interceptor (exponential backoff: 1s → 2s → 4s)
+  // Dio runs onError in the order interceptors were added. Retry goes
+  // first so a network or 5xx failure is retried (1s → 2s → 4s) before
+  // the cache falls back to stale data; the other way round, any URL with
+  // a recently expired entry got stale data on the first timeout and was
+  // never retried.
+  //
+  // 1. Retry interceptor (no onRequest work; retries on error)
   dio.interceptors.add(RetryInterceptor(dio: dio));
+
+  // 2. Cache interceptor (serves fresh entries without a request; serves
+  //    stale data once retries are exhausted)
+  dio.interceptors.add(TmdbCacheInterceptor());
 
   // 3. Logging (debug only)
   if (kDebugMode) {

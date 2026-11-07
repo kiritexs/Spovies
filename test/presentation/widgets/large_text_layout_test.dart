@@ -51,11 +51,16 @@ void main() {
   testWidgets('HeroCard metadata fits at 1.3x', (tester) async {
     await tester.pumpWidget(
       _phone(
-        HeroCard(
-          movie: _item,
-          genreText: 'Science Fiction • Adventure • Animation',
-          onTap: _noop,
-          onAddTap: _noop,
+        // HeroCard sizes from its LayoutBuilder, so constrain it to the
+        // phone width (MediaQuery size alone doesn't change constraints).
+        const SizedBox(
+          width: 375,
+          child: HeroCard(
+            movie: _item,
+            genreText: 'Science Fiction • Adventure • Animation',
+            onTap: _noop,
+            onAddTap: _noop,
+          ),
         ),
       ),
     );

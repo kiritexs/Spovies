@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 
 import 'package:spovies/data/datasources/local/hive_service.dart';
+import 'package:spovies/data/datasources/remote/retry_interceptor.dart';
 import 'package:spovies/data/datasources/remote/tmdb_cache_interceptor.dart';
 
 /// Answers each request with the next queued result: a status code with a
@@ -122,12 +123,38 @@ void main() {
       'body': '{not json',
       'expiresAt': inMs(const Duration(hours: 1)),
     });
-    adapter.queue.add((200, {'id': 4}));
+    // The network fails too, so nothing re-writes the key: if the corrupt
+    // entry were kept it would still be in the box (and could be served).
+    adapter.queue.add(const SocketException('offline'));
 
-    final res = await dio.get<dynamic>('/movie/4');
+    await expectLater(
+      dio.get<dynamic>('/movie/4'),
+      throwsA(isA<DioException>()),
+    );
 
-    expect(res.data, {'id': 4});
+    expect(box().containsKey('/movie/4?'), isFalse);
     expect(adapter.calls, 1);
+  });
+
+  test('with retry, a network error is retried before stale data', () async {
+    // The real stack order: RetryInterceptor, then the cache.
+    final retryDio = Dio(BaseOptions(baseUrl: 'https://api.test'))
+      ..httpClientAdapter = adapter;
+    retryDio.interceptors
+      ..add(RetryInterceptor(dio: retryDio, initialDelay: Duration.zero))
+      ..add(TmdbCacheInterceptor());
+    await box().put('/movie/5?', {
+      'body': jsonEncode({'id': 5, 'stale': true}),
+      'expiresAt': inMs(const Duration(hours: -2)),
+    });
+    adapter.queue
+      ..add(const SocketException('blip'))
+      ..add((200, {'id': 5, 'stale': false}));
+
+    final res = await retryDio.get<dynamic>('/movie/5');
+
+    expect(res.data, {'id': 5, 'stale': false});
+    expect(adapter.calls, 2);
   });
 
   group('prune', () {

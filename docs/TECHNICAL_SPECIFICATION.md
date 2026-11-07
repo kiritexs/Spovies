@@ -102,7 +102,6 @@ lib/
 │   │   ├── app_config.dart            # App constants
 │   │   └── env.dart                   # TMDB API key (envied)
 │   ├── errors/
-│   │   ├── app_exception.dart
 │   │   └── plugin_exception.dart
 │   ├── theme/
 │   │   ├── app_theme.dart             # ThemeData setup
