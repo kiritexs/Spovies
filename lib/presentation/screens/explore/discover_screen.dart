@@ -11,6 +11,7 @@ import '../../../core/utils/responsive_grid.dart';
 import '../../../domain/entities/media_item.dart';
 import '../../providers/media_providers.dart';
 import '../../providers/search_providers.dart';
+import '../../widgets/retry_row.dart';
 import '../../widgets/media_card.dart';
 import '../../widgets/media_row.dart';
 import '../../widgets/shimmer_placeholder.dart';
@@ -302,7 +303,10 @@ class _DiscoveryContent extends ConsumerWidget {
                     movies: [],
                     isLoading: true,
                   ),
-                  error: (_, _) => const SizedBox.shrink(),
+                  error: (_, _) => RetryRow(
+                    title: 'Popular',
+                    onRetry: () => ref.invalidate(popularMoviesProvider),
+                  ),
                 ),
           ),
 
@@ -332,7 +336,10 @@ class _DiscoveryContent extends ConsumerWidget {
                     movies: [],
                     isLoading: true,
                   ),
-                  error: (_, _) => const SizedBox.shrink(),
+                  error: (_, _) => RetryRow(
+                    title: 'Top Rated',
+                    onRetry: () => ref.invalidate(topRatedMoviesProvider),
+                  ),
                 ),
           ),
 
@@ -371,7 +378,10 @@ class _DiscoveryContent extends ConsumerWidget {
                     movies: [],
                     isLoading: true,
                   ),
-                  error: (_, _) => const SizedBox.shrink(),
+                  error: (_, _) => RetryRow(
+                    title: 'Popular',
+                    onRetry: () => ref.invalidate(popularTvProvider),
+                  ),
                 ),
           ),
 
@@ -401,7 +411,10 @@ class _DiscoveryContent extends ConsumerWidget {
                     movies: [],
                     isLoading: true,
                   ),
-                  error: (_, _) => const SizedBox.shrink(),
+                  error: (_, _) => RetryRow(
+                    title: 'Top Rated',
+                    onRetry: () => ref.invalidate(topRatedTvProvider),
+                  ),
                 ),
           ),
         ],
@@ -577,7 +590,11 @@ class _TrendingSection extends ConsumerWidget {
             isLoading: true,
             showTitle: false,
           ),
-          error: (_, _) => const SizedBox.shrink(),
+          error: (_, _) => RetryRow(
+            onRetry: () => ref.invalidate(
+              showMovies ? trendingMoviesProvider : trendingTvProvider,
+            ),
+          ),
         ),
       ],
     );
@@ -735,7 +752,8 @@ class _GenreGrid extends ConsumerWidget {
         const SizedBox(height: 14),
         genresAsync.when(
           loading: _buildShimmer,
-          error: (_, _) => const SizedBox.shrink(),
+          error: (_, _) =>
+              RetryRow(onRetry: () => ref.invalidate(allGenresProvider)),
           data: (genres) {
             return Padding(
               padding: const EdgeInsets.symmetric(
@@ -914,7 +932,11 @@ class _GenreResults extends ConsumerWidget {
                 ),
           loading: () =>
               const MediaRow(title: 'Movies', movies: [], isLoading: true),
-          error: (_, _) => const SizedBox.shrink(),
+          error: (_, _) => RetryRow(
+            title: 'Movies',
+            onRetry: () =>
+                ref.invalidate(discoverMoviesByGenreProvider(genreId)),
+          ),
         ),
         const SizedBox(height: 28),
         tvAsync.when(
@@ -937,7 +959,10 @@ class _GenreResults extends ConsumerWidget {
                 ),
           loading: () =>
               const MediaRow(title: 'TV Shows', movies: [], isLoading: true),
-          error: (_, _) => const SizedBox.shrink(),
+          error: (_, _) => RetryRow(
+            title: 'TV Shows',
+            onRetry: () => ref.invalidate(discoverTvByGenreProvider(genreId)),
+          ),
         ),
       ],
     );
@@ -959,11 +984,12 @@ class _SearchResults extends ConsumerWidget {
     return resultsAsync.when(
       loading: _shimmerGrid,
       error: (e, _) {
-        if (e.toString().contains('cancelled')) return _shimmerGrid();
+        // Superseded by a newer query: that query's results are coming.
+        if (e is SearchCancelledException) return _shimmerGrid();
         return Center(
-          child: Text(
-            'Search failed',
-            style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
+          child: RetryRow(
+            title: 'Search failed',
+            onRetry: () => ref.invalidate(searchResultsProvider),
           ),
         );
       },

@@ -30,6 +30,7 @@ import 'package:spovies/presentation/widgets/app_header.dart';
 import 'package:spovies/presentation/widgets/continue_watching_card.dart';
 import 'package:spovies/presentation/widgets/hero_card.dart';
 import 'package:spovies/presentation/widgets/media_row.dart';
+import 'package:spovies/presentation/widgets/retry_row.dart';
 import 'package:spovies/presentation/widgets/shimmer_placeholder.dart';
 
 /// Home tab — cinematic layout with Hero, Trending, Continue Watching,
@@ -144,7 +145,7 @@ class _HomeContent extends ConsumerWidget {
               movies: [],
               isLoading: true,
             ),
-            error: (_, _) => _RetryRow(
+            error: (_, _) => RetryRow(
               title: 'Now Trending',
               onRetry: () => ref.invalidate(trendingMoviesProvider),
             ),
@@ -175,7 +176,7 @@ class _HomeContent extends ConsumerWidget {
             ),
             loading: () =>
                 const MediaRow(title: 'Top Rated', movies: [], isLoading: true),
-            error: (_, _) => _RetryRow(
+            error: (_, _) => RetryRow(
               title: 'Top Rated',
               onRetry: () => ref.invalidate(topRatedMoviesProvider),
             ),
@@ -509,36 +510,6 @@ class _ErrorCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _RetryRow extends StatelessWidget {
-  final String title;
-  final VoidCallback onRetry;
-  const _RetryRow({required this.title, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: AppSpacing.sectionPadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: AppTextStyles.sectionTitle),
-          const SizedBox(height: 16),
-          Center(
-            child: TextButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Failed to load. Tap to retry'),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.textSecondary,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

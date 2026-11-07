@@ -62,6 +62,11 @@ class DetailsScreen extends ConsumerStatefulWidget {
 class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   int _selectedSeason = 1;
 
+  /// Long seasons (some shows have 100+ episodes) build the first
+  /// [_episodePage] rows, then the rest on request.
+  static const int _episodePage = 25;
+  bool _showAllEpisodes = false;
+
   MediaItem get media => widget.media;
 
   @override
@@ -75,90 +80,121 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     );
     final preferredId = ref.watch(preferredPluginProvider);
 
+    // While the full details load (or if they fail), show the list item we
+    // were opened with: title, poster, overview and rating are already
+    // known. Cast, seasons and similar sections fill in when it arrives.
+    final details = detailsAsync.value ?? media;
+    final failed = detailsAsync.hasError && !detailsAsync.hasValue;
+
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
-      body: detailsAsync.when(
-        loading: () => _buildLoading(context),
-        error: (e, _) => _buildError(context, e.toString()),
-        data: (details) {
-          final cwList =
-              ref
-                  .watch(continueWatchingProvider)
-                  .whenOrNull(data: (list) => list) ??
-              [];
-          UserProgress? continueProgress;
-          for (final p in cwList) {
-            if (p.mediaId == details.tmdbId.toString()) {
-              continueProgress = p;
-              break;
-            }
-          }
-          final progressForNext = continueProgress ?? _noProgressSentinel;
-          final nextEpisode = ref
-              .watch(nextEpisodeForProgressProvider(progressForNext))
-              .value;
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final isDesktop = constraints.maxWidth >= 900;
-              return _buildContent(
-                context,
-                details,
-                pluginsAsync.value ?? [],
-                preferredId,
-                isDesktop,
-                continueProgress: continueProgress,
-                nextEpisode:
-                    continueProgress != null &&
-                        continueProgress.percentage >= 95 &&
-                        details.type == MediaType.tv
-                    ? nextEpisode
-                    : null,
+      body: Stack(
+        children: [
+          Builder(
+            builder: (context) {
+              final cwList =
+                  ref
+                      .watch(continueWatchingProvider)
+                      .whenOrNull(data: (list) => list) ??
+                  [];
+              UserProgress? continueProgress;
+              for (final p in cwList) {
+                // Match the type too: a movie and a show can share an id.
+                if (p.mediaId == details.tmdbId.toString() &&
+                    p.mediaType == details.type.name) {
+                  continueProgress = p;
+                  break;
+                }
+              }
+              final progressForNext = continueProgress ?? _noProgressSentinel;
+              final nextEpisode = ref
+                  .watch(nextEpisodeForProgressProvider(progressForNext))
+                  .value;
+              return LayoutBuilder(
+                builder: (context, constraints) {
+                  final isDesktop = constraints.maxWidth >= 900;
+                  return _buildContent(
+                    context,
+                    details,
+                    pluginsAsync.value ?? [],
+                    preferredId,
+                    isDesktop,
+                    continueProgress: continueProgress,
+                    nextEpisode:
+                        continueProgress != null &&
+                            continueProgress.percentage >= 95 &&
+                            details.type == MediaType.tv
+                        ? nextEpisode
+                        : null,
+                  );
+                },
               );
             },
-          );
-        },
+          ),
+          if (detailsAsync.isLoading)
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: LinearProgressIndicator(
+                minHeight: 2,
+                color: AppColors.primaryOnDark,
+                backgroundColor: Colors.transparent,
+              ),
+            ),
+          if (failed) _buildErrorBanner(context, isTV),
+        ],
       ),
-    );
-  }
-
-  // ─── Loading ──────────────────────────────────────────────────────────
-
-  Widget _buildLoading(BuildContext context) {
-    return Stack(
-      children: [
-        // Backdrop placeholder
-        Container(
-          height: 360,
-          color: AppColors.surfaceDark,
-          child: const ShimmerPlaceholder(),
-        ),
-        // Back button
-        _buildBackButton(context),
-      ],
     );
   }
 
   // ─── Error ────────────────────────────────────────────────────────────
 
-  Widget _buildError(BuildContext context, String error) {
-    return Stack(
-      children: [
-        Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Text(
-              'Failed to load details:\n$error',
-              style: AppTextStyles.body.copyWith(
+  /// Shown over the partial content when the full details fail to load.
+  Widget _buildErrorBanner(BuildContext context, bool isTV) {
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: MediaQuery.paddingOf(context).bottom + 16,
+      child: Material(
+        color: AppColors.surfaceDark,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+        elevation: 6,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.cloud_off_rounded,
                 color: AppColors.textSecondary,
+                size: 20,
               ),
-              textAlign: TextAlign.center,
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Couldn\'t load the full details.',
+                  style: AppTextStyles.labelSmall.copyWith(
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => isTV
+                    ? ref.invalidate(tvDetailsProvider(media.tmdbId))
+                    : ref.invalidate(movieDetailsProvider(media.tmdbId)),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primaryOnDark,
+                ),
+                child: const Text('Retry'),
+              ),
+            ],
           ),
         ),
-        _buildBackButton(context),
-      ],
+      ),
     );
   }
+
+  // ─── Error ────────────────────────────────────────────────────────────
 
   // ─── Main Content ─────────────────────────────────────────────────────
 
@@ -522,6 +558,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               ),
               style: OutlinedButton.styleFrom(
                 foregroundColor: _watchForeground,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
                 side: const BorderSide(color: AppColors.glassBorder),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
@@ -899,6 +936,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _watchForeground,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   side: const BorderSide(color: AppColors.glassBorder),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
@@ -926,9 +964,14 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       )),
     );
 
+    final saved = ref
+        .watch(watchlistProvider)
+        .any((m) => m.tmdbId == details.tmdbId && m.type == details.type);
+
     return statusAsync.when(
       data: (current) {
-        final isInLibrary = current != null;
+        // Saved with no status yet (e.g. from Home's "+") is in the Library.
+        final isInLibrary = current != null || saved;
         return Material(
           color: Colors.transparent,
           child: InkWell(
@@ -974,7 +1017,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    current?.status.icon ?? Icons.playlist_add_rounded,
+                    current?.status.icon ??
+                        (saved
+                            ? Icons.bookmark_rounded
+                            : Icons.playlist_add_rounded),
                     color: isInLibrary
                         ? AppColors.primaryOnDark
                         : Colors.white70,
@@ -983,7 +1029,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                   const SizedBox(width: 10),
                   Flexible(
                     child: Text(
-                      current?.status.displayName ?? 'Add to Library',
+                      current?.status.displayName ??
+                          (saved ? 'In Library' : 'Add to Library'),
                       style: AppTextStyles.labelSmall.copyWith(
                         color: isInLibrary
                             ? AppColors.primaryOnDark
@@ -1003,6 +1050,34 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       },
       loading: () => const SizedBox(width: 56, height: 56),
       error: (_, _) => const SizedBox.shrink(),
+    );
+  }
+
+  Future<bool?> _confirmRemove(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceDark,
+        title: Text('Remove from Library?', style: AppTextStyles.sectionTitle),
+        content: Text(
+          'This also clears its watch status and progress.',
+          style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.textSecondary,
+            ),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1130,13 +1205,16 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                   );
                 }),
                 const SizedBox(height: 8),
-                // Remove from library (if exists)
-                if (current != null)
+                // Remove from library (if saved or tracked)
+                if (current != null ||
+                    ref.read(watchlistProvider.notifier).contains(details))
                   TextButton.icon(
-                    onPressed: () {
-                      // Fire-and-forget — the notifier method also drops the
-                      // watch-progress entry and invalidates Continue Watching,
-                      // so the title vanishes from every list at once.
+                    onPressed: () async {
+                      final sheet = Navigator.of(context);
+                      final confirmed = await _confirmRemove(context);
+                      if (confirmed != true) return;
+                      // The notifier also drops watch progress and refreshes
+                      // Continue Watching, so the title leaves every list.
                       unawaited(
                         ref
                             .read(watchStatusNotifierProvider.notifier)
@@ -1146,7 +1224,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                             ),
                       );
                       ref.read(watchlistProvider.notifier).remove(details);
-                      Navigator.pop(context);
+                      if (sheet.mounted) sheet.pop();
                     },
                     icon: const Icon(
                       Icons.delete_outline_rounded,
@@ -1209,7 +1287,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 underline: const SizedBox.shrink(),
                 style: AppTextStyles.labelSmall,
                 onChanged: (v) {
-                  if (v != null) setState(() => _selectedSeason = v);
+                  if (v != null) {
+                    setState(() {
+                      _selectedSeason = v;
+                      _showAllEpisodes = false;
+                    });
+                  }
                 },
                 items: seasons.map((s) {
                   return DropdownMenuItem(
@@ -1241,27 +1324,40 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
           ),
           data: (episodes) => Column(
-            children: episodes.map((ep) {
-              final epPlugin = PluginUrlResolver.pickPlugin(
-                episodePlugins,
-                preferredId: preferredId,
-              );
-              return _EpisodeRow(
-                mediaId: details.tmdbId.toString(),
-                show: details,
-                episode: ep,
-                plugins: episodePlugins,
-                onPlay: epPlugin == null
-                    ? null
-                    : () => _executePlugin(
-                        context,
-                        epPlugin,
-                        details,
-                        season: ep.seasonNumber,
-                        episode: ep.episodeNumber,
-                      ),
-              );
-            }).toList(),
+            children: [
+              ...(_showAllEpisodes || episodes.length <= _episodePage
+                      ? episodes
+                      : episodes.take(_episodePage))
+                  .map((ep) {
+                    final epPlugin = PluginUrlResolver.pickPlugin(
+                      episodePlugins,
+                      preferredId: preferredId,
+                    );
+                    return _EpisodeRow(
+                      mediaId: details.tmdbId.toString(),
+                      show: details,
+                      episode: ep,
+                      plugins: episodePlugins,
+                      onPlay: epPlugin == null
+                          ? null
+                          : () => _executePlugin(
+                              context,
+                              epPlugin,
+                              details,
+                              season: ep.seasonNumber,
+                              episode: ep.episodeNumber,
+                            ),
+                    );
+                  }),
+              if (!_showAllEpisodes && episodes.length > _episodePage)
+                TextButton(
+                  onPressed: () => setState(() => _showAllEpisodes = true),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primaryOnDark,
+                  ),
+                  child: Text('Show all ${episodes.length} episodes'),
+                ),
+            ],
           ),
         ),
         const SizedBox(height: 16),
