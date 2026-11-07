@@ -96,7 +96,7 @@ class ContinueWatchingCard extends StatelessWidget {
                                 child: Text(
                                   episodeLabel!,
                                   style: AppTextStyles.cardSubtitle.copyWith(
-                                    color: AppColors.primary,
+                                    color: AppColors.primaryOnDark,
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -116,7 +116,7 @@ class ContinueWatchingCard extends StatelessWidget {
                           onPressed: onContinueTap,
                           icon: const Icon(
                             Icons.play_circle_filled_rounded,
-                            color: AppColors.primary,
+                            color: AppColors.primaryOnDark,
                             size: 36,
                           ),
                           style: IconButton.styleFrom(

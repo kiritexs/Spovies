@@ -489,7 +489,7 @@ class _GenreHeader extends StatelessWidget {
             child: Text(
               'Genre',
               style: AppTextStyles.tag.copyWith(
-                color: AppColors.primary,
+                color: AppColors.primaryOnDark,
                 fontSize: 10,
               ),
             ),

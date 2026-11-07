@@ -195,14 +195,14 @@ class HeroCard extends StatelessWidget {
                   children: [
                     Icon(
                       Icons.star_rounded,
-                      color: AppColors.primary,
+                      color: AppColors.primaryOnDark,
                       size: 16,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       movie.metadata.rating?.toStringAsFixed(1) ?? '—',
                       style: AppTextStyles.metadata.copyWith(
-                        color: AppColors.primary,
+                        color: AppColors.primaryOnDark,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -308,7 +308,7 @@ class HeroCard extends StatelessWidget {
               // Rating
               Icon(
                 Icons.star_rounded,
-                color: AppColors.primary,
+                color: AppColors.primaryOnDark,
                 size: AppSpacing.iconSm,
               ),
               const SizedBox(width: 4),

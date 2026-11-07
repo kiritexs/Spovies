@@ -113,7 +113,7 @@ class NextEpisodeOverlay extends ConsumerWidget {
                           const Text(
                             'UP NEXT',
                             style: TextStyle(
-                              color: AppColors.primary,
+                              color: AppColors.primaryOnDark,
                               fontSize: 11,
                               fontWeight: FontWeight.w900,
                               letterSpacing: 1.5,

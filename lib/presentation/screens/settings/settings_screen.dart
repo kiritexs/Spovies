@@ -102,6 +102,7 @@ class SettingsScreen extends ConsumerWidget {
                   context,
                   icon: Icons.history_rounded,
                   title: 'Clear Watch History',
+                  destructive: true,
                   subtitle: 'Remove all watch progress',
                   onTap: () =>
                       _confirmClear(context, ref, 'watch history', () async {
@@ -117,6 +118,7 @@ class SettingsScreen extends ConsumerWidget {
                   context,
                   icon: Icons.bookmark_remove_rounded,
                   title: 'Clear Library',
+                  destructive: true,
                   subtitle: 'Remove all saved titles and their statuses',
                   onTap: () => _confirmClear(context, ref, 'library', () async {
                     // Statuses go too: a status with no saved title would
@@ -140,7 +142,7 @@ class SettingsScreen extends ConsumerWidget {
                   subtitle: 'Dark',
                   trailing: const Icon(
                     Icons.check_circle,
-                    color: AppColors.primary,
+                    color: AppColors.primaryOnDark,
                     size: 20,
                   ),
                 ),
@@ -274,7 +276,13 @@ class SettingsScreen extends ConsumerWidget {
     Widget? trailing,
     VoidCallback? onTap,
     bool disabled = false,
+    bool destructive = false,
   }) {
+    final accent = disabled
+        ? AppColors.textSecondary
+        : destructive
+        ? AppColors.danger
+        : AppColors.primary;
     // Disabled tiles still render (the user should know the feature
     // exists) but with 50 % opacity, muted colours, and no chevron.
     // The onTap fires so the user can land on the "unavailable"
@@ -295,16 +303,14 @@ class SettingsScreen extends ConsumerWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: (disabled
-                        ? AppColors.textSecondary
-                        : AppColors.primary)
-                    .withValues(alpha: 0.15),
+                color: accent.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
               ),
               child: Icon(
                 icon,
-                color:
-                    disabled ? AppColors.textSecondary : AppColors.primary,
+                color: accent == AppColors.primary
+                    ? AppColors.primaryOnDark
+                    : accent,
                 size: 20,
               ),
             ),
@@ -375,7 +381,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
               child: const Icon(
                 Icons.play_circle_outline,
-                color: AppColors.primary,
+                color: AppColors.primaryOnDark,
                 size: 20,
               ),
             ),
@@ -578,7 +584,9 @@ class SettingsScreen extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.primaryOnDark,
+            ),
             child: const Text('Import'),
           ),
         ],
@@ -644,7 +652,7 @@ class SettingsScreen extends ConsumerWidget {
                 );
               }
             },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
             child: const Text('Clear'),
           ),
         ],

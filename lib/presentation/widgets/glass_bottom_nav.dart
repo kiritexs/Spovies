@@ -63,7 +63,7 @@ class GlassBottomNav extends StatelessWidget {
               curve: Curves.easeOutBack,
               child: Icon(
                 isActive ? _getFilledIcon(item.icon) : item.icon,
-                color: isActive ? AppColors.primary : AppColors.textSecondary,
+                color: isActive ? AppColors.primaryOnDark : AppColors.textSecondary,
                 size: AppSpacing.iconLg,
               ),
             ),
@@ -73,7 +73,7 @@ class GlassBottomNav extends StatelessWidget {
                 width: 4,
                 height: 4,
                 decoration: const BoxDecoration(
-                  color: AppColors.primary,
+                  color: AppColors.primaryOnDark,
                   shape: BoxShape.circle,
                 ),
               ),

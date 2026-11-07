@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'app_colors.dart';
+
 /// Spovies typography system — Spline Sans, matching the original Stitch design mockup (not included in this repository).
 abstract final class AppTextStyles {
   static String get _fontFamily => GoogleFonts.splineSans().fontFamily!;
@@ -113,13 +115,13 @@ abstract final class AppTextStyles {
     color: Colors.white,
   );
 
-  /// Welcome label — xs, semibold, uppercase, wide tracking, primary color.
+  /// Welcome label — xs, semibold, uppercase, wide tracking, brand violet.
   static TextStyle get welcomeLabel => TextStyle(
     fontFamily: _fontFamily,
     fontSize: 12,
     fontWeight: FontWeight.w600,
     letterSpacing: 2.0,
-    color: const Color(0xFF6C2BEE),
+    color: AppColors.primaryOnDark,
   );
 
   // ─── Utility ──────────────────────────────────────────────────────────

@@ -5,8 +5,21 @@ import 'package:flutter/material.dart';
 /// Every color token is mapped 1:1 from the Tailwind config in the HTML template.
 abstract final class AppColors {
   // ─── Brand ────────────────────────────────────────────────────────────
+  /// Fills and accents behind white text (white on it: 6.5:1).
+  ///
+  /// Too dark for text or icons on the dark backgrounds (2.7–3.0:1); use
+  /// [primaryOnDark] for those.
   static const Color primary = Color(0xFF6C2BEE);
   static const Color primaryMuted = Color(0xE66C2BEE); // 90% opacity
+
+  /// Brand violet for text and icons on dark surfaces (6.4–7.3:1).
+  static const Color primaryOnDark = Color(0xFFA78BFA); // Violet 400
+
+  /// Keyboard focus ring (9–10:1 on dark surfaces).
+  static const Color focus = Color(0xFFC4B5FD); // Violet 300
+
+  /// Destructive actions: remove, clear, delete (6.3–7.2:1).
+  static const Color danger = Color(0xFFF87171); // Red 400
 
   // ─── Backgrounds ──────────────────────────────────────────────────────
   static const Color backgroundDark = Color(0xFF0A0A0C);
@@ -22,7 +35,8 @@ abstract final class AppColors {
   // ─── Text ─────────────────────────────────────────────────────────────
   static const Color textPrimary = Color(0xFFFFFFFF);
   static const Color textSecondary = Color(0xFF94A3B8); // Slate 400
-  static const Color textMuted = Color(0xFF64748B); // Slate 500
+  /// Lowest-emphasis text that still passes AA (5.1:1 on surface).
+  static const Color textMuted = Color(0xFF7E8CA3);
 
   // ─── Interactive ──────────────────────────────────────────────────────
   static const Color buttonGlass = Color(0x1AFFFFFF); // white/10

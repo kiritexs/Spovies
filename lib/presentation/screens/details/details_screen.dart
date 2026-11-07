@@ -339,7 +339,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                         Text(
                           details.year!,
                           style: AppTextStyles.tag.copyWith(
-                            color: AppColors.primary,
+                            color: AppColors.primaryOnDark,
                             letterSpacing: 2,
                           ),
                         ),
@@ -702,7 +702,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.star_rounded, color: AppColors.primary, size: 16),
+            const Icon(Icons.star_rounded, color: AppColors.primaryOnDark, size: 16),
             const SizedBox(width: 4),
             Text(
               details.metadata.rating!.toStringAsFixed(1),
@@ -986,7 +986,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 children: [
                   Icon(
                     current?.status.icon ?? Icons.playlist_add_rounded,
-                    color: isInLibrary ? AppColors.primary : Colors.white70,
+                    color: isInLibrary ? AppColors.primaryOnDark : Colors.white70,
                     size: 22,
                   ),
                   const SizedBox(width: 10),
@@ -994,7 +994,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                     child: Text(
                       current?.status.displayName ?? 'Add to Library',
                       style: AppTextStyles.labelSmall.copyWith(
-                        color: isInLibrary ? AppColors.primary : Colors.white70,
+                        color: isInLibrary ? AppColors.primaryOnDark : Colors.white70,
                         fontWeight: isInLibrary
                             ? FontWeight.w600
                             : FontWeight.normal,
@@ -1043,7 +1043,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                   children: [
                     Icon(
                       Icons.library_add_rounded,
-                      color: AppColors.primary,
+                      color: AppColors.primaryOnDark,
                       size: 24,
                     ),
                     const SizedBox(width: 12),
@@ -1098,7 +1098,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                           ),
                           border: Border.all(
                             color: isSelected
-                                ? AppColors.primary
+                                ? AppColors.primaryOnDark
                                 : AppColors.glassBorder,
                           ),
                         ),
@@ -1107,7 +1107,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                             Icon(
                               s.icon,
                               color: isSelected
-                                  ? AppColors.primary
+                                  ? AppColors.primaryOnDark
                                   : Colors.white70,
                               size: 24,
                             ),
@@ -1116,7 +1116,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                               s.displayName,
                               style: AppTextStyles.label.copyWith(
                                 color: isSelected
-                                    ? AppColors.primary
+                                    ? AppColors.primaryOnDark
                                     : Colors.white,
                                 fontWeight: isSelected
                                     ? FontWeight.bold
@@ -1127,7 +1127,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                             if (isSelected)
                               const Icon(
                                 Icons.check_circle_rounded,
-                                color: AppColors.primary,
+                                color: AppColors.primaryOnDark,
                                 size: 20,
                               ),
                           ],
@@ -1157,12 +1157,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                     },
                     icon: const Icon(
                       Icons.delete_outline_rounded,
-                      color: Colors.redAccent,
+                      color: AppColors.danger,
                     ),
                     label: Text(
                       'Remove from Library',
                       style: AppTextStyles.label.copyWith(
-                        color: Colors.redAccent,
+                        color: AppColors.danger,
                       ),
                     ),
                   ),
@@ -1797,7 +1797,7 @@ class _EpisodeRow extends ConsumerWidget {
                               child: const Center(
                                 child: Icon(
                                   Icons.check_circle_rounded,
-                                  color: AppColors.primary,
+                                  color: AppColors.primaryOnDark,
                                   size: 32,
                                 ),
                               ),
@@ -1877,7 +1877,7 @@ class _EpisodeRow extends ConsumerWidget {
                                   style: AppTextStyles.tag.copyWith(
                                     color: isWatched
                                         ? AppColors.textMuted
-                                        : AppColors.primary,
+                                        : AppColors.primaryOnDark,
                                     letterSpacing: 1,
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
@@ -1899,7 +1899,7 @@ class _EpisodeRow extends ConsumerWidget {
                                     child: Text(
                                       '${progress?.percentage.toInt()}%',
                                       style: AppTextStyles.tag.copyWith(
-                                        color: AppColors.primary,
+                                        color: AppColors.primaryOnDark,
                                         fontSize: 9,
                                       ),
                                     ),
@@ -1986,7 +1986,7 @@ class _EpisodeStatusPicker extends ConsumerWidget {
         Icons.more_vert_rounded,
         size: 18,
         color: (currentStatus != null || isWatchedByDefault)
-            ? AppColors.primary
+            ? AppColors.primaryOnDark
             : AppColors.textMuted,
       ),
       tooltip: 'Change status (always editable)',
@@ -2041,7 +2041,7 @@ class _EpisodeStatusPicker extends ConsumerWidget {
                         s?.icon ?? Icons.delete_outline_rounded,
                         size: 18,
                         color: s == currentStatus
-                            ? AppColors.primary
+                            ? AppColors.primaryOnDark
                             : Colors.white70,
                       ),
                       const SizedBox(width: 12),
@@ -2053,7 +2053,7 @@ class _EpisodeStatusPicker extends ConsumerWidget {
                             : s.displayName,
                         style: AppTextStyles.labelSmall.copyWith(
                           color: s == currentStatus
-                              ? AppColors.primary
+                              ? AppColors.primaryOnDark
                               : Colors.white,
                         ),
                       ),
@@ -2061,7 +2061,7 @@ class _EpisodeStatusPicker extends ConsumerWidget {
                       if (s == currentStatus && s != null)
                         const Icon(
                           Icons.check,
-                          color: AppColors.primary,
+                          color: AppColors.primaryOnDark,
                           size: 16,
                         ),
                     ],

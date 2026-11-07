@@ -48,7 +48,7 @@ class MediaRow extends StatelessWidget {
                     child: Text(
                       'See All',
                       style: AppTextStyles.labelSmall.copyWith(
-                        color: AppColors.primary,
+                        color: AppColors.primaryOnDark,
                       ),
                     ),
                   ),

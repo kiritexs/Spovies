@@ -59,7 +59,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
               child: Text(
                 'Clear All',
                 style: AppTextStyles.labelSmall.copyWith(
-                  color: Colors.redAccent,
+                  color: AppColors.danger,
                 ),
               ),
             ),
@@ -206,7 +206,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
             onPressed: () => Navigator.pop(context, true),
             child: Text(
               'Clear',
-              style: AppTextStyles.label.copyWith(color: Colors.redAccent),
+              style: AppTextStyles.label.copyWith(color: AppColors.danger),
             ),
           ),
         ],
@@ -255,7 +255,7 @@ class _StatusFilterChip extends StatelessWidget {
         backgroundColor: AppColors.surfaceDark,
         selectedColor: AppColors.primary.withValues(alpha: 0.2),
         labelStyle: AppTextStyles.labelSmall.copyWith(
-          color: isSelected ? AppColors.primary : Colors.white70,
+          color: isSelected ? AppColors.primaryOnDark : Colors.white70,
           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
         ),
         shape: RoundedRectangleBorder(
@@ -378,7 +378,7 @@ class _WatchlistItem extends ConsumerWidget {
                             child: Icon(
                               status.status.icon,
                               size: 12,
-                              color: AppColors.primary,
+                              color: AppColors.primaryOnDark,
                             ),
                           ),
                         ),

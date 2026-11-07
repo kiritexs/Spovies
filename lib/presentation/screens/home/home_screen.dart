@@ -394,7 +394,7 @@ class _ContinueWatchingSection extends ConsumerWidget {
                     Text(
                       '${items.length} items',
                       style: AppTextStyles.labelSmall.copyWith(
-                        color: AppColors.primary,
+                        color: AppColors.primaryOnDark,
                       ),
                     ),
                 ],
@@ -462,7 +462,7 @@ class _ErrorCard extends StatelessWidget {
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh, size: 18),
                 label: const Text('Retry'),
-                style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+                style: TextButton.styleFrom(foregroundColor: AppColors.primaryOnDark),
               ),
             ],
           ),

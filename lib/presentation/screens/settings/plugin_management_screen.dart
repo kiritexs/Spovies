@@ -115,10 +115,10 @@ class PluginManagementScreen extends ConsumerWidget {
             alignment: Alignment.centerRight,
             padding: const EdgeInsets.only(right: 24),
             decoration: BoxDecoration(
-              color: Colors.red.withValues(alpha: 0.15),
+              color: AppColors.danger.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
             ),
-            child: const Icon(Icons.delete_outline, color: Colors.red),
+            child: const Icon(Icons.delete_outline, color: AppColors.danger),
           ),
           confirmDismiss: (_) => _confirmUninstall(context, plugin.name),
           onDismissed: (_) {
@@ -184,7 +184,7 @@ class PluginManagementScreen extends ConsumerWidget {
             onPressed: () => Navigator.pop(context, true),
             child: Text(
               'Remove',
-              style: AppTextStyles.label.copyWith(color: Colors.red),
+              style: AppTextStyles.label.copyWith(color: AppColors.danger),
             ),
           ),
         ],
@@ -248,7 +248,7 @@ class _PluginTile extends ConsumerWidget {
                       ),
                       child: const Icon(
                         Icons.extension_rounded,
-                        color: AppColors.primary,
+                        color: AppColors.primaryOnDark,
                         size: 22,
                       ),
                     ),
@@ -316,7 +316,7 @@ class _PluginTile extends ConsumerWidget {
                             child: Text(
                               h.value,
                               style: AppTextStyles.cardSubtitle.copyWith(
-                                color: AppColors.primary,
+                                color: AppColors.primaryOnDark,
                                 fontSize: 10,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -452,7 +452,7 @@ class _AddPluginSheetState extends ConsumerState<_AddPluginSheet> {
                         AppSpacing.radiusBase,
                       ),
                       borderSide: const BorderSide(
-                        color: AppColors.primary,
+                        color: AppColors.primaryOnDark,
                         width: 1.5,
                       ),
                     ),
