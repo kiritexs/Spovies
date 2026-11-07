@@ -180,17 +180,20 @@ analogue of Android intent URIs to worry about.
 
 ## Injected script order
 
-Order matters:
+As built in `web_view_player_config.dart`:
 
 1. `isAd` first, so every later script can use `window.__spoviesIsAd`.
-2. UA-data spoof on Android, before any feature detection.
-3. AdGuard (`fetch`/XHR patches) before any network calls.
-4. Console killer.
-5. Ad removal (DOM defence).
-6. Fullscreen suppression, iOS inline-video fix, no-select CSS.
-7. App bridge, user-activity tracker, video-progress tracker — these
-   depend on `flutter_inappwebview`'s bridge, so they run at
-   `AT_DOCUMENT_END`.
+2. Ad removal (DOM hide + `window.open` allowlist).
+3. No-select CSS.
+4. Console killer (where enabled).
+5. Platform-gated, all at `AT_DOCUMENT_START`: AdGuard `fetch`/XHR/WS
+   patches (Windows), fullscreen suppression and the inline-video fix
+   (iOS), brand hide (Android). All are in place before the page's own
+   scripts run, so before its first network call.
+6. App bridge (`AT_DOCUMENT_END`: it needs `flutter_inappwebview`'s
+   bridge), the user-activity tracker (`AT_DOCUMENT_START`: it only
+   listens for input) and the video-progress tracker
+   (`AT_DOCUMENT_END`).
 
 `forMainFrameOnly: false` everywhere, because streaming sites embed the
 player inside cross-origin iframes and both the fix and the tracker have
