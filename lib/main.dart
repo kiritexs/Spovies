@@ -30,6 +30,11 @@ void main() async {
     HostUtils.init(),
     PlayerScripts.load(),
   ]);
+  // The bundled font's licence, shown on the Licenses page.
+  LicenseRegistry.addLicense(() async* {
+    final ofl = await rootBundle.loadString('assets/fonts/OFL.txt');
+    yield LicenseEntryWithLineBreaks(const ['Spline Sans'], ofl);
+  });
   // Not awaited: trimming old TMDB responses must not delay startup.
   unawaited(TmdbCacheInterceptor.prune(HiveService.tmdbCacheBox));
 

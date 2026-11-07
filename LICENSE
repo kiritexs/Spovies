@@ -137,8 +137,8 @@ are not licensed by this LICENSE. Each stays under its own terms:
       maintained by the Mozilla Foundation and contributors, under the
       Mozilla Public License 2.0 (notice kept at the top of that file).
 
-  (c) The Spline Sans typeface, loaded through the google_fonts package,
-      under the SIL Open Font License 1.1.
+  (c) The Spline Sans typeface, bundled in assets/fonts/, under the SIL
+      Open Font License 1.1 (full text in assets/fonts/OFL.txt).
 
   (d) Ad-blocking lists the Work may download at run time (OISD, Peter
       Lowe's list, AdGuard DNS filter, Steven Black's hosts, NoCoin),

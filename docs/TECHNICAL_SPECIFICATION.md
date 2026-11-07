@@ -408,7 +408,7 @@ API responses are cached locally in Hive with configurable TTLs via `TmdbCacheIn
 
 ### Phase 1: Foundation ✅
 
-- [x] Project setup: Flutter, dependencies (Riverpod, Hive, Dio, `google_fonts`, `cached_network_image`)
+- [x] Project setup: Flutter, dependencies (Riverpod, Hive, Dio, `cached_network_image`; Spline Sans bundled)
 - [x] Folder structure per Clean Architecture
 - [x] Design system: `AppTheme`, `AppColors`, `AppTextStyles`, `AppSpacing` matching the original design mockup's tokens
 - [x] TMDB API wrapper: `TmdbApi` class with Bearer token auth, retry & cache interceptors
@@ -798,7 +798,7 @@ final exportImportServiceProvider = Provider<ExportImportService>((ref) => ...);
 | **Label** | Spline Sans | 600 | Buttons, tags, nav labels |
 | **Caption** | Spline Sans | 400 | Metadata, ratings, genres, timestamps |
 
-**Flutter mapping:** Use `google_fonts` package → `GoogleFonts.splineSans(...)`. Define a `AppTextStyles` class with all variants.
+**Flutter mapping:** Spline Sans is bundled in `assets/fonts/` (weights 400–700, declared in `pubspec.yaml` as family `SplineSans`) and used through `AppTextStyles`. Each weight has its own file, so `fontWeight` changes pick the real face rather than synthetic bold.
 
 ---
 
