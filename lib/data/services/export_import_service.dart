@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
@@ -180,10 +181,10 @@ class ExportImportService {
     return collector.bytes;
   }
 
-  static List<Map> _list(dynamic raw) =>
-      raw is List ? raw.whereType<Map>().toList() : const [];
+  static List<Map<dynamic, dynamic>> _list(dynamic raw) =>
+      raw is List ? raw.whereType<Map<dynamic, dynamic>>().toList() : const [];
 
-  static List<Map<String, dynamic>> _boxValues(dynamic box) {
+  static List<Map<String, dynamic>> _boxValues(Box<dynamic> box) {
     final entries = <Map<String, dynamic>>[];
     for (final key in box.keys) {
       final value = box.get(key);
@@ -217,7 +218,9 @@ class ExportImportService {
     });
   }
 
-  static Future<int> _mergeWatchHistory(List<Map> items) async {
+  static Future<int> _mergeWatchHistory(
+    List<Map<dynamic, dynamic>> items,
+  ) async {
     var written = 0;
     for (final raw in items) {
       final UserProgress progress;
@@ -249,7 +252,7 @@ class ExportImportService {
     return written;
   }
 
-  static Future<int> _mergeWatchlist(List<Map> items) async {
+  static Future<int> _mergeWatchlist(List<Map<dynamic, dynamic>> items) async {
     var written = 0;
     for (final raw in items) {
       final tmdbId = raw['tmdbId'];
@@ -266,7 +269,7 @@ class ExportImportService {
     return written;
   }
 
-  static Future<int> _mergeStatuses(List<Map> items) async {
+  static Future<int> _mergeStatuses(List<Map<dynamic, dynamic>> items) async {
     var written = 0;
     for (final raw in items) {
       final MediaStatus status;
@@ -297,7 +300,7 @@ class ExportImportService {
     return written;
   }
 
-  static Future<int> _mergePlugins(List<Map> items) async {
+  static Future<int> _mergePlugins(List<Map<dynamic, dynamic>> items) async {
     var written = 0;
     for (final raw in items) {
       final map = Map<String, dynamic>.from(raw)..remove('_key');

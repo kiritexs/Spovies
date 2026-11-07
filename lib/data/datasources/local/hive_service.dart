@@ -13,12 +13,12 @@ class HiveService {
   static const String listStatusBoxName = 'list_status';
   static const String tmdbCacheBoxName = 'tmdb_cache';
 
-  static late Box<Map> pluginsBox;
+  static late Box<Map<dynamic, dynamic>> pluginsBox;
   static late Box<dynamic> settingsBox;
-  static late Box<Map> watchHistoryBox;
-  static late Box<Map> watchlistBox;
-  static late Box<Map> listStatusBox;
-  static late Box<Map> tmdbCacheBox;
+  static late Box<Map<dynamic, dynamic>> watchHistoryBox;
+  static late Box<Map<dynamic, dynamic>> watchlistBox;
+  static late Box<Map<dynamic, dynamic>> listStatusBox;
+  static late Box<Map<dynamic, dynamic>> tmdbCacheBox;
 
   /// Initialize Hive and open all application boxes.
   ///
@@ -26,12 +26,16 @@ class HiveService {
   static Future<void> init() async {
     await Hive.initFlutter();
 
-    pluginsBox = await Hive.openBox<Map>(pluginsBoxName);
+    pluginsBox = await Hive.openBox<Map<dynamic, dynamic>>(pluginsBoxName);
     settingsBox = await Hive.openBox<dynamic>(settingsBoxName);
-    watchHistoryBox = await Hive.openBox<Map>(watchHistoryBoxName);
-    watchlistBox = await Hive.openBox<Map>(watchlistBoxName);
-    listStatusBox = await Hive.openBox<Map>(listStatusBoxName);
-    tmdbCacheBox = await Hive.openBox<Map>(tmdbCacheBoxName);
+    watchHistoryBox = await Hive.openBox<Map<dynamic, dynamic>>(
+      watchHistoryBoxName,
+    );
+    watchlistBox = await Hive.openBox<Map<dynamic, dynamic>>(watchlistBoxName);
+    listStatusBox = await Hive.openBox<Map<dynamic, dynamic>>(
+      listStatusBoxName,
+    );
+    tmdbCacheBox = await Hive.openBox<Map<dynamic, dynamic>>(tmdbCacheBoxName);
 
     await migrateStorageKeys();
   }
@@ -75,11 +79,11 @@ class HiveService {
   }
 
   static Future<void> _rekey(
-    Box<Map> box,
-    String Function(Map value) newKeyOf, {
+    Box<Map<dynamic, dynamic>> box,
+    String Function(Map<dynamic, dynamic> value) newKeyOf, {
     String? dateField,
   }) async {
-    final moves = <dynamic, MapEntry<String, Map>>{};
+    final moves = <dynamic, MapEntry<String, Map<dynamic, dynamic>>>{};
     for (final entry in box.toMap().entries) {
       final String newKey;
       try {
@@ -100,7 +104,7 @@ class HiveService {
     }
     if (moves.isEmpty) return;
 
-    final puts = <String, Map>{};
+    final puts = <String, Map<dynamic, dynamic>>{};
     for (final move in moves.values) {
       puts[move.key] = move.value;
     }

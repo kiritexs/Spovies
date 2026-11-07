@@ -13,6 +13,11 @@ include: package:flutter_lints/flutter.yaml
 # generate hundreds of unrelated hits across the existing screens and add
 # no signal until the codebase is fully migrated.
 analyzer:
+  # Strict typing: no implicit downcasts from dynamic, no raw generic
+  # types, no member calls on dynamic. JSON is cast at the boundary.
+  language:
+    strict-casts: true
+    strict-raw-types: true
   errors:
     unawaited_futures: error
     use_build_context_synchronously: error
@@ -34,6 +39,8 @@ linter:
     no_adjacent_strings_in_list: true
     throw_in_finally: true
     unawaited_futures: true
+    discarded_futures: true
+    avoid_dynamic_calls: true
 
     # ── Production hygiene ─────────────────────────────────────────────
     avoid_print: true

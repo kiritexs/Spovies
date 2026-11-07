@@ -17,7 +17,7 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
     tmpDir = await Directory.systemTemp.createTemp('spovies_history_test_');
     Hive.init(tmpDir.path);
-    HiveService.watchHistoryBox = await Hive.openBox<Map>(
+    HiveService.watchHistoryBox = await Hive.openBox<Map<dynamic, dynamic>>(
       HiveService.watchHistoryBoxName,
     );
   });

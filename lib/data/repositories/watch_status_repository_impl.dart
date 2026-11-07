@@ -7,7 +7,7 @@ import '../../domain/repositories/watch_status_repository.dart';
 
 /// Hive-backed implementation of [WatchStatusRepository].
 class WatchStatusRepositoryImpl implements WatchStatusRepository {
-  Box<Map> get _box => HiveService.listStatusBox;
+  Box<Map<dynamic, dynamic>> get _box => HiveService.listStatusBox;
 
   @override
   Future<void> saveStatus(MediaStatus entry) async {

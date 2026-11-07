@@ -19,8 +19,8 @@ import 'package:spovies/presentation/screens/details/details_screen.dart';
 void main() {
   // In-memory boxes: no disk IO inside the fake-async test zone.
   setUpAll(() async {
-    Future<Box<Map>> mem(String name) =>
-        Hive.openBox<Map>(name, bytes: Uint8List(0));
+    Future<Box<Map<dynamic, dynamic>>> mem(String name) =>
+        Hive.openBox<Map<dynamic, dynamic>>(name, bytes: Uint8List(0));
     HiveService.pluginsBox = await mem(HiveService.pluginsBoxName);
     HiveService.watchHistoryBox = await mem(HiveService.watchHistoryBoxName);
     HiveService.watchlistBox = await mem(HiveService.watchlistBoxName);

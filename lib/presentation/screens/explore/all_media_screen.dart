@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -75,7 +76,7 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
   @override
   void initState() {
     super.initState();
-    _loadNextPage();
+    unawaited(_loadNextPage());
     _scrollController.addListener(_onScroll);
   }
 
@@ -92,7 +93,7 @@ class _AllMediaScreenState extends ConsumerState<AllMediaScreen> {
     if (_error != null) return;
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 300) {
-      _loadNextPage();
+      unawaited(_loadNextPage());
     }
   }
 

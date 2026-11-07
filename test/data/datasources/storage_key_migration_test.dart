@@ -17,13 +17,13 @@ void main() {
     tmpDir = await Directory.systemTemp.createTemp('spovies_migration_test_');
     Hive.init(tmpDir.path);
     HiveService.settingsBox = await Hive.openBox(HiveService.settingsBoxName);
-    HiveService.watchHistoryBox = await Hive.openBox<Map>(
+    HiveService.watchHistoryBox = await Hive.openBox<Map<dynamic, dynamic>>(
       HiveService.watchHistoryBoxName,
     );
-    HiveService.watchlistBox = await Hive.openBox<Map>(
+    HiveService.watchlistBox = await Hive.openBox<Map<dynamic, dynamic>>(
       HiveService.watchlistBoxName,
     );
-    HiveService.listStatusBox = await Hive.openBox<Map>(
+    HiveService.listStatusBox = await Hive.openBox<Map<dynamic, dynamic>>(
       HiveService.listStatusBoxName,
     );
   });

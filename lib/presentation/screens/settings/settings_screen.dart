@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/config/feature_flags.dart';
+import '../../../domain/entities/plugin_manifest.dart';
 import '../../providers/app_info_provider.dart';
 import '../../widgets/app_snack_bar.dart';
 import '../../../core/theme/app_colors.dart';
@@ -356,14 +358,10 @@ class SettingsScreen extends ConsumerWidget {
   Widget _buildPreferredProvider(
     BuildContext context,
     WidgetRef ref,
-    AsyncValue<List<dynamic>> pluginsAsync,
+    AsyncValue<List<PluginManifest>> pluginsAsync,
     String? current,
   ) {
-    final plugins = pluginsAsync.when(
-      data: (list) => list,
-      loading: () => <dynamic>[],
-      error: (_, _) => <dynamic>[],
-    );
+    final plugins = pluginsAsync.value ?? const <PluginManifest>[];
 
     // If the saved preferred ID doesn't match any loaded plugin (e.g. still
     // loading, or plugin was uninstalled), fall back to null so the
@@ -423,7 +421,9 @@ class SettingsScreen extends ConsumerWidget {
                 ),
               ],
               onChanged: (value) {
-                ref.read(preferredPluginProvider.notifier).set(value);
+                unawaited(
+                  ref.read(preferredPluginProvider.notifier).set(value),
+                );
               },
             ),
           ),
@@ -655,42 +655,44 @@ class SettingsScreen extends ConsumerWidget {
     String dataName,
     Future<void> Function() onConfirm,
   ) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surfaceDark,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        ),
-        title: Text(
-          'Clear $dataName?',
-          style: AppTextStyles.cardTitle.copyWith(fontSize: 18),
-        ),
-        content: Text(
-          'This will permanently delete all $dataName data. This cannot be undone.',
-          style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+    unawaited(
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.surfaceDark,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
           ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await onConfirm();
-              if (context.mounted) {
-                showAppSnackBar(
-                  context,
-                  '${dataName[0].toUpperCase()}${dataName.substring(1)} cleared',
-                  aboveNav: true,
-                );
-              }
-            },
-            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
-            child: const Text('Clear'),
+          title: Text(
+            'Clear $dataName?',
+            style: AppTextStyles.cardTitle.copyWith(fontSize: 18),
           ),
-        ],
+          content: Text(
+            'This will permanently delete all $dataName data. This cannot be undone.',
+            style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                await onConfirm();
+                if (context.mounted) {
+                  showAppSnackBar(
+                    context,
+                    '${dataName[0].toUpperCase()}${dataName.substring(1)} cleared',
+                    aboveNav: true,
+                  );
+                }
+              },
+              style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+              child: const Text('Clear'),
+            ),
+          ],
+        ),
       ),
     );
   }

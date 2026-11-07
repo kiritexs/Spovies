@@ -112,16 +112,16 @@ void main() {
     setUpAll(() async {
       tmpDir = await Directory.systemTemp.createTemp('spovies_backup_test_');
       Hive.init(tmpDir.path);
-      HiveService.watchHistoryBox = await Hive.openBox<Map>(
+      HiveService.watchHistoryBox = await Hive.openBox<Map<dynamic, dynamic>>(
         HiveService.watchHistoryBoxName,
       );
-      HiveService.watchlistBox = await Hive.openBox<Map>(
+      HiveService.watchlistBox = await Hive.openBox<Map<dynamic, dynamic>>(
         HiveService.watchlistBoxName,
       );
-      HiveService.listStatusBox = await Hive.openBox<Map>(
+      HiveService.listStatusBox = await Hive.openBox<Map<dynamic, dynamic>>(
         HiveService.listStatusBoxName,
       );
-      HiveService.pluginsBox = await Hive.openBox<Map>(
+      HiveService.pluginsBox = await Hive.openBox<Map<dynamic, dynamic>>(
         HiveService.pluginsBoxName,
       );
       HiveService.settingsBox = await Hive.openBox(HiveService.settingsBoxName);

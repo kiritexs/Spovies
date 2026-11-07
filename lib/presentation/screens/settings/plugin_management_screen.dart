@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -122,7 +123,11 @@ class PluginManagementScreen extends ConsumerWidget {
           ),
           confirmDismiss: (_) => _confirmUninstall(context, plugin.name),
           onDismissed: (_) {
-            ref.read(pluginInstallProvider.notifier).uninstall(plugin.pluginId);
+            unawaited(
+              ref
+                  .read(pluginInstallProvider.notifier)
+                  .uninstall(plugin.pluginId),
+            );
           },
           child: _PluginTile(plugin: plugin),
         );
@@ -147,11 +152,13 @@ class PluginManagementScreen extends ConsumerWidget {
     // The controller's lifetime is owned by _AddPluginSheetState (created in
     // initState, disposed in dispose). Creating it here would leak it every
     // time the sheet opens because nothing in this scope ever disposes it.
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => const _AddPluginSheet(),
+    unawaited(
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => const _AddPluginSheet(),
+      ),
     );
   }
 

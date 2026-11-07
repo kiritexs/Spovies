@@ -7,7 +7,7 @@ import '../../domain/repositories/watch_history_repository.dart';
 
 /// Hive-backed implementation of [WatchHistoryRepository].
 class WatchHistoryRepositoryImpl implements WatchHistoryRepository {
-  Box<Map> get _box => HiveService.watchHistoryBox;
+  Box<Map<dynamic, dynamic>> get _box => HiveService.watchHistoryBox;
 
   @override
   Future<void> saveProgress(UserProgress progress) async {

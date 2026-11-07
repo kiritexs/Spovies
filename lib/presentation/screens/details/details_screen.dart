@@ -1090,164 +1090,170 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     MediaItem details,
     MediaStatus? current,
   ) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black54,
-      isScrollControlled: true,
-      builder: (context) {
-        return BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
-            decoration: BoxDecoration(
-              color: AppColors.backgroundDark.withValues(alpha: 0.8),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(AppSpacing.radiusXl),
-              ),
-              border: Border.all(color: AppColors.glassBorder),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Header
-                Row(
-                  children: [
-                    Icon(
-                      Icons.library_add_rounded,
-                      color: AppColors.primaryOnDark,
-                      size: 24,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Update Library Status',
-                      style: AppTextStyles.sectionTitle.copyWith(fontSize: 18),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      tooltip: 'Close',
-                      icon: const Icon(
-                        Icons.close_rounded,
-                        color: Colors.white70,
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
+    unawaited(
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        barrierColor: Colors.black54,
+        isScrollControlled: true,
+        builder: (context) {
+          return BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.backgroundDark.withValues(alpha: 0.8),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(AppSpacing.radiusXl),
                 ),
-                const SizedBox(height: 24),
-                // Status List
-                ...WatchStatus.values.map((s) {
-                  final isSelected = current?.status == s;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: InkWell(
-                      onTap: () {
-                        ref
-                            .read(watchStatusNotifierProvider.notifier)
-                            .setStatus(
-                              MediaStatus(
-                                mediaId: details.tmdbId.toString(),
-                                mediaType: details.type.name,
-                                status: s,
-                                season: null,
-                                episode: null,
-                                updatedAt: DateTime.now(),
-                              ),
-                              mediaItem: details,
-                            );
-                        Navigator.pop(context);
-                      },
-                      borderRadius: BorderRadius.circular(
-                        AppSpacing.radiusBase,
+                border: Border.all(color: AppColors.glassBorder),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.library_add_rounded,
+                        color: AppColors.primaryOnDark,
+                        size: 24,
                       ),
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? AppColors.primary.withValues(alpha: 0.15)
-                              : AppColors.glass,
-                          borderRadius: BorderRadius.circular(
-                            AppSpacing.radiusBase,
-                          ),
-                          border: Border.all(
-                            color: isSelected
-                                ? AppColors.primaryOnDark
-                                : AppColors.glassBorder,
-                          ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Update Library Status',
+                        style: AppTextStyles.sectionTitle.copyWith(
+                          fontSize: 18,
                         ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              s.icon,
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        tooltip: 'Close',
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white70,
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  // Status List
+                  ...WatchStatus.values.map((s) {
+                    final isSelected = current?.status == s;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: InkWell(
+                        onTap: () {
+                          unawaited(
+                            ref
+                                .read(watchStatusNotifierProvider.notifier)
+                                .setStatus(
+                                  MediaStatus(
+                                    mediaId: details.tmdbId.toString(),
+                                    mediaType: details.type.name,
+                                    status: s,
+                                    season: null,
+                                    episode: null,
+                                    updatedAt: DateTime.now(),
+                                  ),
+                                  mediaItem: details,
+                                ),
+                          );
+                          Navigator.pop(context);
+                        },
+                        borderRadius: BorderRadius.circular(
+                          AppSpacing.radiusBase,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppColors.primary.withValues(alpha: 0.15)
+                                : AppColors.glass,
+                            borderRadius: BorderRadius.circular(
+                              AppSpacing.radiusBase,
+                            ),
+                            border: Border.all(
                               color: isSelected
                                   ? AppColors.primaryOnDark
-                                  : Colors.white70,
-                              size: 24,
+                                  : AppColors.glassBorder,
                             ),
-                            const SizedBox(width: 16),
-                            Text(
-                              s.displayName,
-                              style: AppTextStyles.label.copyWith(
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                s.icon,
                                 color: isSelected
                                     ? AppColors.primaryOnDark
-                                    : Colors.white,
-                                fontWeight: isSelected
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
+                                    : Colors.white70,
+                                size: 24,
                               ),
-                            ),
-                            const Spacer(),
-                            if (isSelected)
-                              const Icon(
-                                Icons.check_circle_rounded,
-                                color: AppColors.primaryOnDark,
-                                size: 20,
+                              const SizedBox(width: 16),
+                              Text(
+                                s.displayName,
+                                style: AppTextStyles.label.copyWith(
+                                  color: isSelected
+                                      ? AppColors.primaryOnDark
+                                      : Colors.white,
+                                  fontWeight: isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
                               ),
-                          ],
+                              const Spacer(),
+                              if (isSelected)
+                                const Icon(
+                                  Icons.check_circle_rounded,
+                                  color: AppColors.primaryOnDark,
+                                  size: 20,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 8),
+                  // Remove from library (if saved or tracked)
+                  if (current != null ||
+                      ref.read(watchlistProvider.notifier).contains(details))
+                    TextButton.icon(
+                      onPressed: () async {
+                        final sheet = Navigator.of(context);
+                        final confirmed = await _confirmRemove(context);
+                        if (confirmed != true) return;
+                        // The notifier also drops watch progress and refreshes
+                        // Continue Watching, so the title leaves every list.
+                        unawaited(
+                          ref
+                              .read(watchStatusNotifierProvider.notifier)
+                              .deleteAllStatusesForMedia(
+                                details.tmdbId.toString(),
+                                mediaType: details.type.name,
+                              ),
+                        );
+                        ref.read(watchlistProvider.notifier).remove(details);
+                        if (sheet.mounted) sheet.pop();
+                      },
+                      icon: const Icon(
+                        Icons.delete_outline_rounded,
+                        color: AppColors.danger,
+                      ),
+                      label: Text(
+                        'Remove from Library',
+                        style: AppTextStyles.label.copyWith(
+                          color: AppColors.danger,
                         ),
                       ),
                     ),
-                  );
-                }),
-                const SizedBox(height: 8),
-                // Remove from library (if saved or tracked)
-                if (current != null ||
-                    ref.read(watchlistProvider.notifier).contains(details))
-                  TextButton.icon(
-                    onPressed: () async {
-                      final sheet = Navigator.of(context);
-                      final confirmed = await _confirmRemove(context);
-                      if (confirmed != true) return;
-                      // The notifier also drops watch progress and refreshes
-                      // Continue Watching, so the title leaves every list.
-                      unawaited(
-                        ref
-                            .read(watchStatusNotifierProvider.notifier)
-                            .deleteAllStatusesForMedia(
-                              details.tmdbId.toString(),
-                              mediaType: details.type.name,
-                            ),
-                      );
-                      ref.read(watchlistProvider.notifier).remove(details);
-                      if (sheet.mounted) sheet.pop();
-                    },
-                    icon: const Icon(
-                      Icons.delete_outline_rounded,
-                      color: AppColors.danger,
-                    ),
-                    label: Text(
-                      'Remove from Library',
-                      style: AppTextStyles.label.copyWith(
-                        color: AppColors.danger,
-                      ),
-                    ),
-                  ),
-                SizedBox(height: MediaQuery.of(context).padding.bottom),
-              ],
+                  SizedBox(height: MediaQuery.of(context).padding.bottom),
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -1400,16 +1406,18 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       episode: episode,
     );
     if (!context.mounted) return;
-    context.push(
-      '/player',
-      extra: PlayerArgs(
-        url: url,
-        media: details,
-        pluginName: plugin.name,
-        pluginId: plugin.pluginId,
-        resumeTimeSeconds: 0,
-        season: season,
-        episode: episode,
+    unawaited(
+      context.push(
+        '/player',
+        extra: PlayerArgs(
+          url: url,
+          media: details,
+          pluginName: plugin.name,
+          pluginId: plugin.pluginId,
+          resumeTimeSeconds: 0,
+          season: season,
+          episode: episode,
+        ),
       ),
     );
   }
@@ -1432,16 +1440,18 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       episode: isTV ? 1 : null,
     );
     if (!context.mounted) return;
-    context.push(
-      '/player',
-      extra: PlayerArgs(
-        url: url,
-        media: details,
-        pluginName: plugin.name,
-        pluginId: plugin.pluginId,
-        resumeTimeSeconds: 0,
-        season: isTV ? 1 : null,
-        episode: isTV ? 1 : null,
+    unawaited(
+      context.push(
+        '/player',
+        extra: PlayerArgs(
+          url: url,
+          media: details,
+          pluginName: plugin.name,
+          pluginId: plugin.pluginId,
+          resumeTimeSeconds: 0,
+          season: isTV ? 1 : null,
+          episode: isTV ? 1 : null,
+        ),
       ),
     );
   }
@@ -1475,16 +1485,18 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       season: progress.season ?? 1,
       episode: progress.episode ?? 1,
     );
-    context.push(
-      '/player',
-      extra: PlayerArgs(
-        url: url,
-        media: details,
-        pluginName: activePlugin.name,
-        pluginId: activePlugin.pluginId,
-        resumeTimeSeconds: progress.currentTime,
-        season: progress.season,
-        episode: progress.episode,
+    unawaited(
+      context.push(
+        '/player',
+        extra: PlayerArgs(
+          url: url,
+          media: details,
+          pluginName: activePlugin.name,
+          pluginId: activePlugin.pluginId,
+          resumeTimeSeconds: progress.currentTime,
+          season: progress.season,
+          episode: progress.episode,
+        ),
       ),
     );
   }

@@ -22,15 +22,15 @@ void main() {
   // In-memory boxes: no disk IO, which would never complete inside
   // testWidgets' fake-async zone.
   setUpAll(() async {
-    HiveService.watchlistBox = await Hive.openBox<Map>(
+    HiveService.watchlistBox = await Hive.openBox<Map<dynamic, dynamic>>(
       HiveService.watchlistBoxName,
       bytes: Uint8List(0),
     );
-    HiveService.listStatusBox = await Hive.openBox<Map>(
+    HiveService.listStatusBox = await Hive.openBox<Map<dynamic, dynamic>>(
       HiveService.listStatusBoxName,
       bytes: Uint8List(0),
     );
-    HiveService.watchHistoryBox = await Hive.openBox<Map>(
+    HiveService.watchHistoryBox = await Hive.openBox<Map<dynamic, dynamic>>(
       HiveService.watchHistoryBoxName,
       bytes: Uint8List(0),
     );

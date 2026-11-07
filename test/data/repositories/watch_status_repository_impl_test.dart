@@ -20,7 +20,7 @@ void main() {
     Hive.init(tmpDir.path);
     // Open the box under the same name HiveService uses, so the repo's
     // static accessor finds it. Avoids pulling path_provider into tests.
-    HiveService.listStatusBox = await Hive.openBox<Map>(
+    HiveService.listStatusBox = await Hive.openBox<Map<dynamic, dynamic>>(
       HiveService.listStatusBoxName,
     );
   });

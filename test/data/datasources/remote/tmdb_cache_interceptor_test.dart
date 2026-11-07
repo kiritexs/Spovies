@@ -49,7 +49,7 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
     tmpDir = await Directory.systemTemp.createTemp('spovies_cache_test_');
     Hive.init(tmpDir.path);
-    HiveService.tmdbCacheBox = await Hive.openBox<Map>(
+    HiveService.tmdbCacheBox = await Hive.openBox<Map<dynamic, dynamic>>(
       HiveService.tmdbCacheBoxName,
     );
   });
@@ -61,7 +61,7 @@ void main() {
 
   late Dio dio;
   late _FakeAdapter adapter;
-  Box<Map> box() => HiveService.tmdbCacheBox;
+  Box<Map<dynamic, dynamic>> box() => HiveService.tmdbCacheBox;
 
   setUp(() async {
     await box().clear();

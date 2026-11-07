@@ -89,19 +89,21 @@ class _EpisodeRow extends ConsumerWidget {
               }
               if (onPlay != null) {
                 if (!isWatched && status != WatchStatus.watching) {
-                  ref
-                      .read(watchStatusNotifierProvider.notifier)
-                      .setStatus(
-                        MediaStatus(
-                          mediaId: mediaId,
-                          mediaType: 'tv',
-                          status: WatchStatus.watching,
-                          season: episode.seasonNumber,
-                          episode: episode.episodeNumber,
-                          updatedAt: DateTime.now(),
+                  unawaited(
+                    ref
+                        .read(watchStatusNotifierProvider.notifier)
+                        .setStatus(
+                          MediaStatus(
+                            mediaId: mediaId,
+                            mediaType: 'tv',
+                            status: WatchStatus.watching,
+                            season: episode.seasonNumber,
+                            episode: episode.episodeNumber,
+                            updatedAt: DateTime.now(),
+                          ),
+                          mediaItem: show,
                         ),
-                        mediaItem: show,
-                      );
+                  );
                 }
                 onPlay!();
               } else {

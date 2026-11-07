@@ -18,14 +18,14 @@ class TmdbApi {
     String window = 'week',
   }) async {
     final response = await _dio.get('/trending/movie/$window');
-    final results = response.data['results'] as List;
+    final results = _items(response, 'results');
     return results.map((json) => MediaItemModel.fromTmdbJson(json)).toList();
   }
 
   /// Weekly trending TV shows.
   Future<List<MediaItemModel>> getTrendingTv({String window = 'week'}) async {
     final response = await _dio.get('/trending/tv/$window');
-    final results = response.data['results'] as List;
+    final results = _items(response, 'results');
     return results.map((json) => MediaItemModel.fromTmdbJson(json)).toList();
   }
 
@@ -37,7 +37,7 @@ class TmdbApi {
       '/movie/top_rated',
       queryParameters: {'page': page},
     );
-    final results = response.data['results'] as List;
+    final results = _items(response, 'results');
     return results.map((json) => MediaItemModel.fromTmdbJson(json)).toList();
   }
 
@@ -47,7 +47,7 @@ class TmdbApi {
       '/movie/popular',
       queryParameters: {'page': page},
     );
-    final results = response.data['results'] as List;
+    final results = _items(response, 'results');
     return results.map((json) => MediaItemModel.fromTmdbJson(json)).toList();
   }
 
@@ -57,7 +57,7 @@ class TmdbApi {
       '/tv/popular',
       queryParameters: {'page': page},
     );
-    final results = response.data['results'] as List;
+    final results = _items(response, 'results');
     return results
         .map(
           (json) =>
@@ -72,7 +72,7 @@ class TmdbApi {
       '/tv/top_rated',
       queryParameters: {'page': page},
     );
-    final results = response.data['results'] as List;
+    final results = _items(response, 'results');
     return results
         .map(
           (json) =>
@@ -94,7 +94,7 @@ class TmdbApi {
         'page': page,
       },
     );
-    final results = response.data['results'] as List;
+    final results = _items(response, 'results');
     return results.map((json) => MediaItemModel.fromTmdbJson(json)).toList();
   }
 
@@ -111,7 +111,7 @@ class TmdbApi {
         'page': page,
       },
     );
-    final results = response.data['results'] as List;
+    final results = _items(response, 'results');
     return results
         .map(
           (json) =>
@@ -128,7 +128,7 @@ class TmdbApi {
       '/movie/$id',
       queryParameters: {'append_to_response': 'credits,videos,release_dates'},
     );
-    return MediaItemModel.fromTmdbDetailJson(response.data);
+    return MediaItemModel.fromTmdbDetailJson(_body(response));
   }
 
   // ─── TV Details ───────────────────────────────────────────────────────
@@ -141,13 +141,13 @@ class TmdbApi {
         'append_to_response': 'credits,videos,aggregate_credits,external_ids',
       },
     );
-    return MediaItemModel.fromTmdbTvDetailJson(response.data);
+    return MediaItemModel.fromTmdbTvDetailJson(_body(response));
   }
 
   /// All episodes in a specific season.
   Future<List<Episode>> getTvSeasonEpisodes(int tvId, int season) async {
     final response = await _dio.get('/tv/$tvId/season/$season');
-    final episodes = response.data['episodes'] as List;
+    final episodes = _items(response, 'episodes');
     return episodes.map((e) {
       return Episode(
         seasonNumber: e['season_number'] as int? ?? season,
@@ -169,7 +169,7 @@ class TmdbApi {
       '/search/multi',
       queryParameters: {'query': query, 'page': page},
     );
-    final results = response.data['results'] as List;
+    final results = _items(response, 'results');
     return results
         .where((json) => (json['media_type'] as String?) != 'person')
         .map((json) => MediaItemModel.fromTmdbJson(json))
@@ -181,14 +181,38 @@ class TmdbApi {
   /// Movie genre list: id → name mapping.
   Future<List<GenreModel>> getMovieGenres() async {
     final response = await _dio.get('/genre/movie/list');
-    final genres = response.data['genres'] as List;
+    final genres = _items(response, 'genres');
     return genres.map((json) => GenreModel.fromJson(json)).toList();
   }
 
   /// TV genre list.
   Future<List<GenreModel>> getTvGenres() async {
     final response = await _dio.get('/genre/tv/list');
-    final genres = response.data['genres'] as List;
+    final genres = _items(response, 'genres');
     return genres.map((json) => GenreModel.fromJson(json)).toList();
+  }
+
+  // ─── Response helpers ─────────────────────────────────────────────────
+
+  /// The response body as a JSON object.
+  static Map<String, dynamic> _body(Response<dynamic> response) {
+    final data = response.data;
+    if (data is Map) return data.cast<String, dynamic>();
+    throw const FormatException('Unexpected TMDB response: not an object');
+  }
+
+  /// The JSON objects in the body's [key] list (non-objects skipped).
+  static List<Map<String, dynamic>> _items(
+    Response<dynamic> response,
+    String key,
+  ) {
+    final list = _body(response)[key];
+    if (list is! List) {
+      throw FormatException('Unexpected TMDB response: no "$key" list');
+    }
+    return [
+      for (final e in list)
+        if (e is Map) e.cast<String, dynamic>(),
+    ];
   }
 }

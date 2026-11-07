@@ -35,11 +35,14 @@ class TmdbCacheInterceptor extends Interceptor {
   /// Most entries kept after [prune]. Each is one TMDB response.
   static const int maxEntries = 500;
 
-  Box<Map> get _box => HiveService.tmdbCacheBox;
+  Box<Map<dynamic, dynamic>> get _box => HiveService.tmdbCacheBox;
 
   /// Drop entries that expired more than [staleWindow] ago (or are
   /// malformed), then keep only the [maxEntries] that expire last.
-  static Future<void> prune(Box<Map> box, {DateTime? now}) async {
+  static Future<void> prune(
+    Box<Map<dynamic, dynamic>> box, {
+    DateTime? now,
+  }) async {
     final cutoff =
         (now ?? DateTime.now()).millisecondsSinceEpoch -
         staleWindow.inMilliseconds;
@@ -61,7 +64,7 @@ class TmdbCacheInterceptor extends Interceptor {
   }
 
   /// Decode a cached body, or `null` (and evict it) if it is corrupt.
-  dynamic _decode(String key, Map cached) {
+  dynamic _decode(String key, Map<dynamic, dynamic> cached) {
     final body = cached['body'];
     if (body is String) {
       try {
@@ -110,7 +113,10 @@ class TmdbCacheInterceptor extends Interceptor {
   }
 
   @override
-  void onResponse(Response response, ResponseInterceptorHandler handler) {
+  void onResponse(
+    Response<dynamic> response,
+    ResponseInterceptorHandler handler,
+  ) {
     if (response.requestOptions.method == 'GET' && response.statusCode == 200) {
       final key = _cacheKey(response.requestOptions);
       final ttl = _ttlFor(response.requestOptions.uri.path);

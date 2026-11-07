@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -56,7 +57,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        _onBack();
+        unawaited(_onBack());
       },
       child: isDesktop
           ? _buildDesktopShell(body, tab)

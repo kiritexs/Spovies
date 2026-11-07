@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
@@ -14,7 +15,7 @@ class WatchlistNotifier extends Notifier<List<MediaItem>> {
   // place and the central init contract is honoured. A bare
   // `Hive.box('watchlist')` would silently break if HiveService ever renamed
   // or scoped the box.
-  Box<Map> get _box => HiveService.watchlistBox;
+  Box<Map<dynamic, dynamic>> get _box => HiveService.watchlistBox;
 
   @override
   List<MediaItem> build() {
@@ -32,13 +33,13 @@ class WatchlistNotifier extends Notifier<List<MediaItem>> {
 
   /// Add a media item to the watchlist.
   void add(MediaItem item) {
-    _box.put(_keyOf(item), _toMap(item));
+    unawaited(_box.put(_keyOf(item), _toMap(item)));
     state = _loadFromBox();
   }
 
   /// Remove a media item from the watchlist.
   void remove(MediaItem item) {
-    _box.delete(_keyOf(item));
+    unawaited(_box.delete(_keyOf(item)));
     state = _loadFromBox();
   }
 
@@ -56,7 +57,7 @@ class WatchlistNotifier extends Notifier<List<MediaItem>> {
 
   /// Clear all watchlist items.
   void clearAll() {
-    _box.clear();
+    unawaited(_box.clear());
     state = [];
   }
 

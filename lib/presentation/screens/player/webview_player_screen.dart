@@ -179,10 +179,10 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     // prevent race conditions with the screen transition.
     if (PlayerPlatform.isIOS) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _lockLandscape();
+        if (mounted) unawaited(_lockLandscape());
       });
     } else {
-      _lockLandscape();
+      unawaited(_lockLandscape());
     }
 
     _eventBridge = EventBridge(onProgressUpdate: _onProgressUpdate);
@@ -190,7 +190,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       // Keeps `_isFullScreen` in sync when the user toggles fullscreen
       // outside our own button (F11, title-bar double-click, OS shortcut).
       windowManager.addListener(this);
-      _checkFullScreen();
+      unawaited(_checkFullScreen());
     }
     _resetControlsTimer();
   }
@@ -290,7 +290,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       _providerContainer.invalidate(episodeProgressProvider);
     }
     if (!_navigatingToAnotherPlayer) {
-      _restorePortrait();
+      unawaited(_restorePortrait());
     }
     super.dispose();
   }
@@ -315,7 +315,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       // Windows is sensitive to imperative calls during disposal — let the
       // native platform view dispose itself.
       if (!PlayerPlatform.isWindows) {
-        controller.stopLoading();
+        unawaited(controller.stopLoading());
       }
       _controller = null;
     }
@@ -565,7 +565,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
         if (didPop) return;
         // Pops one level to whoever pushed us (usually /details).
         // `_dismiss` also does the window-manager cleanup.
-        _dismiss();
+        unawaited(_dismiss());
       },
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -985,33 +985,35 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
 
     _cleanupWebView();
 
-    Future.microtask(() {
-      if (!mounted) {
-        // The route disappeared before the microtask ran. Reset both flags
-        // so we don't leave the (now detached) state stuck pretending it's
-        // mid-navigation.
-        _isNavigating = false;
-        _navigatingToAnotherPlayer = false;
-        return;
-      }
-      try {
-        context.pushReplacement(
-          '/player',
-          extra: PlayerArgs(
-            url: nextUrl,
-            media: widget.media,
-            pluginName: plugin.name,
-            pluginId: plugin.pluginId,
-            season: nextSeason,
-            episode: nextEpisode,
-          ),
-        );
-      } catch (e) {
-        _isNavigating = false;
-        _navigatingToAnotherPlayer = false;
-        if (kDebugMode) debugPrint('_playNextEpisode push failed: $e');
-      }
-    });
+    unawaited(
+      Future.microtask(() {
+        if (!mounted) {
+          // The route disappeared before the microtask ran. Reset both flags
+          // so we don't leave the (now detached) state stuck pretending it's
+          // mid-navigation.
+          _isNavigating = false;
+          _navigatingToAnotherPlayer = false;
+          return;
+        }
+        try {
+          context.pushReplacement(
+            '/player',
+            extra: PlayerArgs(
+              url: nextUrl,
+              media: widget.media,
+              pluginName: plugin.name,
+              pluginId: plugin.pluginId,
+              season: nextSeason,
+              episode: nextEpisode,
+            ),
+          );
+        } catch (e) {
+          _isNavigating = false;
+          _navigatingToAnotherPlayer = false;
+          if (kDebugMode) debugPrint('_playNextEpisode push failed: $e');
+        }
+      }),
+    );
   }
 
   Widget _buildWindowActions() {

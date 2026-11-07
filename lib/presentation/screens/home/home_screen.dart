@@ -105,7 +105,7 @@ class _HomeContent extends ConsumerWidget {
                 onTap: () => context.push('/details', extra: hero),
                 onAddTap: () {
                   if (saved) {
-                    context.push('/details', extra: hero);
+                    unawaited(context.push('/details', extra: hero));
                     return;
                   }
                   ref.read(watchlistProvider.notifier).add(hero);

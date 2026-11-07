@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -70,7 +71,7 @@ class PluginEnabledNotifier extends Notifier<Map<String, bool>> {
   /// Toggle and persist a plugin's enabled state.
   void toggle(String pluginId) {
     final next = !(state[pluginId] ?? true);
-    HiveService.settingsBox.put('$_prefix$pluginId', next);
+    unawaited(HiveService.settingsBox.put('$_prefix$pluginId', next));
     state = {...state, pluginId: next};
   }
 }
