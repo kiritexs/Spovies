@@ -123,6 +123,17 @@ void main() {
       expect(item.metadata.trailerKey, 'clip');
     });
 
+    test('a video hosted outside YouTube is never used', () {
+      final json = movie()
+        ..['videos'] = {
+          'results': [
+            {'type': 'Trailer', 'site': 'Vimeo', 'key': 'vimeo'},
+          ],
+        };
+      final item = MediaItemModel.fromTmdbDetailJson(api(json)).toEntity();
+      expect(item.metadata.trailerKey, isNull);
+    });
+
     test('empty US certification becomes null', () {
       final json = movie()
         ..['release_dates'] = {

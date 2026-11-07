@@ -17,13 +17,17 @@ List<_Json> _objs(Object? v) => v is List
       ]
     : const [];
 
-/// The YouTube trailer if there is one, else the first video.
+/// A YouTube video key: the trailer if there is one, else any YouTube
+/// video, else null. Keys are opened as `youtube.com/watch?v=<key>`, so a
+/// video hosted elsewhere (e.g. Vimeo) must never be picked.
 String? _trailerKey(_Json json) {
-  final videos = _objs(_obj(json['videos'])?['results']);
-  if (videos.isEmpty) return null;
-  final trailer = videos.firstWhere(
-    (v) => v['type'] == 'Trailer' && v['site'] == 'YouTube',
-    orElse: () => videos.first,
+  final youtube = _objs(
+    _obj(json['videos'])?['results'],
+  ).where((v) => v['site'] == 'YouTube').toList();
+  if (youtube.isEmpty) return null;
+  final trailer = youtube.firstWhere(
+    (v) => v['type'] == 'Trailer',
+    orElse: () => youtube.first,
   );
   return trailer['key'] as String?;
 }
