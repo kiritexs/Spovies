@@ -7,18 +7,15 @@ import '../../../../core/theme/app_spacing.dart';
 /// load. Extracted from `webview_player_screen.dart` so it can be styled,
 /// tested, and reused without dragging the whole player file along.
 class PlayerErrorView extends StatelessWidget {
-  const PlayerErrorView({
-    super.key,
-    required this.message,
-    required this.onRetry,
-  });
+  const PlayerErrorView({super.key, required this.message, this.onRetry});
 
   /// Human-readable error description (e.g. `error.description` from
   /// `onReceivedError`, or a short string for transient init failures).
   final String message;
 
-  /// Tapped by the user from the Retry button.
-  final VoidCallback onRetry;
+  /// Tapped by the user from the Retry button. When null (an error that
+  /// retrying can't fix, like a rejected URL) the button is hidden.
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -51,19 +48,23 @@ class PlayerErrorView extends StatelessWidget {
                 style: const TextStyle(color: Colors.white54, fontSize: 13),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Retry'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+              if (onRetry != null) ...[
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Retry'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(
+                        AppSpacing.radiusBase,
+                      ),
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),

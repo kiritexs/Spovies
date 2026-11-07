@@ -23,9 +23,10 @@ final webViewEnvironmentProvider = FutureProvider<WebViewEnvironment?>((
       settings: WebViewEnvironmentSettings(userDataFolder: userDataFolder),
     );
   } catch (e) {
-    debugPrint('WebViewEnvironment.create error: $e');
-    // If initialization fails, we return null and the WebView will
-    // fall back to default behavior (or error UI in the screen).
-    return null;
+    if (kDebugMode) debugPrint('WebViewEnvironment.create error: $e');
+    // Rethrow so the player shows its error view with Retry (which
+    // invalidates this provider). Returning null used to fall back to
+    // WebView2's default data folder, which may not be writable.
+    rethrow;
   }
 });

@@ -92,6 +92,10 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
 
   bool _hasError = false;
   String _errorMsg = '';
+
+  /// The URL failed the fail-closed check in initState. Unlike [_hasError]
+  /// this never resets: Retry must not load a URL that was rejected.
+  bool _urlInvalid = false;
   bool _isFullScreen = false;
 
   Timer? _controlsTimer;
@@ -170,6 +174,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
     if (initialUri == null ||
         (initialScheme != 'http' && initialScheme != 'https') ||
         initialHost.isEmpty) {
+      _urlInvalid = true;
       _hasError = true;
       _errorMsg = 'Invalid stream URL';
       return;
@@ -359,14 +364,10 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
           '${_kRecoveryWindowDuration.inSeconds}s) — showing error',
         );
       }
-      if (mounted) {
-        setState(() {
-          _hasError = true;
-          _errorMsg =
-              'This source keeps redirecting or timing out.\n'
-              'Try a different plugin or server.';
-        });
-      }
+      _fail(
+        'This source keeps redirecting or timing out.\n'
+        'Try a different plugin or server.',
+      );
       return;
     }
 
@@ -724,21 +725,15 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
             },
             onReceivedError: (controller, request, error) {
               final isMainFrame = request.isForMainFrame ?? false;
-              if (isMainFrame && _loadProgress.value < 50 && mounted) {
-                setState(() {
-                  _hasError = true;
-                  _errorMsg = error.description;
-                });
+              if (isMainFrame && _loadProgress.value < 50) {
+                _fail(error.description);
               }
             },
             onReceivedHttpError: (controller, request, errorResponse) {
               final isMainFrame = request.isForMainFrame ?? false;
               final statusCode = errorResponse.statusCode ?? 0;
-              if (isMainFrame && statusCode >= 500 && mounted) {
-                setState(() {
-                  _hasError = true;
-                  _errorMsg = 'Server error ($statusCode)';
-                });
+              if (isMainFrame && statusCode >= 500) {
+                _fail('Server error ($statusCode)');
               }
             },
             onConsoleMessage: (controller, message) {
@@ -930,8 +925,20 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   Widget _buildErrorState({String? overrideMessage, VoidCallback? onRetry}) {
     return PlayerErrorView(
       message: overrideMessage ?? _errorMsg,
-      onRetry: onRetry ?? _retry,
+      // A rejected URL stays rejected: no Retry.
+      onRetry: _urlInvalid ? null : (onRetry ?? _retry),
     );
+  }
+
+  /// Show the error view. It replaces the WebView, so release the
+  /// controller now; Retry builds a fresh WebView that loads the URL.
+  void _fail(String message) {
+    if (!mounted) return;
+    _cleanupWebView();
+    setState(() {
+      _hasError = true;
+      _errorMsg = message;
+    });
   }
 
   // ─── Window Actions ───────────────────────────────────────────────────────
@@ -1058,6 +1065,7 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
   }
 
   void _retry() {
+    if (_urlInvalid) return;
     // Reset EVERY page-load-lifecycle latch — including the breaker and
     // cooldowns, or a user who tripped the breaker can't escape it here.
     _loadProgress.value = 0;
@@ -1068,9 +1076,10 @@ class _WebViewPlayerScreenState extends ConsumerState<WebViewPlayerScreen>
       _hasError = false;
       _errorMsg = '';
     });
-    // Explicit reload — the `ValueKey` is bound to an unchanged
-    // `widget.url`, so the WebView is reused and would otherwise keep
-    // showing the failed page.
+    // The error view replaced the WebView and _fail released its
+    // controller, so the rebuild creates a fresh WebView that loads
+    // widget.url. If a controller is still attached (an error raised
+    // without unmounting it), reload it explicitly.
     unawaited(
       _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(widget.url))),
     );
