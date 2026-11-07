@@ -12,8 +12,6 @@ import 'core/utils/host_utils.dart';
 import 'data/datasources/local/hive_service.dart';
 import 'data/datasources/remote/tmdb_cache_interceptor.dart';
 import 'presentation/router/app_router.dart';
-import 'presentation/router/route_location.dart';
-import 'presentation/widgets/desktop_window_frame.dart';
 import 'presentation/screens/player/player_scripts.dart';
 
 void main() async {
@@ -80,12 +78,6 @@ void main() async {
   );
 }
 
-/// Routes that draw edge-to-edge without the desktop title bar: the
-/// player (its own window controls, can go fullscreen) and Details (a
-/// full-bleed backdrop with its own drag area).
-bool _showsTitleBar(String path) =>
-    !path.startsWith('/player') && !path.startsWith('/details');
-
 // Enable Mouse dragging for Desktop Web/Windows
 class AppScrollBehavior extends MaterialScrollBehavior {
   @override
@@ -115,13 +107,6 @@ class SpoviesApp extends StatelessWidget {
       themeMode: ThemeMode.dark,
       routerConfig: appRouter,
       scrollBehavior: AppScrollBehavior(),
-      builder: (context, child) => ListenableBuilder(
-        listenable: appRouter.routerDelegate,
-        builder: (context, _) => DesktopWindowFrame(
-          showTitleBar: _showsTitleBar(topRouteLocation(appRouter)),
-          child: child ?? const SizedBox.shrink(),
-        ),
-      ),
     );
   }
 }

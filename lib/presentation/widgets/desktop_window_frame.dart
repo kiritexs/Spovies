@@ -7,24 +7,14 @@ import 'package:window_manager/window_manager.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 
-/// Custom title bar (drag area + window buttons) above the whole app.
-///
-/// Wrapped around the Navigator in `MaterialApp.builder`, so every route
-/// gets it — pushed screens like Details included, and narrow windows
-/// that use the mobile layout. On non-desktop platforms it is a no-op.
+/// Custom title bar (drag area + window buttons) above the tab shell,
+/// in both the wide and the narrow layout. On non-desktop platforms it is
+/// a no-op. Details and the player draw edge to edge with their own drag
+/// areas instead.
 class DesktopWindowFrame extends StatelessWidget {
   final Widget child;
 
-  /// Hidden for routes that draw their own window controls (the player).
-  /// The bar collapses rather than leaving the tree, so [child] — the
-  /// Navigator — keeps its state when this flips.
-  final bool showTitleBar;
-
-  const DesktopWindowFrame({
-    super.key,
-    required this.child,
-    this.showTitleBar = true,
-  });
+  const DesktopWindowFrame({super.key, required this.child});
 
   static final bool _isDesktop =
       !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
@@ -35,13 +25,9 @@ class DesktopWindowFrame extends StatelessWidget {
 
     return Column(
       children: [
-        SizedBox(
-          height: showTitleBar ? _CustomTitleBar.height : 0,
-          child: showTitleBar ? const _CustomTitleBar() : null,
-        ),
-        // Its own semantics container: a route's BlockSemantics would
-        // otherwise hide the title bar (painted before it) from screen
-        // readers.
+        const _CustomTitleBar(),
+        // Its own semantics container, so nothing below can block the
+        // title bar's semantics.
         Expanded(child: Semantics(container: true, child: child)),
       ],
     );
@@ -55,8 +41,7 @@ class _CustomTitleBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Material: this sits above the Navigator, outside any Scaffold, and
-    // the window buttons' InkWells need a Material ancestor.
+    // The window buttons' InkWells need a Material ancestor.
     return Material(
       color: AppColors.backgroundDark,
       child: Row(

@@ -12,6 +12,7 @@ import '../screens/home/home_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../screens/watchlist/watchlist_screen.dart';
 import '../widgets/desktop_side_nav.dart';
+import '../widgets/desktop_window_frame.dart';
 import '../widgets/glass_bottom_nav.dart';
 
 /// Top-level scaffold owning the four tabs and the global system-back
@@ -59,9 +60,14 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
         if (didPop) return;
         unawaited(_onBack());
       },
-      child: isDesktop
-          ? _buildDesktopShell(body, tab)
-          : _buildMobileShell(body, tab, isSearching),
+      // Desktop title bar on the tab shell only (a no-op on phones). It
+      // wraps the narrow layout too, so a narrow window can still be moved
+      // and closed. Pushed screens like Details draw edge to edge.
+      child: DesktopWindowFrame(
+        child: isDesktop
+            ? _buildDesktopShell(body, tab)
+            : _buildMobileShell(body, tab, isSearching),
+      ),
     );
   }
 
