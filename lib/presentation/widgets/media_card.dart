@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -11,7 +9,11 @@ import '../../core/config/app_config.dart';
 import '../../domain/entities/media_item.dart';
 import 'shimmer_placeholder.dart';
 
-/// Media card for trending/top-rated rows — 140px wide, 2:3 poster, rating badge.
+/// Poster card: 2:3 poster, rating badge, title and genres.
+///
+/// In a horizontal row (unbounded width) it is 140px wide; in a grid it
+/// fills its cell. Focusable, activates with Enter/Space, and reads as one
+/// button to screen readers.
 class MediaCard extends StatefulWidget {
   final MediaItem movie;
   final String genreText;
@@ -34,6 +36,7 @@ class _MediaCardState extends State<MediaCard>
     with SingleTickerProviderStateMixin {
   late final AnimationController _scaleController;
   late final Animation<double> _scaleAnimation;
+  bool _focused = false;
 
   @override
   void initState() {
@@ -53,58 +56,94 @@ class _MediaCardState extends State<MediaCard>
     super.dispose();
   }
 
+  String get _subtitle => widget.genreText.isNotEmpty
+      ? widget.genreText
+      : widget.movie.type.displayName;
+
+  String get _semanticLabel {
+    final rating = widget.movie.metadata.rating;
+    return [
+      widget.movie.title,
+      _subtitle,
+      if (rating != null) 'rated ${rating.toStringAsFixed(1)}',
+    ].join(', ');
+  }
+
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
+    return FocusableActionDetector(
+      enabled: widget.onTap != null,
+      mouseCursor: SystemMouseCursors.click,
+      onShowFocusHighlight: (v) => setState(() => _focused = v),
+      actions: {
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            widget.onTap?.call();
+            return null;
+          },
+        ),
+      },
+      child: Semantics(
+        button: widget.onTap != null,
+        label: _semanticLabel,
+        excludeSemantics: true,
         onTap: widget.onTap,
-        onLongPress: widget.onLongPress,
-        onTapDown: (_) => _scaleController.forward(),
-        onTapUp: (_) => _scaleController.reverse(),
-        onTapCancel: () => _scaleController.reverse(),
-        child: SizedBox(
-          width: AppSpacing.mediaCardWidth,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // ─── Poster (flexible so card fits grid cell) ─────────────────
-              Flexible(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final preferredHeight =
-                        AppSpacing.mediaCardWidth /
-                        AppSpacing.mediaCardAspectRatio;
-                    final h = constraints.maxHeight.isFinite
-                        ? preferredHeight.clamp(0.0, constraints.maxHeight)
-                        : preferredHeight;
-                    return SizedBox(
-                      height: h,
-                      width: AppSpacing.mediaCardWidth,
-                      child: _buildPosterContent(),
-                    );
-                  },
+        child: GestureDetector(
+          onTap: widget.onTap,
+          onLongPress: widget.onLongPress,
+          onTapDown: (_) => _scaleController.forward(),
+          onTapUp: (_) => _scaleController.reverse(),
+          onTapCancel: () => _scaleController.reverse(),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // Row: fixed width. Grid: fill the cell.
+              final width = constraints.hasBoundedWidth
+                  ? constraints.maxWidth
+                  : AppSpacing.mediaCardWidth;
+              return SizedBox(
+                width: width,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Poster: 2:3, shrinking if the cell is short.
+                    Flexible(
+                      child: LayoutBuilder(
+                        builder: (context, posterConstraints) {
+                          final preferred =
+                              width / AppSpacing.mediaCardAspectRatio;
+                          final h = posterConstraints.maxHeight.isFinite
+                              ? preferred.clamp(
+                                  0.0,
+                                  posterConstraints.maxHeight,
+                                )
+                              : preferred;
+                          return SizedBox(
+                            height: h,
+                            width: width,
+                            child: _buildPosterContent(),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      widget.movie.title,
+                      style: AppTextStyles.cardTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _subtitle,
+                      style: AppTextStyles.cardSubtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 8),
-              // ─── Info ────────────────────────────
-              Text(
-                widget.movie.title,
-                style: AppTextStyles.cardTitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                widget.genreText.isNotEmpty
-                    ? widget.genreText
-                    : widget.movie.type.displayName,
-                style: AppTextStyles.cardSubtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+              );
+            },
           ),
         ),
       ),
@@ -124,6 +163,12 @@ class _MediaCardState extends State<MediaCard>
           ),
         ],
       ),
+      foregroundDecoration: _focused
+          ? BoxDecoration(
+              borderRadius: AppSpacing.borderRadiusLg,
+              border: Border.all(color: AppColors.focus, width: 2),
+            )
+          : null,
       child: ClipRRect(
         borderRadius: AppSpacing.borderRadiusLg,
         child: Stack(
@@ -156,6 +201,8 @@ class _MediaCardState extends State<MediaCard>
     );
   }
 
+  /// Plain translucent circle. A BackdropFilter here ran a blur per card,
+  /// which is costly in scrolling rows and barely visible at 32px.
   Widget _buildRatingBadge() {
     return Container(
       width: AppSpacing.ratingBadgeSize,
@@ -165,16 +212,10 @@ class _MediaCardState extends State<MediaCard>
         shape: BoxShape.circle,
         border: Border.all(color: AppColors.glassBorder),
       ),
-      child: ClipOval(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Center(
-            child: Text(
-              widget.movie.metadata.rating!.toStringAsFixed(1),
-              style: AppTextStyles.ratingBadge,
-            ),
-          ),
-        ),
+      alignment: Alignment.center,
+      child: Text(
+        widget.movie.metadata.rating!.toStringAsFixed(1),
+        style: AppTextStyles.ratingBadge,
       ),
     );
   }

@@ -15,13 +15,19 @@ class HeroCard extends StatelessWidget {
   final MediaItem movie;
   final String genreText;
   final VoidCallback? onTap;
+
+  /// Adds the title to the Library. The button is hidden when null.
   final VoidCallback? onAddTap;
+
+  /// Shows the add button as a check ("In Library").
+  final bool inLibrary;
 
   const HeroCard({
     super.key,
     required this.movie,
     this.genreText = '',
     this.onTap,
+    this.inLibrary = false,
     this.onAddTap,
   });
 
@@ -212,10 +218,14 @@ class HeroCard extends StatelessWidget {
 
               _dot(),
 
-              // Genre
-              Text(
-                genreText.isNotEmpty ? genreText : 'Movie',
-                style: AppTextStyles.metadata.copyWith(fontSize: 14),
+              // Genre: shrinks first, so large text sizes don't overflow.
+              Flexible(
+                child: Text(
+                  genreText.isNotEmpty ? genreText : 'Movie',
+                  style: AppTextStyles.metadata.copyWith(fontSize: 14),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
 
               if (movie.metadata.formattedRuntime.isNotEmpty) ...[
@@ -267,9 +277,10 @@ class HeroCard extends StatelessWidget {
             children: [
               // Watch Button
               SizedBox(width: 200, child: _buildWatchButton()),
-              const SizedBox(width: 16),
-              // Add button
-              _buildAddButton(),
+              if (onAddTap != null) ...[
+                const SizedBox(width: 16),
+                _buildAddButton(),
+              ],
             ],
           ),
         ],
@@ -319,10 +330,14 @@ class HeroCard extends StatelessWidget {
 
               _dot(),
 
-              // Genre
-              Text(
-                genreText.isNotEmpty ? genreText : 'Movie',
-                style: AppTextStyles.metadata,
+              // Genre: shrinks first, so large text sizes don't overflow.
+              Flexible(
+                child: Text(
+                  genreText.isNotEmpty ? genreText : 'Movie',
+                  style: AppTextStyles.metadata,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
 
               if (movie.metadata.formattedRuntime.isNotEmpty) ...[
@@ -340,11 +355,11 @@ class HeroCard extends StatelessWidget {
           // Action buttons
           Row(
             children: [
-              // Watch Trailer button
               Expanded(child: _buildWatchButton()),
-              const SizedBox(width: 12),
-              // Add button
-              _buildAddButton(),
+              if (onAddTap != null) ...[
+                const SizedBox(width: 12),
+                _buildAddButton(),
+              ],
             ],
           ),
         ],
@@ -369,12 +384,19 @@ class HeroCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Icon(
-                Icons.play_arrow_rounded,
+                Icons.info_outline_rounded,
                 color: Colors.white,
                 size: AppSpacing.iconMd,
               ),
               const SizedBox(width: 8),
-              Text('Watch Trailer', style: AppTextStyles.label),
+              Flexible(
+                child: Text(
+                  'View Details',
+                  style: AppTextStyles.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
         ),
@@ -383,6 +405,19 @@ class HeroCard extends StatelessWidget {
   }
 
   Widget _buildAddButton() {
+    final label = inLibrary ? 'In Library' : 'Add to Library';
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        button: true,
+        label: label,
+        excludeSemantics: true,
+        child: _buildAddButtonBody(),
+      ),
+    );
+  }
+
+  Widget _buildAddButtonBody() {
     return Container(
       width: AppSpacing.iconButtonSize,
       height: AppSpacing.iconButtonSize,
@@ -396,9 +431,9 @@ class HeroCard extends StatelessWidget {
         child: InkWell(
           borderRadius: AppSpacing.borderRadiusLg,
           onTap: onAddTap,
-          child: const Icon(
-            Icons.add,
-            color: Colors.white,
+          child: Icon(
+            inLibrary ? Icons.check_rounded : Icons.add,
+            color: inLibrary ? AppColors.primaryOnDark : Colors.white,
             size: AppSpacing.iconMd,
           ),
         ),

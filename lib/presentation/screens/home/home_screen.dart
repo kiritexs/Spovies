@@ -22,6 +22,8 @@ import 'package:spovies/presentation/providers/media_providers.dart';
 import 'package:spovies/presentation/providers/plugin_providers.dart';
 import 'package:spovies/presentation/providers/settings_providers.dart';
 import 'package:spovies/presentation/providers/watch_history_providers.dart';
+import 'package:spovies/presentation/providers/watchlist_providers.dart';
+import 'package:spovies/presentation/screens/explore/all_media_screen.dart';
 import 'package:spovies/presentation/providers/tab_provider.dart';
 import 'package:spovies/presentation/router/app_router.dart';
 import 'package:spovies/presentation/widgets/app_header.dart';
@@ -89,13 +91,27 @@ class _HomeContent extends ConsumerWidget {
 
           // ── Hero ────────────────────────────────────────────────
           trendingAsync.when(
-            data: (movies) => movies.isNotEmpty
-                ? HeroCard(
-                    movie: movies.first,
-                    genreText: _resolveGenres(movies.first, genreMap),
-                    onTap: () => context.push('/details', extra: movies.first),
-                  )
-                : const SizedBox.shrink(),
+            data: (movies) {
+              if (movies.isEmpty) return const SizedBox.shrink();
+              final hero = movies.first;
+              final saved = ref
+                  .watch(watchlistProvider)
+                  .any((m) => m.tmdbId == hero.tmdbId && m.type == hero.type);
+              return HeroCard(
+                movie: hero,
+                genreText: _resolveGenres(hero, genreMap),
+                inLibrary: saved,
+                onTap: () => context.push('/details', extra: hero),
+                onAddTap: () {
+                  if (saved) {
+                    context.push('/details', extra: hero);
+                    return;
+                  }
+                  ref.read(watchlistProvider.notifier).add(hero);
+                  showAppSnackBar(context, 'Added to Library', aboveNav: true);
+                },
+              );
+            },
             loading: () => const HeroCardShimmer(),
             error: (_, _) => _ErrorCard(
               onRetry: () {
@@ -114,6 +130,14 @@ class _HomeContent extends ConsumerWidget {
               movies: movies.length > 1 ? movies.sublist(1) : movies,
               genreMap: genreMap,
               onMovieTap: (m) => context.push('/details', extra: m),
+              onSeeAllTap: () => context.push(
+                '/all-media',
+                extra: AllMediaArgs(
+                  title: 'Now Trending',
+                  category: BrowseCategory.trendingMovies,
+                  genreMap: genreMap,
+                ),
+              ),
             ),
             loading: () => const MediaRow(
               title: 'Now Trending',
@@ -140,6 +164,14 @@ class _HomeContent extends ConsumerWidget {
               movies: movies,
               genreMap: genreMap,
               onMovieTap: (m) => context.push('/details', extra: m),
+              onSeeAllTap: () => context.push(
+                '/all-media',
+                extra: AllMediaArgs(
+                  title: 'Top Rated',
+                  category: BrowseCategory.topRatedMovies,
+                  genreMap: genreMap,
+                ),
+              ),
             ),
             loading: () =>
                 const MediaRow(title: 'Top Rated', movies: [], isLoading: true),
@@ -401,33 +433,39 @@ class _ContinueWatchingSection extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 16),
-              if (MediaQuery.of(context).size.width > 600)
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    return GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: items.length,
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: continueWatchingColumns(
-                          constraints.maxWidth,
-                        ),
-                        mainAxisExtent: AppSpacing.continueWatchingHeight,
-                        crossAxisSpacing: 16,
-                        mainAxisSpacing: 12,
-                      ),
-                      itemBuilder: (context, index) =>
-                          _ContinueWatchingCardItem(item: items[index]),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  // Grid only when two cards fit side by side comfortably;
+                  // measured on the content width, not the window (the
+                  // desktop side nav takes 250px of the window).
+                  if (constraints.maxWidth < 720) {
+                    return Column(
+                      children: [
+                        for (final item in items)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _ContinueWatchingCardItem(item: item),
+                          ),
+                      ],
                     );
-                  },
-                )
-              else
-                ...items.map(
-                  (item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _ContinueWatchingCardItem(item: item),
-                  ),
-                ),
+                  }
+                  return GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: items.length,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: continueWatchingColumns(
+                        constraints.maxWidth,
+                      ),
+                      mainAxisExtent: AppSpacing.continueWatchingHeight,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 12,
+                    ),
+                    itemBuilder: (context, index) =>
+                        _ContinueWatchingCardItem(item: items[index]),
+                  );
+                },
+              ),
             ],
           ),
         );

@@ -62,53 +62,74 @@ class ContinueWatchingCard extends StatelessWidget {
                     children: [
                       _buildThumbnail(),
                       const SizedBox(width: 16),
+                      // Fixed-height card (it sits in a grid with a set
+                      // row height): episode and time share one line, and
+                      // text scaling is capped at 1.3x so nothing overflows.
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              title,
-                              style: AppTextStyles.cardTitle.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (episodeLabel != null) ...[
-                              const SizedBox(height: 2),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
+                        child: MediaQuery.withClampedTextScaling(
+                          maxScaleFactor: 1.3,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                title,
+                                style: AppTextStyles.cardTitle.copyWith(
+                                  fontWeight: FontWeight.w700,
                                 ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(
-                                    alpha: 0.15,
-                                  ),
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(
-                                    color: AppColors.primary.withValues(
-                                      alpha: 0.35,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  if (episodeLabel != null) ...[
+                                    Flexible(
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.primary.withValues(
+                                            alpha: 0.15,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                          border: Border.all(
+                                            color: AppColors.primary.withValues(
+                                              alpha: 0.35,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          episodeLabel!,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: AppTextStyles.cardSubtitle
+                                              .copyWith(
+                                                color: AppColors.primaryOnDark,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
+                                  Flexible(
+                                    child: Text(
+                                      remainingTime,
+                                      style: AppTextStyles.cardSubtitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                ),
-                                child: Text(
-                                  episodeLabel!,
-                                  style: AppTextStyles.cardSubtitle.copyWith(
-                                    color: AppColors.primaryOnDark,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                                ],
                               ),
                             ],
-                            const SizedBox(height: 4),
-                            Text(
-                              remainingTime,
-                              style: AppTextStyles.cardSubtitle,
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                       if (onContinueTap != null) ...[

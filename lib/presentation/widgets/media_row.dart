@@ -40,19 +40,30 @@ class MediaRow extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: AppTextStyles.sectionTitle),
-                MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    onTap: onSeeAllTap,
+                Flexible(
+                  child: Text(
+                    title,
+                    style: AppTextStyles.sectionTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (onSeeAllTap != null)
+                  TextButton(
+                    onPressed: onSeeAllTap,
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.primaryOnDark,
+                      minimumSize: const Size(48, 40),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
                     child: Text(
                       'See All',
+                      semanticsLabel: 'See all $title',
                       style: AppTextStyles.labelSmall.copyWith(
                         color: AppColors.primaryOnDark,
                       ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
