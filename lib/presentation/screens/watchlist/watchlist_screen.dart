@@ -501,37 +501,25 @@ class _LibraryCard extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    Positioned(
-                      left: 6,
-                      right: 6,
-                      bottom: 6,
-                      child: ExcludeSemantics(
-                        child: Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: [
-                            _Badge(
-                              text: entry.type.displayName.toUpperCase(),
-                              background: AppColors.primary.withValues(
-                                alpha: 0.85,
+                    // One badge: the status, when there is one.
+                    if (status != null)
+                      Positioned(
+                        left: 6,
+                        bottom: 6,
+                        right: 6,
+                        child: Align(
+                          alignment: Alignment.bottomLeft,
+                          child: ExcludeSemantics(
+                            child: _Badge(
+                              text: status.displayName,
+                              background: AppColors.surfaceDark.withValues(
+                                alpha: 0.9,
                               ),
-                              foreground: Colors.white,
+                              foreground: AppColors.primaryOnDark,
                             ),
-                            if (status != null)
-                              _Badge(
-                                text: status.displayName,
-                                background: AppColors.surfaceDark.withValues(
-                                  alpha: 0.95,
-                                ),
-                                foreground: AppColors.primaryOnDark,
-                                border: AppColors.primary.withValues(
-                                  alpha: 0.5,
-                                ),
-                              ),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -544,13 +532,15 @@ class _LibraryCard extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (item?.year != null)
-                ExcludeSemantics(
-                  child: Text(
-                    item!.year!,
-                    style: AppTextStyles.cardSubtitle.copyWith(fontSize: 11),
-                  ),
+              // Type and year on one quiet line: "Movie · 2020".
+              ExcludeSemantics(
+                child: Text(
+                  [entry.type.displayName, ?item?.year].join(' · '),
+                  style: AppTextStyles.cardSubtitle.copyWith(fontSize: 11),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
+              ),
             ],
           ),
         ),
@@ -563,13 +553,11 @@ class _Badge extends StatelessWidget {
   final String text;
   final Color background;
   final Color foreground;
-  final Color? border;
 
   const _Badge({
     required this.text,
     required this.background,
     required this.foreground,
-    this.border,
   });
 
   @override
@@ -579,7 +567,6 @@ class _Badge extends StatelessWidget {
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(4),
-        border: border == null ? null : Border.all(color: border!),
       ),
       child: Text(
         text,

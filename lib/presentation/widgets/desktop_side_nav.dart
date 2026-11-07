@@ -73,8 +73,8 @@ class _NavItem extends StatelessWidget {
         : AppColors.textSecondary;
     final radius = BorderRadius.circular(12);
 
-    // InkWell gives hover, focus and Enter/Space activation; the left
-    // accent bar marks the selected tab without relying on colour alone.
+    // InkWell gives hover, focus and Enter/Space activation. The selected
+    // tab has a tinted background and a filled icon, not just a colour.
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: Semantics(
@@ -95,21 +95,9 @@ class _NavItem extends StatelessWidget {
                     : Colors.transparent,
                 borderRadius: radius,
               ),
-              padding: const EdgeInsets.only(right: 16, top: 12, bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    width: 3,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? AppColors.primaryOnDark
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  const SizedBox(width: 13),
                   Icon(
                     isSelected ? tab.selectedIcon : tab.icon,
                     color: color,
