@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/config/feature_flags.dart';
 import '../../widgets/app_snack_bar.dart';
+import '../../widgets/retry_row.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_styles.dart';
@@ -1340,9 +1341,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               ),
             ),
           ),
-          error: (e, _) => Text(
-            'Could not load episodes',
-            style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
+          error: (e, _) => RetryRow(
+            title: 'Couldn\'t load episodes',
+            onRetry: () => ref.invalidate(
+              tvSeasonEpisodesProvider((tvId: details.tmdbId, season: season)),
+            ),
           ),
           data: (episodes) => Column(
             children: [

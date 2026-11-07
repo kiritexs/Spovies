@@ -25,7 +25,12 @@ class WatchlistNotifier extends Notifier<List<MediaItem>> {
   List<MediaItem> _loadFromBox() {
     // `_box.values` returns the in-memory cached iterable directly, which
     // is strictly faster than iterating keys and calling get() per item.
-    return [for (final data in _box.values) _fromMap(data)];
+    // Entries without an int tmdbId are skipped rather than crashing the
+    // provider (and with it Home, Details and the Library) on every launch.
+    return [
+      for (final data in _box.values)
+        if (data['tmdbId'] is int) _fromMap(data),
+    ];
   }
 
   String _keyOf(MediaItem item) =>
@@ -73,22 +78,26 @@ class WatchlistNotifier extends Notifier<List<MediaItem>> {
     'genreIds': item.metadata.genreIds.map((id) => id).toList(),
   };
 
-  MediaItem _fromMap(Map<dynamic, dynamic> map) => MediaItem(
-    id: map['tmdbId'].toString(),
-    tmdbId: map['tmdbId'] as int,
-    type: MediaType.fromString(map['type'] as String?),
-    title: map['title'] as String? ?? '',
-    posterPath: map['posterPath'] as String?,
-    backdropPath: map['backdropPath'] as String?,
-    overview: map['overview'] as String?,
-    releaseDate: map['releaseDate'] as String?,
-    metadata: MediaMetadata(
-      rating: (map['rating'] as num?)?.toDouble(),
-      genreIds:
-          (map['genreIds'] as List<dynamic>?)?.map((e) => e as int).toList() ??
-          [],
-    ),
-  );
+  /// Tolerant read: a field of the wrong type is treated as missing.
+  MediaItem _fromMap(Map<dynamic, dynamic> map) {
+    String? text(String k) => map[k] is String ? map[k] as String : null;
+    final rating = map['rating'];
+    final genreIds = map['genreIds'];
+    return MediaItem(
+      id: map['tmdbId'].toString(),
+      tmdbId: map['tmdbId'] as int,
+      type: MediaType.fromString(text('type')),
+      title: text('title') ?? '',
+      posterPath: text('posterPath'),
+      backdropPath: text('backdropPath'),
+      overview: text('overview'),
+      releaseDate: text('releaseDate'),
+      metadata: MediaMetadata(
+        rating: rating is num ? rating.toDouble() : null,
+        genreIds: genreIds is List ? genreIds.whereType<int>().toList() : [],
+      ),
+    );
+  }
 }
 
 // ─── Provider ────────────────────────────────────────────────────────────

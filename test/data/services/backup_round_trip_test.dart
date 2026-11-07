@@ -149,6 +149,82 @@ void main() {
       expect(HiveService.settingsBox.containsKey('injected'), isFalse);
     });
 
+    test('rebuilds watchlist entries with the types the app reads', () async {
+      await HiveService.watchlistBox.clear();
+      final preview = ExportImportService.parseBackup(
+        _backup({
+          'schemaVersion': 2,
+          'watchlist': [
+            {
+              'tmdbId': 77,
+              'type': 'TV',
+              'title': 7,
+              'rating': 'high',
+              'genreIds': ['28', 18],
+              'evil': 'payload',
+            },
+          ],
+        }),
+      );
+      await ExportImportService.applyImport(preview);
+
+      final entry = HiveService.watchlistBox.get('tv_77')!;
+      expect(entry['title'], '');
+      expect(entry['rating'], isNull);
+      expect(entry['genreIds'], [18]);
+      expect(entry.containsKey('evil'), isFalse);
+    });
+
+    test('normalises mediaType and rejects unknown types', () async {
+      await HiveService.listStatusBox.clear();
+      final preview = ExportImportService.parseBackup(
+        _backup({
+          'schemaVersion': 2,
+          'listStatus': [
+            {
+              'mediaId': '8',
+              'mediaType': 'TV',
+              'status': 'watching',
+              'updatedAt': '2026-01-01T00:00:00.000',
+            },
+            {
+              'mediaId': '9',
+              'mediaType': 'podcast',
+              'status': 'watching',
+              'updatedAt': '2026-01-01T00:00:00.000',
+            },
+          ],
+        }),
+      );
+      await ExportImportService.applyImport(preview);
+
+      expect(HiveService.listStatusBox.keys, ['status_tv_8']);
+    });
+
+    test('an undated backup entry never replaces a local one', () async {
+      await HiveService.listStatusBox.clear();
+      await HiveService.listStatusBox.put('status_movie_4', {
+        'mediaId': '4',
+        'mediaType': 'movie',
+        'status': 'completed',
+        'updatedAt': '2026-01-01T00:00:00.000',
+      });
+      final preview = ExportImportService.parseBackup(
+        _backup({
+          'schemaVersion': 2,
+          'listStatus': [
+            {'mediaId': '4', 'mediaType': 'movie', 'status': 'dropped'},
+          ],
+        }),
+      );
+      await ExportImportService.applyImport(preview);
+
+      expect(
+        HiveService.listStatusBox.get('status_movie_4')?['status'],
+        'completed',
+      );
+    });
+
     test('keeps newer local progress over an older backup', () async {
       await HiveService.watchHistoryBox.put('tv_5_s1_e3', {
         'mediaId': '5',

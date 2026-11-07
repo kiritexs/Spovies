@@ -52,64 +52,76 @@ class HiveService {
 
     await _rekey(
       listStatusBox,
-      (v) => StorageKeys.status(
-        _type(v['mediaType']),
-        v['mediaId'].toString(),
-        season: _int(v['season']),
-        episode: _int(v['episode']),
-      ),
+      (v) => _id(v['mediaId']) == null
+          ? null
+          : StorageKeys.status(
+              _type(v['mediaType']),
+              _id(v['mediaId'])!,
+              season: _int(v['season']),
+              episode: _int(v['episode']),
+            ),
       dateField: 'updatedAt',
     );
     await _rekey(
       watchHistoryBox,
-      (v) => StorageKeys.progress(
-        _type(v['mediaType']),
-        v['mediaId'].toString(),
-        season: _int(v['season']),
-        episode: _int(v['episode']),
-      ),
+      (v) => _id(v['mediaId']) == null
+          ? null
+          : StorageKeys.progress(
+              _type(v['mediaType']),
+              _id(v['mediaId'])!,
+              season: _int(v['season']),
+              episode: _int(v['episode']),
+            ),
       dateField: 'lastPlayedDate',
     );
     await _rekey(
       watchlistBox,
-      (v) => StorageKeys.watchlist(_type(v['type']), _int(v['tmdbId']) ?? 0),
+      (v) => _int(v['tmdbId']) == null
+          ? null
+          : StorageKeys.watchlist(_type(v['type']), _int(v['tmdbId'])!),
     );
 
     await settingsBox.put(StorageKeys.versionSettingKey, StorageKeys.version);
   }
 
+  /// Move each entry to the key [newKeyOf] gives it. Entries it returns
+  /// null for (no id) stay where they are. When several entries map to one
+  /// new key — including an entry already there — the newest by
+  /// [dateField] wins; without a date field the last one read wins.
   static Future<void> _rekey(
     Box<Map<dynamic, dynamic>> box,
-    String Function(Map<dynamic, dynamic> value) newKeyOf, {
+    String? Function(Map<dynamic, dynamic> value) newKeyOf, {
     String? dateField,
   }) async {
-    final moves = <dynamic, MapEntry<String, Map<dynamic, dynamic>>>{};
+    final winners = <String, Map<dynamic, dynamic>>{};
+    final oldKeys = <dynamic>[];
     for (final entry in box.toMap().entries) {
-      final String newKey;
+      final String? newKey;
       try {
         newKey = newKeyOf(entry.value);
       } catch (_) {
         continue; // malformed entry: leave it where it is
       }
-      if (newKey == entry.key) continue;
+      if (newKey == null || newKey == entry.key) continue;
+      oldKeys.add(entry.key);
 
-      final existing = moves[newKey]?.value ?? box.get(newKey);
-      if (existing != null &&
-          dateField != null &&
-          !_isNewer(entry.value[dateField], existing[dateField])) {
-        moves[entry.key] = MapEntry(newKey, existing); // drop the older one
-        continue;
+      final current = winners[newKey] ?? box.get(newKey);
+      if (current == null ||
+          dateField == null ||
+          _isNewer(entry.value[dateField], current[dateField])) {
+        winners[newKey] = entry.value;
       }
-      moves[entry.key] = MapEntry(newKey, entry.value);
     }
-    if (moves.isEmpty) return;
+    if (oldKeys.isEmpty) return;
 
-    final puts = <String, Map<dynamic, dynamic>>{};
-    for (final move in moves.values) {
-      puts[move.key] = move.value;
-    }
-    await box.putAll(puts);
-    await box.deleteAll(moves.keys.where((k) => !puts.containsKey(k)));
+    await box.putAll(winners);
+    await box.deleteAll(oldKeys.where((k) => !winners.containsKey(k)));
+  }
+
+  /// A non-empty id string, or null.
+  static String? _id(dynamic v) {
+    final id = v?.toString() ?? '';
+    return id.isEmpty || id == 'null' ? null : id;
   }
 
   static String _type(dynamic raw) => raw == 'tv' ? 'tv' : 'movie';

@@ -222,7 +222,9 @@ class ExportImportService {
     List<Map<dynamic, dynamic>> items,
   ) async {
     var written = 0;
-    for (final raw in items) {
+    for (final item in items) {
+      final raw = _withMediaType(item);
+      if (raw == null) continue;
       final UserProgress progress;
       try {
         progress = UserProgress.fromMap(raw);
@@ -237,14 +239,9 @@ class ExportImportService {
         episode: progress.episode,
       );
       final existing = HiveService.watchHistoryBox.get(key);
-      if (existing != null) {
-        final existingDate = DateTime.tryParse(
-          existing['lastPlayedDate']?.toString() ?? '',
-        );
-        if (existingDate != null &&
-            !progress.lastPlayedDate.isAfter(existingDate)) {
-          continue; // keep the more recent local entry
-        }
+      if (existing != null &&
+          !_importWins(raw['lastPlayedDate'], existing['lastPlayedDate'])) {
+        continue; // keep the more recent (or only dated) local entry
       }
       await HiveService.watchHistoryBox.put(key, progress.toMap());
       written++;
@@ -257,21 +254,67 @@ class ExportImportService {
     for (final raw in items) {
       final tmdbId = raw['tmdbId'];
       if (tmdbId is! int || tmdbId <= 0) continue;
-      final type = raw['type'] == 'tv' ? 'tv' : 'movie';
+      final type = _mediaType(raw['type']) ?? 'movie';
       final key = StorageKeys.watchlist(type, tmdbId);
       if (HiveService.watchlistBox.containsKey(key)) continue;
-      final map = Map<String, dynamic>.from(raw)
-        ..remove('_key')
-        ..['type'] = type;
-      await HiveService.watchlistBox.put(key, map);
+      await HiveService.watchlistBox.put(key, _watchlistEntry(raw, type));
       written++;
     }
     return written;
   }
 
+  /// A watchlist entry rebuilt field by field with the types the app
+  /// reads back. Copying the raw map let a wrong type (e.g. `"title": 7`)
+  /// through, which then failed on every launch.
+  static Map<String, dynamic> _watchlistEntry(
+    Map<dynamic, dynamic> raw,
+    String type,
+  ) {
+    String? text(String k) => raw[k] is String ? raw[k] as String : null;
+    final genreIds = raw['genreIds'];
+    return {
+      'tmdbId': raw['tmdbId'],
+      'type': type,
+      'title': text('title') ?? '',
+      'posterPath': text('posterPath'),
+      'backdropPath': text('backdropPath'),
+      'overview': text('overview'),
+      'releaseDate': text('releaseDate'),
+      'rating': raw['rating'] is num ? raw['rating'] : null,
+      'genreIds': genreIds is List
+          ? genreIds.whereType<int>().toList()
+          : <int>[],
+    };
+  }
+
+  /// `movie` or `tv` (any case), else null: other values are rejected so
+  /// an entry can't land under a key nothing else looks up.
+  static String? _mediaType(Object? raw) {
+    final type = raw?.toString().toLowerCase();
+    return type == 'movie' || type == 'tv' ? type : null;
+  }
+
+  /// [raw] with `mediaType` normalised, or null if it isn't movie/tv.
+  static Map<dynamic, dynamic>? _withMediaType(Map<dynamic, dynamic> raw) {
+    final type = _mediaType(raw['mediaType']);
+    return type == null ? null : (Map.of(raw)..['mediaType'] = type);
+  }
+
+  /// Whether an imported entry dated [incoming] should replace a local
+  /// one dated [local]. An undated import never replaces a local entry
+  /// (it would otherwise parse as "now" and always win).
+  static bool _importWins(Object? incoming, Object? local) {
+    final inDate = DateTime.tryParse(incoming?.toString() ?? '');
+    if (inDate == null) return false;
+    final localDate = DateTime.tryParse(local?.toString() ?? '');
+    return localDate == null || inDate.isAfter(localDate);
+  }
+
   static Future<int> _mergeStatuses(List<Map<dynamic, dynamic>> items) async {
     var written = 0;
-    for (final raw in items) {
+    for (final item in items) {
+      final raw = _withMediaType(item);
+      if (raw == null) continue;
       final MediaStatus status;
       try {
         status = MediaStatus.fromMap(raw);
@@ -286,13 +329,9 @@ class ExportImportService {
         episode: status.episode,
       );
       final existing = HiveService.listStatusBox.get(key);
-      if (existing != null) {
-        final existingDate = DateTime.tryParse(
-          existing['updatedAt']?.toString() ?? '',
-        );
-        if (existingDate != null && !status.updatedAt.isAfter(existingDate)) {
-          continue;
-        }
+      if (existing != null &&
+          !_importWins(raw['updatedAt'], existing['updatedAt'])) {
+        continue;
       }
       await HiveService.listStatusBox.put(key, status.toMap());
       written++;

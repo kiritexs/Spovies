@@ -52,10 +52,6 @@ class WatchlistScreen extends ConsumerStatefulWidget {
 class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   WatchStatus? _selectedStatus;
 
-  /// Removed but still undoable: hidden now, deleted when the snackbar
-  /// closes without Undo.
-  final Set<String> _pendingRemoval = {};
-
   @override
   Widget build(BuildContext context) {
     final saved = ref.watch(watchlistProvider);
@@ -151,7 +147,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
         status: statusByKey['${item.type.name}_${item.tmdbId}']?.status,
       );
       seen.add(entry.key);
-      if (!_pendingRemoval.contains(entry.key)) out.add(entry);
+      out.add(entry);
     }
     final statusOnly =
         statuses
@@ -166,7 +162,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
         type: s.mediaType == 'tv' ? MediaType.tv : MediaType.movie,
         status: s.status,
       );
-      if (!_pendingRemoval.contains(entry.key)) out.add(entry);
+      out.add(entry);
     }
     return out;
   }
@@ -292,7 +288,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
             return _LibraryCard(
               key: ValueKey(entry.key),
               entry: entry,
-              onRemove: () => _remove(entry),
+              onRemove: () => unawaited(_remove(entry)),
             );
           },
         );
@@ -300,18 +296,17 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
     );
   }
 
-  /// Hide the card now and offer Undo; delete only once the snackbar
-  /// closes without it. Removing also clears the title's statuses and
-  /// watch progress.
-  void _remove(_LibraryEntry entry) {
-    final key = entry.key;
-    setState(() => _pendingRemoval.add(key));
-
-    // Captured now: the deletion runs after the snackbar closes.
-    final watchlist = ref.read(watchlistProvider.notifier);
-    final statuses = ref.read(watchStatusNotifierProvider.notifier);
-
-    final controller = showAppSnackBar(
+  /// Remove now and offer Undo, which restores the saved item, its
+  /// statuses and its progress exactly as they were.
+  Future<void> _remove(_LibraryEntry entry) async {
+    final notifier = ref.read(watchStatusNotifierProvider.notifier);
+    final removed = await notifier.removeTitle(
+      entry.tmdbId.toString(),
+      mediaType: entry.type.name,
+      item: entry.item,
+    );
+    if (!mounted) return;
+    showAppSnackBar(
       context,
       'Removed from Library',
       aboveNav: true,
@@ -319,22 +314,8 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       action: SnackBarAction(
         label: 'Undo',
         textColor: AppColors.primaryOnDark,
-        onPressed: () {},
+        onPressed: () => unawaited(notifier.restoreTitle(removed)),
       ),
-    );
-
-    unawaited(
-      controller.closed.then((reason) async {
-        if (reason != SnackBarClosedReason.action) {
-          final item = entry.item;
-          if (item != null) watchlist.remove(item);
-          await statuses.deleteAllStatusesForMedia(
-            entry.tmdbId.toString(),
-            mediaType: entry.type.name,
-          );
-        }
-        if (mounted) setState(() => _pendingRemoval.remove(key));
-      }),
     );
   }
 
@@ -431,7 +412,9 @@ class _LibraryCard extends ConsumerWidget {
             mediaDetailsProvider((tmdbId: entry.tmdbId, type: entry.type)),
           );
     final item = itemAsync.value;
-    final title = item?.title ?? (itemAsync.hasError ? 'Unavailable' : '');
+    final failed = item == null && itemAsync.hasError;
+    final title =
+        item?.title ?? (failed ? 'Couldn\'t load · tap to retry' : '');
     final posterUrl = buildImageUrl(item?.posterPath, AppConfig.posterMedium);
     final status = entry.status;
 
@@ -445,13 +428,20 @@ class _LibraryCard extends ConsumerWidget {
     return Semantics(
       container: true,
       label: description,
-      button: item != null,
+      button: item != null || failed,
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
-          onTap: item == null
-              ? null
-              : () => context.push('/details', extra: item),
+          onTap: item != null
+              ? () => context.push('/details', extra: item)
+              : failed
+              ? () => ref.invalidate(
+                  mediaDetailsProvider((
+                    tmdbId: entry.tmdbId,
+                    type: entry.type,
+                  )),
+                )
+              : null,
           borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
           focusColor: AppColors.focus.withValues(alpha: 0.2),
           child: Column(

@@ -469,6 +469,9 @@ class SettingsScreen extends ConsumerWidget {
     //      a hostile `.spovies` backup could silently land an `intent://`
     //      or `content://` `urlTemplate` that the user would later tap.
     //   3. applyImport — only runs on the user's positive confirmation.
+    // Held for the post-import refresh: unlike `ref`, the container stays
+    // valid if this screen is disposed while the import runs.
+    final container = ProviderScope.containerOf(context, listen: false);
     try {
       final preview = await ExportImportService.previewImport();
       if (preview == null) {
@@ -489,13 +492,20 @@ class SettingsScreen extends ConsumerWidget {
       );
       await ExportImportService.applyImport(preview);
 
+      // Refresh every provider that surfaces imported data, whether or not
+      // this screen is still mounted.
+      container
+        ..invalidate(continueWatchingProvider)
+        ..invalidate(episodeProgressProvider)
+        ..invalidate(watchlistProvider)
+        ..invalidate(titleStatusesProvider)
+        ..invalidate(mediaStatusProvider)
+        ..invalidate(mediaStatusesForShowProvider)
+        ..invalidate(entriesByStatusProvider)
+        ..invalidate(installedPluginsProvider);
+
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
-      // Refresh every provider that surfaces imported data.
-      ref.invalidate(continueWatchingProvider);
-      ref.invalidate(watchlistProvider);
-      ref.invalidate(installedPluginsProvider);
 
       showAppSnackBar(context, 'Backup imported', aboveNav: true);
     } catch (e) {

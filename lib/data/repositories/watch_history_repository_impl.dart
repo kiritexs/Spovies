@@ -57,6 +57,19 @@ class WatchHistoryRepositoryImpl implements WatchHistoryRepository {
   }
 
   @override
+  Future<List<UserProgress>> getProgressForMedia(
+    String mediaId, {
+    required String mediaType,
+  }) async {
+    return [
+      for (final value in _box.values)
+        if (value['mediaId']?.toString() == mediaId &&
+            value['mediaType']?.toString() == mediaType)
+          UserProgress.fromMap(value),
+    ];
+  }
+
+  @override
   Future<void> deleteProgressForMedia(
     String mediaId, {
     required String mediaType,

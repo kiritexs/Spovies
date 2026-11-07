@@ -1,6 +1,6 @@
 // Library screen: lists saved titles and titles that only have a status,
-// filters by status, and removes with Undo (deleting only once the
-// snackbar closes without it).
+// filters by status, and removes at once with an Undo that restores the
+// saved item, statuses and progress.
 
 import 'dart:typed_data';
 
@@ -111,9 +111,10 @@ void main() {
     await pumpLibrary(tester);
 
     await tester.tap(find.byTooltip('Remove from Library'));
-    await tester.pump();
+    await settle(tester); // removal runs, snackbar slides in
     expect(find.text('Saved Movie'), findsNothing);
-    await settle(tester); // let the snackbar finish sliding in
+    expect(HiveService.watchlistBox.length, 0);
+    expect(HiveService.listStatusBox.length, 0);
 
     await tester.tap(find.text('Undo'));
     await settle(tester);
@@ -123,20 +124,19 @@ void main() {
     expect(HiveService.listStatusBox.length, 1);
   });
 
-  testWidgets('without Undo the title and its status are deleted', (
+  testWidgets('a status set after removing survives the snackbar timeout', (
     tester,
   ) async {
     await putStatus('movie', 1, WatchStatus.completed);
     await pumpLibrary(tester);
 
     await tester.tap(find.byTooltip('Remove from Library'));
-    await settle(tester); // the 5 s timer starts once it has slid in
-    expect(HiveService.watchlistBox.length, 1); // not deleted yet
+    await settle(tester);
+    // The user tracks the title again while the snackbar is still up.
+    await putStatus('movie', 1, WatchStatus.watching);
     await tester.pump(const Duration(seconds: 6));
     await settle(tester);
 
-    expect(find.text('Saved Movie'), findsNothing);
-    expect(HiveService.watchlistBox.length, 0);
-    expect(HiveService.listStatusBox.length, 0);
+    expect(HiveService.listStatusBox.length, 1);
   });
 }

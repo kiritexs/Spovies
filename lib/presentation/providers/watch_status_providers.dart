@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/repositories/watch_status_repository_impl.dart';
 import '../../domain/entities/media_item.dart';
+import '../../domain/entities/user_progress.dart';
 import '../../domain/entities/watch_status.dart';
 import '../../domain/repositories/watch_status_repository.dart';
 import 'watch_history_providers.dart';
@@ -56,6 +57,14 @@ final titleStatusesProvider = FutureProvider<List<MediaStatus>>((ref) async {
 
 // ─── Notifier: set status and invalidate ─────────────────────────────────
 
+/// Everything [WatchStatusNotifier.removeTitle] deleted for one title, so
+/// Undo can put it back exactly.
+typedef RemovedTitle = ({
+  MediaItem? savedItem,
+  List<MediaStatus> statuses,
+  List<UserProgress> progress,
+});
+
 class WatchStatusNotifier extends Notifier<void> {
   @override
   void build() {}
@@ -109,6 +118,57 @@ class WatchStatusNotifier extends Notifier<void> {
 
     await statusRepo.deleteAllStatusesForMedia(mediaId, mediaType: mediaType);
     await historyRepo.deleteProgressForMedia(mediaId, mediaType: mediaType);
+
+    _invalidateStatuses();
+    ref.invalidate(continueWatchingProvider);
+    ref.invalidate(episodeProgressProvider);
+  }
+
+  /// Remove a title from the Library now: its saved item, every status
+  /// (title and episodes) and its watch progress. Returns what was removed
+  /// so [restoreTitle] can undo it. Deleting at once (rather than when an
+  /// Undo snackbar closes) means nothing set on the title afterwards can
+  /// be wiped by a late delete.
+  Future<RemovedTitle> removeTitle(
+    String mediaId, {
+    required String mediaType,
+    MediaItem? item,
+  }) async {
+    final statusRepo = ref.read(watchStatusRepositoryProvider);
+    final historyRepo = ref.read(watchHistoryRepositoryProvider);
+    final watchlist = ref.read(watchlistProvider.notifier);
+
+    final saved = item != null && watchlist.contains(item) ? item : null;
+    final removed = (
+      savedItem: saved,
+      statuses: await statusRepo.getStatusesForMedia(
+        mediaId,
+        mediaType: mediaType,
+      ),
+      progress: await historyRepo.getProgressForMedia(
+        mediaId,
+        mediaType: mediaType,
+      ),
+    );
+
+    if (saved != null) watchlist.remove(saved);
+    await deleteAllStatusesForMedia(mediaId, mediaType: mediaType);
+    return removed;
+  }
+
+  /// Put back what [removeTitle] removed.
+  Future<void> restoreTitle(RemovedTitle removed) async {
+    final statusRepo = ref.read(watchStatusRepositoryProvider);
+    final historyRepo = ref.read(watchHistoryRepositoryProvider);
+
+    final item = removed.savedItem;
+    if (item != null) ref.read(watchlistProvider.notifier).add(item);
+    for (final status in removed.statuses) {
+      await statusRepo.saveStatus(status);
+    }
+    for (final progress in removed.progress) {
+      await historyRepo.saveProgress(progress);
+    }
 
     _invalidateStatuses();
     ref.invalidate(continueWatchingProvider);

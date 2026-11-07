@@ -97,6 +97,56 @@ void main() {
     expect(HiveService.watchHistoryBox.get('movie_5')?['percentage'], 80);
   });
 
+  test(
+    'old entries colliding on one key: the newer wins in any order',
+    () async {
+      Future<void> run(List<(String, String, String)> rows) async {
+        await HiveService.settingsBox.clear();
+        await HiveService.listStatusBox.clear();
+        for (final (key, status, date) in rows) {
+          await HiveService.listStatusBox.put(key, {
+            'mediaId': '3',
+            'mediaType': 'movie',
+            'status': status,
+            'updatedAt': date,
+          });
+        }
+        await HiveService.migrateStorageKeys();
+      }
+
+      await run([
+        ('status_3', 'completed', '2026-05-01T00:00:00.000'),
+        ('legacy_3', 'dropped', '2026-01-01T00:00:00.000'),
+      ]);
+      expect(HiveService.listStatusBox.keys, ['status_movie_3']);
+      expect(
+        HiveService.listStatusBox.get('status_movie_3')?['status'],
+        'completed',
+      );
+
+      await run([
+        ('legacy_3', 'completed', '2026-05-01T00:00:00.000'),
+        ('status_3', 'dropped', '2026-01-01T00:00:00.000'),
+      ]);
+      expect(HiveService.listStatusBox.keys, ['status_movie_3']);
+      expect(
+        HiveService.listStatusBox.get('status_movie_3')?['status'],
+        'completed',
+      );
+    },
+  );
+
+  test('entries without an id are left alone, not merged', () async {
+    await HiveService.listStatusBox.put('bad_a', {'status': 'watching'});
+    await HiveService.listStatusBox.put('bad_b', {'status': 'dropped'});
+    await HiveService.watchlistBox.put('bad_c', {'type': 'tv'});
+
+    await HiveService.migrateStorageKeys();
+
+    expect(HiveService.listStatusBox.keys, unorderedEquals(['bad_a', 'bad_b']));
+    expect(HiveService.watchlistBox.keys, ['bad_c']);
+  });
+
   test('runs only once', () async {
     await HiveService.settingsBox.put(
       StorageKeys.versionSettingKey,
