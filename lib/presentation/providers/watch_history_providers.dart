@@ -100,15 +100,16 @@ final nextEpisodeForProgressProvider =
       return null;
     });
 
-/// Progress for a single episode.
+/// Progress for a single episode (or a movie, with season/episode null).
 final episodeProgressProvider =
     FutureProvider.family<
       UserProgress?,
-      ({String mediaId, int? season, int? episode})
+      ({String mediaId, String mediaType, int? season, int? episode})
     >((ref, args) async {
       final repo = ref.watch(watchHistoryRepositoryProvider);
       return repo.getProgress(
         args.mediaId,
+        mediaType: args.mediaType,
         season: args.season,
         episode: args.episode,
       );

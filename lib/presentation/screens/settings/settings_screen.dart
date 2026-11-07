@@ -8,11 +8,11 @@ import '../../../core/config/feature_flags.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/theme/app_spacing.dart';
-import '../../../data/datasources/local/hive_service.dart';
 import '../../../data/services/export_import_service.dart';
 import '../../providers/plugin_providers.dart';
 import '../../providers/settings_providers.dart';
 import '../../providers/watch_history_providers.dart';
+import '../../providers/watch_status_providers.dart';
 import '../../providers/watchlist_providers.dart';
 
 /// Settings screen with glass-themed sections.
@@ -105,21 +105,27 @@ class SettingsScreen extends ConsumerWidget {
                   subtitle: 'Remove all watch progress',
                   onTap: () =>
                       _confirmClear(context, ref, 'watch history', () async {
-                        await HiveService.watchHistoryBox.clear();
+                        await ref
+                            .read(watchHistoryRepositoryProvider)
+                            .clearHistory();
                         ref.invalidate(continueWatchingProvider);
+                        ref.invalidate(episodeProgressProvider);
                       }),
                 ),
                 const SizedBox(height: 8),
                 _buildGlassTile(
                   context,
                   icon: Icons.bookmark_remove_rounded,
-                  title: 'Clear Watchlist',
-                  subtitle: 'Remove all saved items',
-                  onTap: () =>
-                      _confirmClear(context, ref, 'watchlist', () async {
-                        await HiveService.watchlistBox.clear();
-                        ref.invalidate(watchlistProvider);
-                      }),
+                  title: 'Clear Library',
+                  subtitle: 'Remove all saved titles and their statuses',
+                  onTap: () => _confirmClear(context, ref, 'library', () async {
+                    // Statuses go too: a status with no saved title would
+                    // otherwise linger invisibly.
+                    ref.read(watchlistProvider.notifier).clearAll();
+                    await ref
+                        .read(watchStatusNotifierProvider.notifier)
+                        .clearAll();
+                  }),
                 ),
 
                 const SizedBox(height: AppSpacing.sectionGap),
@@ -488,7 +494,8 @@ class SettingsScreen extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               _summaryRow('Watch history', preview.watchHistoryCount),
-              _summaryRow('Watchlist', preview.watchlistCount),
+              _summaryRow('Library', preview.watchlistCount),
+              _summaryRow('Watch statuses', preview.statusCount),
               _summaryRow('Settings', preview.settingsCount),
               const SizedBox(height: 12),
               Text(

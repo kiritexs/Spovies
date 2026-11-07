@@ -31,16 +31,16 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   @override
   Widget build(BuildContext context) {
     final allItems = ref.watch(watchlistProvider);
-    final statusEntries = _selectedStatus == null
-        ? null
-        : ref.watch(libraryEntriesByStatusProvider(_selectedStatus!)).value ??
-              [];
+    final titleStatuses = ref.watch(titleStatusesProvider).value ?? const [];
     final filteredItems = _selectedStatus == null
         ? allItems
         : allItems
               .where(
-                (item) => statusEntries!.any(
-                  (e) => e.mediaId == item.tmdbId.toString(),
+                (item) => titleStatuses.any(
+                  (e) =>
+                      e.status == _selectedStatus &&
+                      e.mediaId == item.tmdbId.toString() &&
+                      e.mediaType == item.type.name,
                 ),
               )
               .toList();
@@ -170,7 +170,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                         mediaType: item.type.name,
                       ),
                 );
-                ref.read(watchlistProvider.notifier).remove(item.tmdbId);
+                ref.read(watchlistProvider.notifier).remove(item);
               },
             );
           },
@@ -289,6 +289,7 @@ class _WatchlistItem extends ConsumerWidget {
     final statusAsync = ref.watch(
       mediaStatusProvider((
         mediaId: item.tmdbId.toString(),
+        mediaType: item.type.name,
         season: null,
         episode: null,
       )),

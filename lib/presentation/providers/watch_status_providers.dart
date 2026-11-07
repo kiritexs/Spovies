@@ -15,24 +15,22 @@ final watchStatusRepositoryProvider = Provider<WatchStatusRepository>((ref) {
 
 // ─── Data ───────────────────────────────────────────────────────────────
 
-/// Status for a single media or episode. Parameters: mediaId, optional season, optional episode.
+/// Status for a single title or episode.
 final mediaStatusProvider =
     FutureProvider.family<
       MediaStatus?,
-      ({String mediaId, int? season, int? episode})
+      ({String mediaId, String mediaType, int? season, int? episode})
     >((ref, args) async {
       final repo = ref.watch(watchStatusRepositoryProvider);
       return repo.getStatus(
         args.mediaId,
+        mediaType: args.mediaType,
         season: args.season,
         episode: args.episode,
       );
     });
 
 /// All status entries for a show (for episode list).
-///
-/// The family arg includes `mediaType` because TMDB uses independent id
-/// spaces for movies and TV shows — see [WatchStatusRepository.getStatusesForMedia].
 final mediaStatusesForShowProvider =
     FutureProvider.family<
       List<MediaStatus>,
@@ -49,13 +47,12 @@ final entriesByStatusProvider =
       return repo.getEntriesByStatus(status);
     });
 
-/// Media-level only (season == null, episode == null). Use for library filter.
-final libraryEntriesByStatusProvider =
-    FutureProvider.family<List<MediaStatus>, WatchStatus>((ref, status) async {
-      final repo = ref.watch(watchStatusRepositoryProvider);
-      final all = await repo.getEntriesByStatus(status);
-      return all.where((e) => e.season == null && e.episode == null).toList();
-    });
+/// Every title-level status (movie or show, not episodes). Drives the
+/// Library, which lists saved titles plus any title that has a status.
+final titleStatusesProvider = FutureProvider<List<MediaStatus>>((ref) async {
+  final repo = ref.watch(watchStatusRepositoryProvider);
+  return repo.getAllTitleStatuses();
+});
 
 // ─── Notifier: set status and invalidate ─────────────────────────────────
 
@@ -63,39 +60,46 @@ class WatchStatusNotifier extends Notifier<void> {
   @override
   void build() {}
 
+  void _invalidateStatuses() {
+    ref.invalidate(mediaStatusProvider);
+    ref.invalidate(mediaStatusesForShowProvider);
+    ref.invalidate(entriesByStatusProvider);
+    ref.invalidate(titleStatusesProvider);
+  }
+
+  /// Save a status. Pass [mediaItem] to also save the title to the Library,
+  /// so every tracked title has the metadata needed to show its card.
   Future<void> setStatus(MediaStatus entry, {MediaItem? mediaItem}) async {
     final repo = ref.read(watchStatusRepositoryProvider);
     await repo.saveStatus(entry);
 
     if (mediaItem != null) {
       final watchlist = ref.read(watchlistProvider.notifier);
-      if (!watchlist.contains(mediaItem.tmdbId)) {
+      if (!watchlist.contains(mediaItem)) {
         watchlist.add(mediaItem);
       }
     }
-
-    ref.invalidate(mediaStatusProvider);
-    ref.invalidate(mediaStatusesForShowProvider);
-    ref.invalidate(entriesByStatusProvider);
-    ref.invalidate(libraryEntriesByStatusProvider);
+    _invalidateStatuses();
   }
 
-  Future<void> deleteStatus(String mediaId, {int? season, int? episode}) async {
+  Future<void> deleteStatus(
+    String mediaId, {
+    required String mediaType,
+    int? season,
+    int? episode,
+  }) async {
     final repo = ref.read(watchStatusRepositoryProvider);
-    await repo.deleteStatus(mediaId, season: season, episode: episode);
-
-    ref.invalidate(mediaStatusProvider);
-    ref.invalidate(mediaStatusesForShowProvider);
-    ref.invalidate(entriesByStatusProvider);
-    ref.invalidate(libraryEntriesByStatusProvider);
+    await repo.deleteStatus(
+      mediaId,
+      mediaType: mediaType,
+      season: season,
+      episode: episode,
+    );
+    _invalidateStatuses();
   }
 
-  /// Remove all statuses for a media (show + all episodes). Use when removing
-  /// from library.
-  ///
-  /// Also deletes any progress entries for the same media so the title stops
-  /// appearing in the "Continue Watching" row, then invalidates the related
-  /// list providers.
+  /// Remove all statuses for a title (show + all episodes) and its watch
+  /// progress, so it also leaves the "Continue Watching" row.
   Future<void> deleteAllStatusesForMedia(
     String mediaId, {
     required String mediaType,
@@ -104,16 +108,18 @@ class WatchStatusNotifier extends Notifier<void> {
     final historyRepo = ref.read(watchHistoryRepositoryProvider);
 
     await statusRepo.deleteAllStatusesForMedia(mediaId, mediaType: mediaType);
-    await historyRepo.deleteProgressForMedia(mediaId);
+    await historyRepo.deleteProgressForMedia(mediaId, mediaType: mediaType);
 
-    ref.invalidate(mediaStatusProvider);
-    ref.invalidate(mediaStatusesForShowProvider);
-    ref.invalidate(entriesByStatusProvider);
-    ref.invalidate(libraryEntriesByStatusProvider);
-    // Continue Watching reads from watchHistoryBox; refresh it now so the
-    // just-removed title disappears from the Home row.
+    _invalidateStatuses();
     ref.invalidate(continueWatchingProvider);
     ref.invalidate(episodeProgressProvider);
+  }
+
+  /// Remove every status entry. Used when the whole Library is cleared, so
+  /// no status is left behind without a visible title.
+  Future<void> clearAll() async {
+    await ref.read(watchStatusRepositoryProvider).clearAll();
+    _invalidateStatuses();
   }
 }
 

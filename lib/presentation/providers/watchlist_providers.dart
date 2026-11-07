@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../data/datasources/local/hive_service.dart';
+import '../../data/datasources/local/storage_keys.dart';
 import '../../domain/entities/media_item.dart';
 import '../../domain/entities/media_metadata.dart';
 import '../../domain/entities/media_type.dart';
@@ -26,27 +27,28 @@ class WatchlistNotifier extends Notifier<List<MediaItem>> {
     return [for (final data in _box.values) _fromMap(data)];
   }
 
+  String _keyOf(MediaItem item) =>
+      StorageKeys.watchlist(item.type.name, item.tmdbId);
+
   /// Add a media item to the watchlist.
   void add(MediaItem item) {
-    _box.put(item.tmdbId.toString(), _toMap(item));
+    _box.put(_keyOf(item), _toMap(item));
     state = _loadFromBox();
   }
 
   /// Remove a media item from the watchlist.
-  void remove(int tmdbId) {
-    _box.delete(tmdbId.toString());
+  void remove(MediaItem item) {
+    _box.delete(_keyOf(item));
     state = _loadFromBox();
   }
 
   /// Check if a media item is in the watchlist.
-  bool contains(int tmdbId) {
-    return _box.containsKey(tmdbId.toString());
-  }
+  bool contains(MediaItem item) => _box.containsKey(_keyOf(item));
 
   /// Toggle watchlist membership.
   void toggle(MediaItem item) {
-    if (contains(item.tmdbId)) {
-      remove(item.tmdbId);
+    if (contains(item)) {
+      remove(item);
     } else {
       add(item);
     }

@@ -1,12 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
 
+import '../../domain/entities/user_progress.dart';
+import '../../domain/entities/watch_status.dart';
 import '../datasources/local/hive_service.dart';
+import '../datasources/local/storage_keys.dart';
 import '../models/plugin_manifest_model.dart';
 
 /// What [ExportImportService.applyImport] would write, so the UI can
@@ -18,6 +22,7 @@ import '../models/plugin_manifest_model.dart';
 final class ImportPreview {
   final int watchHistoryCount;
   final int watchlistCount;
+  final int statusCount;
   final int settingsCount;
   final List<({String key, String name, String urlTemplate})> plugins;
   final List<({String key, String reason})> rejectedPlugins;
@@ -26,6 +31,7 @@ final class ImportPreview {
   const ImportPreview({
     required this.watchHistoryCount,
     required this.watchlistCount,
+    required this.statusCount,
     required this.settingsCount,
     required this.plugins,
     required this.rejectedPlugins,
@@ -35,10 +41,16 @@ final class ImportPreview {
 
 /// Handles export and import of all user data as compressed `.spovies` files.
 ///
-/// Data includes: watch history, watchlist, installed plugins, and settings.
-/// Format: JSON → gzip → `.spovies` extension.
+/// Data includes: watch history, watchlist, watch statuses, installed
+/// plugins, and settings. Format: JSON → gzip → `.spovies` extension.
 class ExportImportService {
-  static const int _schemaVersion = 1;
+  /// v2 added `listStatus`. v1 backups (no statuses) still import.
+  static const int _schemaVersion = 2;
+
+  /// Largest backup file accepted, and the largest it may decompress to.
+  /// Real backups are a few hundred KB; the caps stop a zip bomb.
+  static const int _maxFileBytes = 10 * 1024 * 1024;
+  static const int _maxDecodedBytes = 50 * 1024 * 1024;
 
   // ─── Export ──────────────────────────────────────────────────────────
 
@@ -47,9 +59,10 @@ class ExportImportService {
     final payload = <String, dynamic>{
       'schemaVersion': _schemaVersion,
       'exportedAt': DateTime.now().toIso8601String(),
-      'watchHistory': _boxToList(HiveService.watchHistoryBox),
-      'watchlist': _boxToList(HiveService.watchlistBox),
-      'plugins': _boxToMapEntries(HiveService.pluginsBox),
+      'watchHistory': _boxValues(HiveService.watchHistoryBox),
+      'watchlist': _boxValues(HiveService.watchlistBox),
+      'listStatus': _boxValues(HiveService.listStatusBox),
+      'plugins': _boxValues(HiveService.pluginsBox),
       'settings': _settingsToMap(),
     };
 
@@ -86,10 +99,22 @@ class ExportImportService {
     if (path == null) return null;
 
     final file = File(path);
-    final compressed = await file.readAsBytes();
-    final jsonBytes = gzip.decode(compressed);
-    final jsonStr = utf8.decode(jsonBytes);
-    final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+    if (await file.length() > _maxFileBytes) {
+      throw const FormatException('Backup file is too large.');
+    }
+    return parseBackup(await file.readAsBytes());
+  }
+
+  /// Decode and validate a backup. Public so it can be tested without a
+  /// file picker.
+  @visibleForTesting
+  static ImportPreview parseBackup(Uint8List compressed) {
+    final jsonStr = utf8.decode(_gunzipCapped(compressed));
+    final decoded = jsonDecode(jsonStr);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Not a Spovies backup file.');
+    }
+    final data = decoded;
 
     final version = data['schemaVersion'] as int? ?? 0;
     if (version > _schemaVersion) {
@@ -99,22 +124,16 @@ class ExportImportService {
       );
     }
 
-    final watchHistory = data['watchHistory'] as List<dynamic>?;
-    final watchlist = data['watchlist'] as List<dynamic>?;
-    final settings = data['settings'] as Map<String, dynamic>?;
-    final rawPlugins = data['plugins'] as List<dynamic>? ?? const [];
-
     final accepted = <({String key, String name, String urlTemplate})>[];
     final rejected = <({String key, String reason})>[];
-    for (final raw in rawPlugins) {
-      if (raw is! Map) continue;
+    for (final raw in _list(data['plugins'])) {
       final map = Map<String, dynamic>.from(raw);
       final key =
-          (map['_key'] as String?) ?? (map['pluginId'] as String?) ?? '';
+          (map['pluginId'] as String?) ?? (map['_key'] as String?) ?? '';
       try {
         final manifest = PluginManifestModel.fromJson(map);
         accepted.add((
-          key: key,
+          key: manifest.pluginId,
           name: manifest.name,
           urlTemplate: manifest.urlTemplate,
         ));
@@ -124,9 +143,10 @@ class ExportImportService {
     }
 
     return ImportPreview(
-      watchHistoryCount: watchHistory?.length ?? 0,
-      watchlistCount: watchlist?.length ?? 0,
-      settingsCount: settings?.length ?? 0,
+      watchHistoryCount: _list(data['watchHistory']).length,
+      watchlistCount: _list(data['watchlist']).length,
+      statusCount: _list(data['listStatus']).length,
+      settingsCount: _allowedSettings(data['settings']).length,
       plugins: accepted,
       rejectedPlugins: rejected,
       rawPayload: data,
@@ -134,135 +154,199 @@ class ExportImportService {
   }
 
   /// Merge a [preview] into the local database after the UI has confirmed
-  /// with the user. Plugins that failed validation in [previewImport] are
-  /// skipped here too — re-running validation defends against a TOCTOU
-  /// between preview and apply.
+  /// with the user. Every entry is re-validated and re-keyed from its own
+  /// content, so a malformed or tampered backup is skipped entry by entry
+  /// instead of being written raw (which could crash the app on launch).
   ///
   /// Returns `true` if anything was actually written.
   static Future<bool> applyImport(ImportPreview preview) async {
     final data = preview.rawPayload;
-    await _mergeWatchHistory(data['watchHistory'] as List<dynamic>?);
-    await _mergeWatchlist(data['watchlist'] as List<dynamic>?);
-    await _mergePlugins(data['plugins'] as List<dynamic>?);
-    await _importSettings(data['settings'] as Map<String, dynamic>?);
-    return true;
+    var written = 0;
+    written += await _mergeWatchHistory(_list(data['watchHistory']));
+    written += await _mergeWatchlist(_list(data['watchlist']));
+    written += await _mergeStatuses(_list(data['listStatus']));
+    written += await _mergePlugins(_list(data['plugins']));
+    written += await _importSettings(_allowedSettings(data['settings']));
+    return written > 0;
   }
 
   // ─── Helpers ────────────────────────────────────────────────────────
 
-  static List<Map<String, dynamic>> _boxToList(dynamic box) {
+  static List<int> _gunzipCapped(Uint8List compressed) {
+    final collector = _CappedCollector(_maxDecodedBytes);
+    gzip.decoder.startChunkedConversion(collector)
+      ..add(compressed)
+      ..close();
+    return collector.bytes;
+  }
+
+  static List<Map> _list(dynamic raw) =>
+      raw is List ? raw.whereType<Map>().toList() : const [];
+
+  static List<Map<String, dynamic>> _boxValues(dynamic box) {
     final entries = <Map<String, dynamic>>[];
     for (final key in box.keys) {
       final value = box.get(key);
-      if (value != null) {
-        entries.add({
-          '_key': key.toString(),
-          ...Map<String, dynamic>.from(value as Map),
-        });
-      }
+      if (value is Map) entries.add(Map<String, dynamic>.from(value));
     }
     return entries;
   }
 
-  static List<Map<String, dynamic>> _boxToMapEntries(dynamic box) {
-    final entries = <Map<String, dynamic>>[];
-    for (final key in box.keys) {
-      final value = box.get(key);
-      if (value != null) {
-        entries.add({
-          '_key': key.toString(),
-          ...Map<String, dynamic>.from(value as Map),
-        });
-      }
+  static const _pluginEnabledPrefix = 'plugin_enabled:';
+
+  /// Only settings the app actually reads, with the type it expects.
+  static Map<String, dynamic> _allowedSettings(dynamic raw) {
+    if (raw is! Map) return const {};
+    final out = <String, dynamic>{};
+    for (final entry in raw.entries) {
+      final key = entry.key.toString();
+      final value = entry.value;
+      final ok = switch (key) {
+        'themeMode' => value is String &&
+            const ['system', 'light', 'dark'].contains(value),
+        'preferredPlugin' => value == null || value is String,
+        _ => key.startsWith(_pluginEnabledPrefix) && value is bool,
+      };
+      if (ok) out[key] = value;
     }
-    return entries;
+    return out;
   }
 
   static Map<String, dynamic> _settingsToMap() {
-    final map = <String, dynamic>{};
-    for (final key in HiveService.settingsBox.keys) {
-      map[key.toString()] = HiveService.settingsBox.get(key);
-    }
-    return map;
+    return _allowedSettings({
+      for (final key in HiveService.settingsBox.keys)
+        key.toString(): HiveService.settingsBox.get(key),
+    });
   }
 
-  static Future<void> _mergeWatchHistory(List<dynamic>? items) async {
-    if (items == null) return;
-    for (final item in items) {
-      final map = Map<String, dynamic>.from(item as Map);
-      final key = map.remove('_key') as String?;
-      if (key == null) continue;
-
+  static Future<int> _mergeWatchHistory(List<Map> items) async {
+    var written = 0;
+    for (final raw in items) {
+      final UserProgress progress;
+      try {
+        progress = UserProgress.fromMap(raw);
+      } catch (_) {
+        continue;
+      }
+      if (progress.mediaId.isEmpty) continue;
+      final key = StorageKeys.progress(
+        progress.mediaType,
+        progress.mediaId,
+        season: progress.season,
+        episode: progress.episode,
+      );
       final existing = HiveService.watchHistoryBox.get(key);
       if (existing != null) {
-        // Keep the entry with the more recent lastPlayedDate.
-        // UserProgress.toMap() stores the date as an ISO-8601 string
-        // under 'lastPlayedDate', NOT as an integer 'lastPlayedAt'.
-        final existingDateStr = existing['lastPlayedDate'] as String?;
-        final importDateStr = map['lastPlayedDate'] as String?;
-        if (existingDateStr != null && importDateStr != null) {
-          final existingDate = DateTime.tryParse(existingDateStr);
-          final importDate = DateTime.tryParse(importDateStr);
-          if (existingDate != null &&
-              importDate != null &&
-              !importDate.isAfter(existingDate)) {
-            continue;
-          }
+        final existingDate = DateTime.tryParse(
+          existing['lastPlayedDate']?.toString() ?? '',
+        );
+        if (existingDate != null &&
+            !progress.lastPlayedDate.isAfter(existingDate)) {
+          continue; // keep the more recent local entry
         }
       }
-      await HiveService.watchHistoryBox.put(key, map);
+      await HiveService.watchHistoryBox.put(key, progress.toMap());
+      written++;
     }
+    return written;
   }
 
-  static Future<void> _mergeWatchlist(List<dynamic>? items) async {
-    if (items == null) return;
-    for (final item in items) {
-      final map = Map<String, dynamic>.from(item as Map);
-      final key = map.remove('_key') as String?;
-      if (key == null) continue;
-
-      // Union: only add if not already present
-      if (!HiveService.watchlistBox.containsKey(key)) {
-        await HiveService.watchlistBox.put(key, map);
-      }
+  static Future<int> _mergeWatchlist(List<Map> items) async {
+    var written = 0;
+    for (final raw in items) {
+      final tmdbId = raw['tmdbId'];
+      if (tmdbId is! int || tmdbId <= 0) continue;
+      final type = raw['type'] == 'tv' ? 'tv' : 'movie';
+      final key = StorageKeys.watchlist(type, tmdbId);
+      if (HiveService.watchlistBox.containsKey(key)) continue;
+      final map = Map<String, dynamic>.from(raw)
+        ..remove('_key')
+        ..['type'] = type;
+      await HiveService.watchlistBox.put(key, map);
+      written++;
     }
+    return written;
   }
 
-  static Future<void> _mergePlugins(List<dynamic>? items) async {
-    if (items == null) return;
-    for (final item in items) {
-      if (item is! Map) continue;
-      final map = Map<String, dynamic>.from(item);
-      final key = map.remove('_key') as String?;
-      if (key == null) continue;
-
-      // Re-validate at write time. Even though `previewImport` already
-      // filtered the list, going through [PluginManifestModel.fromJson]
-      // again here protects against:
-      //   • callers that skipped the preview path
-      //   • TOCTOU between preview and apply (file tampering is unlikely
-      //     locally but the validation is cheap)
-      //   • future code paths that construct an ImportPreview directly.
+  static Future<int> _mergeStatuses(List<Map> items) async {
+    var written = 0;
+    for (final raw in items) {
+      final MediaStatus status;
       try {
-        PluginManifestModel.fromJson(map);
+        status = MediaStatus.fromMap(raw);
+      } catch (_) {
+        continue;
+      }
+      if (status.mediaId.isEmpty) continue;
+      final key = StorageKeys.status(
+        status.mediaType,
+        status.mediaId,
+        season: status.season,
+        episode: status.episode,
+      );
+      final existing = HiveService.listStatusBox.get(key);
+      if (existing != null) {
+        final existingDate = DateTime.tryParse(
+          existing['updatedAt']?.toString() ?? '',
+        );
+        if (existingDate != null && !status.updatedAt.isAfter(existingDate)) {
+          continue;
+        }
+      }
+      await HiveService.listStatusBox.put(key, status.toMap());
+      written++;
+    }
+    return written;
+  }
+
+  static Future<int> _mergePlugins(List<Map> items) async {
+    var written = 0;
+    for (final raw in items) {
+      final map = Map<String, dynamic>.from(raw)..remove('_key');
+      // Re-validate at write time (defends against a TOCTOU between preview
+      // and apply), and store under the validated pluginId — the key that
+      // uninstall uses — never under a key taken from the file.
+      final String pluginId;
+      try {
+        pluginId = PluginManifestModel.fromJson(map).pluginId;
       } catch (e) {
         if (kDebugMode) {
-          debugPrint('ExportImportService: skipping invalid plugin "$key": $e');
+          debugPrint('ExportImportService: skipping invalid plugin: $e');
         }
         continue;
       }
-
-      // Union: only add if not already installed.
-      if (!HiveService.pluginsBox.containsKey(key)) {
-        await HiveService.pluginsBox.put(key, map);
-      }
+      if (HiveService.pluginsBox.containsKey(pluginId)) continue;
+      await HiveService.pluginsBox.put(pluginId, map);
+      written++;
     }
+    return written;
   }
 
-  static Future<void> _importSettings(Map<String, dynamic>? settings) async {
-    if (settings == null) return;
+  static Future<int> _importSettings(Map<String, dynamic> settings) async {
     for (final entry in settings.entries) {
       await HiveService.settingsBox.put(entry.key, entry.value);
     }
+    return settings.length;
   }
+}
+
+/// Collects decoded bytes and throws once more than [limit] arrive.
+class _CappedCollector implements Sink<List<int>> {
+  final int limit;
+  final BytesBuilder _out = BytesBuilder(copy: false);
+
+  _CappedCollector(this.limit);
+
+  List<int> get bytes => _out.toBytes();
+
+  @override
+  void add(List<int> data) {
+    if (_out.length + data.length > limit) {
+      throw const FormatException('Backup file expands to an unsafe size.');
+    }
+    _out.add(data);
+  }
+
+  @override
+  void close() {}
 }

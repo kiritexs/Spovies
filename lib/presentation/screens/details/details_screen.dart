@@ -905,6 +905,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     final statusAsync = ref.watch(
       mediaStatusProvider((
         mediaId: details.tmdbId.toString(),
+        mediaType: details.type.name,
         season: null,
         episode: null,
       )),
@@ -1125,9 +1126,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                               mediaType: details.type.name,
                             ),
                       );
-                      ref
-                          .read(watchlistProvider.notifier)
-                          .remove(details.tmdbId);
+                      ref.read(watchlistProvider.notifier).remove(details);
                       Navigator.pop(context);
                     },
                     icon: const Icon(
@@ -1230,6 +1229,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               );
               return _EpisodeRow(
                 mediaId: details.tmdbId.toString(),
+                show: details,
                 episode: ep,
                 plugins: episodePlugins,
                 onPlay: epPlugin == null
@@ -1404,6 +1404,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         final repo = ref.read(watchHistoryRepositoryProvider);
         final saved = await repo.getProgress(
           media.tmdbId.toString(),
+          mediaType: media.type.name,
           season: season,
           episode: episode,
         );
@@ -1598,12 +1599,17 @@ class _ExpandableOverviewState extends State<_ExpandableOverview> {
 
 class _EpisodeRow extends ConsumerWidget {
   final String mediaId;
+
+  /// The show this episode belongs to. Setting an episode status saves it to
+  /// the Library so the tracked title always has a visible card.
+  final MediaItem show;
   final Episode episode;
   final List<PluginManifest> plugins;
   final VoidCallback? onPlay;
 
   const _EpisodeRow({
     required this.mediaId,
+    required this.show,
     required this.episode,
     required this.plugins,
     this.onPlay,
@@ -1616,6 +1622,7 @@ class _EpisodeRow extends ConsumerWidget {
     final statusAsync = ref.watch(
       mediaStatusProvider((
         mediaId: mediaId,
+        mediaType: 'tv',
         season: episode.seasonNumber,
         episode: episode.episodeNumber,
       )),
@@ -1624,6 +1631,7 @@ class _EpisodeRow extends ConsumerWidget {
     final progressAsync = ref.watch(
       episodeProgressProvider((
         mediaId: mediaId,
+        mediaType: 'tv',
         season: episode.seasonNumber,
         episode: episode.episodeNumber,
       )),
@@ -1682,6 +1690,7 @@ class _EpisodeRow extends ConsumerWidget {
                           episode: episode.episodeNumber,
                           updatedAt: DateTime.now(),
                         ),
+                        mediaItem: show,
                       );
                 }
                 onPlay!();
@@ -1868,6 +1877,7 @@ class _EpisodeRow extends ConsumerWidget {
                                 const Spacer(),
                                 _EpisodeStatusPicker(
                                   mediaId: mediaId,
+                                  show: show,
                                   episode: episode,
                                   currentStatus: status,
                                   isWatchedByDefault:
@@ -1922,12 +1932,14 @@ class _EpisodeRow extends ConsumerWidget {
 
 class _EpisodeStatusPicker extends ConsumerWidget {
   final String mediaId;
+  final MediaItem show;
   final Episode episode;
   final WatchStatus? currentStatus;
   final bool isWatchedByDefault;
 
   const _EpisodeStatusPicker({
     required this.mediaId,
+    required this.show,
     required this.episode,
     this.currentStatus,
     this.isWatchedByDefault = false,
@@ -1935,7 +1947,10 @@ class _EpisodeStatusPicker extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return PopupMenuButton<WatchStatus?>(
+    // Each value is wrapped in a record: PopupMenuButton reports a null value
+    // as "cancelled" (onCanceled), so a bare `null` meaning "reset" would
+    // never reach onSelected.
+    return PopupMenuButton<({WatchStatus? status})>(
       icon: Icon(
         Icons.more_vert_rounded,
         size: 18,
@@ -1949,30 +1964,33 @@ class _EpisodeStatusPicker extends ConsumerWidget {
         borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
       ),
       color: AppColors.surfaceDark,
-      onSelected: (status) {
+      onSelected: (choice) {
+        final status = choice.status;
+        final notifier = ref.read(watchStatusNotifierProvider.notifier);
         if (status == null) {
-          ref
-              .read(watchStatusNotifierProvider.notifier)
-              .deleteStatus(
-                mediaId,
-                season: episode.seasonNumber,
-                episode: episode.episodeNumber,
-              );
+          unawaited(
+            notifier.deleteStatus(
+              mediaId,
+              mediaType: 'tv',
+              season: episode.seasonNumber,
+              episode: episode.episodeNumber,
+            ),
+          );
           return;
         }
-
-        ref
-            .read(watchStatusNotifierProvider.notifier)
-            .setStatus(
-              MediaStatus(
-                mediaId: mediaId,
-                mediaType: 'tv',
-                status: status,
-                season: episode.seasonNumber,
-                episode: episode.episodeNumber,
-                updatedAt: DateTime.now(),
-              ),
-            );
+        unawaited(
+          notifier.setStatus(
+            MediaStatus(
+              mediaId: mediaId,
+              mediaType: 'tv',
+              status: status,
+              season: episode.seasonNumber,
+              episode: episode.episodeNumber,
+              updatedAt: DateTime.now(),
+            ),
+            mediaItem: show,
+          ),
+        );
       },
       itemBuilder: (context) =>
           [
@@ -1984,8 +2002,8 @@ class _EpisodeStatusPicker extends ConsumerWidget {
                 WatchStatus.dropped,
               ]
               .map(
-                (s) => PopupMenuItem<WatchStatus?>(
-                  value: s,
+                (s) => PopupMenuItem<({WatchStatus? status})>(
+                  value: (status: s),
                   child: Row(
                     children: [
                       Icon(

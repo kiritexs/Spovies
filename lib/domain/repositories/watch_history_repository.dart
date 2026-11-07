@@ -1,6 +1,9 @@
 import '../entities/user_progress.dart';
 
 /// Abstract repository for watch history operations.
+///
+/// Lookups take a `mediaType` ('movie' or 'tv') because TMDB ids are only
+/// unique within a media type.
 abstract class WatchHistoryRepository {
   /// Save or update progress for a media item.
   Future<void> saveProgress(UserProgress progress);
@@ -8,17 +11,21 @@ abstract class WatchHistoryRepository {
   /// Get progress for a specific media item (+ optional season/episode for TV).
   Future<UserProgress?> getProgress(
     String mediaId, {
+    required String mediaType,
     int? season,
     int? episode,
   });
 
-  /// Get the "Continue Watching" list, sorted by last played, filtered < 90%.
+  /// Get the "Continue Watching" list, sorted by last played.
   Future<List<UserProgress>> getContinueWatching({int limit = 10});
 
-  /// Remove every progress entry for a single media id (movie + all episodes).
-  /// Use when removing a title from the library — otherwise the just-removed
-  /// item lingers in the "Continue Watching" row.
-  Future<void> deleteProgressForMedia(String mediaId);
+  /// Remove every progress entry for one title (movie, or show + all
+  /// episodes). Use when removing a title from the library — otherwise it
+  /// lingers in the "Continue Watching" row.
+  Future<void> deleteProgressForMedia(
+    String mediaId, {
+    required String mediaType,
+  });
 
   /// Clear all watch history.
   Future<void> clearHistory();

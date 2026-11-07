@@ -85,4 +85,30 @@ void main() {
       expect(shows, hasLength(2));
     },
   );
+
+  test('title-level statuses for a movie and a show with the same id '
+      'do not overwrite each other', () async {
+    await repo.saveStatus(
+      entry('123', mediaType: 'movie', status: WatchStatus.completed),
+    );
+    await repo.saveStatus(
+      entry('123', mediaType: 'tv', status: WatchStatus.dropped),
+    );
+
+    final movie = await repo.getStatus('123', mediaType: 'movie');
+    final show = await repo.getStatus('123', mediaType: 'tv');
+    expect(movie?.status, WatchStatus.completed);
+    expect(show?.status, WatchStatus.dropped);
+    expect(await repo.getAllTitleStatuses(), hasLength(2));
+  });
+
+  test('deleteStatus removes only the matching type', () async {
+    await repo.saveStatus(entry('123', mediaType: 'movie'));
+    await repo.saveStatus(entry('123', mediaType: 'tv'));
+
+    await repo.deleteStatus('123', mediaType: 'tv');
+
+    expect(await repo.getStatus('123', mediaType: 'movie'), isNotNull);
+    expect(await repo.getStatus('123', mediaType: 'tv'), isNull);
+  });
 }
