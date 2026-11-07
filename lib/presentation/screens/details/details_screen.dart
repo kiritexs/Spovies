@@ -5,8 +5,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:window_manager/window_manager.dart';
-import 'dart:io';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/config/feature_flags.dart';
@@ -399,13 +397,6 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             ],
           ),
         ),
-        if (Platform.isWindows)
-          const Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: DragToMoveArea(child: SizedBox(height: 80)),
-          ),
 
         // Back Button
         _buildBackButton(context),
@@ -610,13 +601,6 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
         // Back button
         _buildBackButton(context),
-        if (Platform.isWindows)
-          const Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: DragToMoveArea(child: SizedBox(height: 80)),
-          ),
       ],
     );
   }
