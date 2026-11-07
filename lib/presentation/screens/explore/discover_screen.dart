@@ -192,6 +192,7 @@ class _SearchBar extends StatelessWidget {
               ),
               suffixIcon: isSearching
                   ? IconButton(
+                      tooltip: 'Clear search',
                       icon: const Icon(
                         Icons.close_rounded,
                         color: AppColors.textSecondary,

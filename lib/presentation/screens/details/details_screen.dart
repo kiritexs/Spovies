@@ -658,6 +658,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               border: Border.all(color: AppColors.glassBorder),
             ),
             child: IconButton(
+              tooltip: 'Back',
               icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
               onPressed: () => context.pop(),
             ),
@@ -1121,6 +1122,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                     ),
                     const Spacer(),
                     IconButton(
+                      tooltip: 'Close',
                       icon: const Icon(
                         Icons.close_rounded,
                         color: Colors.white70,
