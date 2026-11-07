@@ -70,7 +70,7 @@ every back handler placed inside it.
 | `goBranch(0)` in `initState` to anchor Home in visit history | `goBranch` is a no-op when `index == currentIndex` |
 | Shell-level `WidgetsBindingObserver.didPopRoute` | Never fired |
 | Shell-level `PopScope` | Never fired |
-| Leaf-level `BackButtonListener` on Home | `BackButtonListener` registers **globally** via `WidgetsBindingObserver`, so with all branches alive in an `IndexedStack` it fired on every tab — showing the Home exit prompt while the user was on Browse |
+| Leaf-level `BackButtonListener` on Home | `BackButtonListener` registers **globally** via `WidgetsBindingObserver`, so with all branches alive in an `IndexedStack` it fired on every tab — showing the Home exit prompt while the user was on another tab |
 | `BackButtonListener` + location gate | Still pre-empted |
 | Custom `RootBackButtonDispatcher` via `RouterConfig` | Did not fire on Android 13+ predictive back |
 | `back_button_interceptor` package | Still broken; also monkey-patches `SystemChannels.navigation.setMethodCallHandler` |
@@ -142,7 +142,7 @@ rather than crashing.
 
 ## Trade-offs accepted
 
-- **No URL ↔ tab sync.** On tab 2 the URL is `/`, not `/browse`. Fine
+- **No URL ↔ tab sync.** On tab 2 the URL is `/`, not `/library`. Fine
   for a single-window app; browser-style address-bar tab tracking would
   need `currentTabProvider` wired back to GoRouter.
 - **No per-tab navigation stacks.** `StatefulShellBranch` gave each tab

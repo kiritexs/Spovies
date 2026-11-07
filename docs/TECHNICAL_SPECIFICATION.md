@@ -725,7 +725,7 @@ Gzipped JSON. Import re-validates every entry and re-keys it as
 | Section | Options |
 |---------|---------|
 | **Plugins** | Manage plugins → Add by URL, toggle enable/disable, set preferred, remove. Supports registries (single URL → multiple plugins). |
-| **Data** | Export Data, Import Data, Clear Watch History, Clear Watchlist |
+| **Data** | Export Data, Import Data, Clear Watch History, Clear Library |
 | **Appearance** | Theme mode (Dark default) |
 | **Playback** | Preferred Provider (dropdown of installed plugins) |
 | **About** | App version, TMDB attribution, licenses |
@@ -776,7 +776,9 @@ final exportImportServiceProvider = Provider<ExportImportService>((ref) => ...);
 
 | Token | Value | Usage |
 |-------|-------|-------|
-| **Primary** | `#6C2BEE` | Buttons, active states, rating badges glow, progress bars, bottom nav indicator |
+| **Primary** | `#6C2BEE` | Fills behind white text: buttons, chips, progress bars, glows |
+| **Primary on dark** | `#A78BFA` | Violet text and icons on dark surfaces (AA contrast): ratings, links, selected states, nav |
+| **Danger** | `#F87171` | Remove / Clear actions |
 | **Background (dark)** | `#0A0A0C` | App background |
 | **Surface (dark)** | `#1A1A1E` | Cards, modals, bottom nav |
 | **Glass overlay** | `rgba(26, 26, 30, 0.70)` + `blur(12px)` | Glass panels, floating nav, Continue Watching cards |

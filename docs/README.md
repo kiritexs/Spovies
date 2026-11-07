@@ -24,7 +24,7 @@ The visual and interaction quality bar for the app was the original Stitch desig
 Every screen must match or exceed this standard in:
 
 - Glass morphism effects (backdrop-filter blur)
-- Cinematic dark theme (`#0A0A0C` bg, `#6C2BEE` primary)
+- Cinematic dark theme (`#0A0A0C` bg, `#6C2BEE` primary, `#A78BFA` for violet text)
 - Typography (Spline Sans)
 - Card animations (hover scale, snap scroll)
 - Floating glass bottom navigation

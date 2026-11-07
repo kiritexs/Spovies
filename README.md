@@ -22,9 +22,9 @@
 - **Explore** — debounced search across movies and TV, genre tiles, trending movies/TV toggle, and paginated "See all" grids.
 - **Details** — backdrop, poster, rating, genres, expandable overview, cast row, and trailers.
 - **TV shows** — season picker and episode list with per-episode watch status.
-- **Watchlist** — saved titles filtered by status: watching, completed, plan to watch, on hold, dropped.
+- **Library** — saved titles and everything you've given a status, filtered by watching, completed, plan to watch, on hold or dropped; remove with undo.
 - **Watch status** — set per title, per season, and per episode.
-- **Export / import** — back up history, watchlist and settings to a single compressed `.spovies` file, with a confirmation preview before anything is written.
+- **Export / import** — back up history, library, watch statuses and settings to a single compressed `.spovies` file, with a confirmation preview before anything is written.
 - **Adaptive layout** — bottom nav on phones, side nav and custom window frame on desktop; grids reflow by available width.
 - **Plugin architecture** — manifest-based content sources, a sandboxed WebView player, progress tracking and ad blocking. *Present in the code, disabled in this build* (see below).
 
