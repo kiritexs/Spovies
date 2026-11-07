@@ -60,9 +60,11 @@ class WatchlistNotifier extends Notifier<List<MediaItem>> {
     }
   }
 
-  /// Clear all watchlist items.
-  void clearAll() {
-    unawaited(_box.clear());
+  /// Clear all watchlist items. Awaited: Hive empties its in-memory copy
+  /// only after the file is truncated, so a title added before that could
+  /// otherwise vanish now and reappear on the next launch.
+  Future<void> clearAll() async {
+    await _box.clear();
     state = [];
   }
 

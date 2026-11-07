@@ -566,7 +566,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           const SizedBox(width: 16),
         ],
 
-        _buildLibraryAction(context, details),
+        // Flexible so a long label (or large text) shrinks instead of
+        // overflowing the row on narrow desktop windows.
+        Flexible(child: _buildLibraryAction(context, details)),
 
         if (details.metadata.trailerKey != null) ...[
           const SizedBox(width: 12),
@@ -786,17 +788,14 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       children: details.metadata.genres.map((genre) {
         return ClipRRect(
           borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.glass,
-                borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-                border: Border.all(color: AppColors.glassBorder),
-              ),
-              child: Text(genre, style: AppTextStyles.labelSmall),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.glass,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+              border: Border.all(color: AppColors.glassBorder),
             ),
+            child: Text(genre, style: AppTextStyles.labelSmall),
           ),
         );
       }).toList(),

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import 'storage_keys.dart';
@@ -37,7 +38,15 @@ class HiveService {
     );
     tmdbCacheBox = await Hive.openBox<Map<dynamic, dynamic>>(tmdbCacheBoxName);
 
-    await migrateStorageKeys();
+    // A failed migration (e.g. disk full) must not keep the app from
+    // starting. Nothing is lost: entries not yet moved stay under their
+    // old keys, the version flag isn't written, and the next launch
+    // retries (the migration is safe to re-run).
+    try {
+      await migrateStorageKeys();
+    } catch (e, st) {
+      if (kDebugMode) debugPrint('Storage key migration failed: $e\n$st');
+    }
   }
 
   /// One-time migration to [StorageKeys] version 2, which adds the media

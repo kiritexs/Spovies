@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -127,7 +126,7 @@ class SettingsScreen extends ConsumerWidget {
                   onTap: () => _confirmClear(context, ref, 'library', () async {
                     // Statuses go too: a status with no saved title would
                     // otherwise linger invisibly.
-                    ref.read(watchlistProvider.notifier).clearAll();
+                    await ref.read(watchlistProvider.notifier).clearAll();
                     await ref
                         .read(watchStatusNotifierProvider.notifier)
                         .clearAll();
@@ -296,54 +295,51 @@ class SettingsScreen extends ConsumerWidget {
     // placeholder screen and read what's going on.
     final Widget tile = ClipRRect(
       borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: AppColors.glassGradient,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-            border: Border.all(color: AppColors.glassBorder),
-          ),
-          // Transparent Material so the ListTile's hover, focus and splash
-          // ink paints above the glass gradient instead of behind it.
-          child: Material(
-            type: MaterialType.transparency,
-            child: ListTile(
-              onTap: onTap,
-              focusColor: AppColors.focus.withValues(alpha: 0.15),
-              hoverColor: Colors.white.withValues(alpha: 0.04),
-              leading: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
-                ),
-                child: Icon(
-                  icon,
-                  color: accent == AppColors.primary
-                      ? AppColors.primaryOnDark
-                      : accent,
-                  size: 20,
-                ),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: AppColors.glassGradient,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+          border: Border.all(color: AppColors.glassBorder),
+        ),
+        // Transparent Material so the ListTile's hover, focus and splash
+        // ink paints above the glass gradient instead of behind it.
+        child: Material(
+          type: MaterialType.transparency,
+          child: ListTile(
+            onTap: onTap,
+            focusColor: AppColors.focus.withValues(alpha: 0.15),
+            hoverColor: Colors.white.withValues(alpha: 0.04),
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
               ),
-              title: Text(title, style: AppTextStyles.cardTitle),
-              subtitle: Text(subtitle, style: AppTextStyles.cardSubtitle),
-              trailing:
-                  trailing ??
-                  (disabled
-                      ? const Icon(
-                          Icons.block_rounded,
-                          color: AppColors.textMuted,
-                          size: 18,
-                        )
-                      : (onTap != null
-                            ? const Icon(
-                                Icons.chevron_right_rounded,
-                                color: AppColors.textSecondary,
-                              )
-                            : null)),
+              child: Icon(
+                icon,
+                color: accent == AppColors.primary
+                    ? AppColors.primaryOnDark
+                    : accent,
+                size: 20,
+              ),
             ),
+            title: Text(title, style: AppTextStyles.cardTitle),
+            subtitle: Text(subtitle, style: AppTextStyles.cardSubtitle),
+            trailing:
+                trailing ??
+                (disabled
+                    ? const Icon(
+                        Icons.block_rounded,
+                        color: AppColors.textMuted,
+                        size: 18,
+                      )
+                    : (onTap != null
+                          ? const Icon(
+                              Icons.chevron_right_rounded,
+                              color: AppColors.textSecondary,
+                            )
+                          : null)),
           ),
         ),
       ),
@@ -373,59 +369,54 @@ class SettingsScreen extends ConsumerWidget {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: AppColors.glassGradient,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-            border: Border.all(color: AppColors.glassBorder),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: AppColors.glassGradient,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+          border: Border.all(color: AppColors.glassBorder),
+        ),
+        child: ListTile(
+          leading: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+            ),
+            child: const Icon(
+              Icons.play_circle_outline,
+              color: AppColors.primaryOnDark,
+              size: 20,
+            ),
           ),
-          child: ListTile(
-            leading: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(AppSpacing.radiusBase),
+          title: Text('Preferred Provider', style: AppTextStyles.cardTitle),
+          subtitle: Text(
+            effectiveValue ?? 'Auto (first available)',
+            style: AppTextStyles.cardSubtitle,
+          ),
+          trailing: DropdownButton<String?>(
+            value: effectiveValue,
+            underline: const SizedBox.shrink(),
+            dropdownColor: AppColors.surfaceDark,
+            iconEnabledColor: AppColors.textSecondary,
+            items: [
+              const DropdownMenuItem<String?>(
+                value: null,
+                child: Text('Auto', style: TextStyle(color: Colors.white)),
               ),
-              child: const Icon(
-                Icons.play_circle_outline,
-                color: AppColors.primaryOnDark,
-                size: 20,
-              ),
-            ),
-            title: Text('Preferred Provider', style: AppTextStyles.cardTitle),
-            subtitle: Text(
-              effectiveValue ?? 'Auto (first available)',
-              style: AppTextStyles.cardSubtitle,
-            ),
-            trailing: DropdownButton<String?>(
-              value: effectiveValue,
-              underline: const SizedBox.shrink(),
-              dropdownColor: AppColors.surfaceDark,
-              iconEnabledColor: AppColors.textSecondary,
-              items: [
-                const DropdownMenuItem<String?>(
-                  value: null,
-                  child: Text('Auto', style: TextStyle(color: Colors.white)),
-                ),
-                ...plugins.map(
-                  (p) => DropdownMenuItem<String?>(
-                    value: p.pluginId,
-                    child: Text(
-                      p.name,
-                      style: const TextStyle(color: Colors.white),
-                    ),
+              ...plugins.map(
+                (p) => DropdownMenuItem<String?>(
+                  value: p.pluginId,
+                  child: Text(
+                    p.name,
+                    style: const TextStyle(color: Colors.white),
                   ),
                 ),
-              ],
-              onChanged: (value) {
-                unawaited(
-                  ref.read(preferredPluginProvider.notifier).set(value),
-                );
-              },
-            ),
+              ),
+            ],
+            onChanged: (value) {
+              unawaited(ref.read(preferredPluginProvider.notifier).set(value));
+            },
           ),
         ),
       ),
@@ -502,7 +493,9 @@ class SettingsScreen extends ConsumerWidget {
         ..invalidate(mediaStatusProvider)
         ..invalidate(mediaStatusesForShowProvider)
         ..invalidate(entriesByStatusProvider)
-        ..invalidate(installedPluginsProvider);
+        ..invalidate(installedPluginsProvider)
+        ..invalidate(pluginEnabledProvider)
+        ..invalidate(preferredPluginProvider);
 
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();

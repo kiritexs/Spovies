@@ -22,6 +22,7 @@ import 'package:spovies/presentation/providers/media_providers.dart';
 import 'package:spovies/presentation/providers/plugin_providers.dart';
 import 'package:spovies/presentation/providers/settings_providers.dart';
 import 'package:spovies/presentation/providers/watch_history_providers.dart';
+import 'package:spovies/presentation/providers/watch_status_providers.dart';
 import 'package:spovies/presentation/providers/watchlist_providers.dart';
 import 'package:spovies/presentation/screens/explore/all_media_screen.dart';
 import 'package:spovies/presentation/providers/tab_provider.dart';
@@ -81,6 +82,13 @@ class _HomeContent extends ConsumerWidget {
     final topRatedAsync = ref.watch(topRatedMoviesProvider);
     final genreMapAsync = ref.watch(genreMapProvider);
     final genreMap = genreMapAsync.value ?? {};
+    // Genre names are only decoration, so a failure shows no error of its
+    // own (auto-retry is off). Retry them whenever the content reloads.
+    ref.listen(trendingMoviesProvider, (_, next) {
+      if (next.hasValue && ref.read(genreMapProvider).hasError) {
+        ref.invalidate(genreMapProvider);
+      }
+    });
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -95,9 +103,19 @@ class _HomeContent extends ConsumerWidget {
             data: (movies) {
               if (movies.isEmpty) return const SizedBox.shrink();
               final hero = movies.first;
-              final saved = ref
-                  .watch(watchlistProvider)
-                  .any((m) => m.tmdbId == hero.tmdbId && m.type == hero.type);
+              // In the Library if saved, or if it has a status (as Details
+              // and the Library count it).
+              final saved =
+                  ref
+                      .watch(watchlistProvider)
+                      .any(
+                        (m) => m.tmdbId == hero.tmdbId && m.type == hero.type,
+                      ) ||
+                  (ref.watch(titleStatusesProvider).value ?? const []).any(
+                    (s) =>
+                        s.mediaId == hero.tmdbId.toString() &&
+                        s.mediaType == hero.type.name,
+                  );
               return HeroCard(
                 movie: hero,
                 genreText: _resolveGenres(hero, genreMap),

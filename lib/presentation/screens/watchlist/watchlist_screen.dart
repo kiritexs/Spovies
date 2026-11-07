@@ -52,6 +52,10 @@ class WatchlistScreen extends ConsumerStatefulWidget {
 class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   WatchStatus? _selectedStatus;
 
+  /// Titles whose removal is in progress; a second tap would snapshot
+  /// nothing and its snackbar would replace the first one's Undo.
+  final Set<String> _removing = {};
+
   @override
   Widget build(BuildContext context) {
     final saved = ref.watch(watchlistProvider);
@@ -299,12 +303,18 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   /// Remove now and offer Undo, which restores the saved item, its
   /// statuses and its progress exactly as they were.
   Future<void> _remove(_LibraryEntry entry) async {
+    if (!_removing.add(entry.key)) return;
     final notifier = ref.read(watchStatusNotifierProvider.notifier);
-    final removed = await notifier.removeTitle(
-      entry.tmdbId.toString(),
-      mediaType: entry.type.name,
-      item: entry.item,
-    );
+    final RemovedTitle removed;
+    try {
+      removed = await notifier.removeTitle(
+        entry.tmdbId.toString(),
+        mediaType: entry.type.name,
+        item: entry.item,
+      );
+    } finally {
+      _removing.remove(entry.key);
+    }
     if (!mounted) return;
     showAppSnackBar(
       context,
@@ -353,7 +363,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    ref.read(watchlistProvider.notifier).clearAll();
+    await ref.read(watchlistProvider.notifier).clearAll();
     await ref.read(watchStatusNotifierProvider.notifier).clearAll();
   }
 }
@@ -435,12 +445,7 @@ class _LibraryCard extends ConsumerWidget {
           onTap: item != null
               ? () => context.push('/details', extra: item)
               : failed
-              ? () => ref.invalidate(
-                  mediaDetailsProvider((
-                    tmdbId: entry.tmdbId,
-                    type: entry.type,
-                  )),
-                )
+              ? () => _retryDetails(ref)
               : null,
           borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
           focusColor: AppColors.focus.withValues(alpha: 0.2),
@@ -535,6 +540,21 @@ class _LibraryCard extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+extension on _LibraryCard {
+  /// mediaDetailsProvider only re-watches the movie/TV details provider,
+  /// which holds the error (auto-retry is off), so invalidate that one.
+  void _retryDetails(WidgetRef ref) {
+    if (entry.type == MediaType.tv) {
+      ref.invalidate(tvDetailsProvider(entry.tmdbId));
+    } else {
+      ref.invalidate(movieDetailsProvider(entry.tmdbId));
+    }
+    ref.invalidate(
+      mediaDetailsProvider((tmdbId: entry.tmdbId, type: entry.type)),
     );
   }
 }

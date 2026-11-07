@@ -156,18 +156,32 @@ class WatchStatusNotifier extends Notifier<void> {
     return removed;
   }
 
-  /// Put back what [removeTitle] removed.
+  /// Put back what [removeTitle] removed. Anything set on the title since
+  /// (a new status, new progress) is kept rather than overwritten.
   Future<void> restoreTitle(RemovedTitle removed) async {
     final statusRepo = ref.read(watchStatusRepositoryProvider);
     final historyRepo = ref.read(watchHistoryRepositoryProvider);
+    final watchlist = ref.read(watchlistProvider.notifier);
 
     final item = removed.savedItem;
-    if (item != null) ref.read(watchlistProvider.notifier).add(item);
+    if (item != null && !watchlist.contains(item)) watchlist.add(item);
     for (final status in removed.statuses) {
-      await statusRepo.saveStatus(status);
+      final now = await statusRepo.getStatus(
+        status.mediaId,
+        mediaType: status.mediaType,
+        season: status.season,
+        episode: status.episode,
+      );
+      if (now == null) await statusRepo.saveStatus(status);
     }
     for (final progress in removed.progress) {
-      await historyRepo.saveProgress(progress);
+      final now = await historyRepo.getProgress(
+        progress.mediaId,
+        mediaType: progress.mediaType,
+        season: progress.season,
+        episode: progress.episode,
+      );
+      if (now == null) await historyRepo.saveProgress(progress);
     }
 
     _invalidateStatuses();

@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
@@ -43,124 +41,119 @@ class ContinueWatchingCard extends StatelessWidget {
       onTap: onTap,
       child: ClipRRect(
         borderRadius: AppSpacing.borderRadiusLg,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
-            width: double.infinity,
-            height: AppSpacing.continueWatchingHeight,
-            decoration: BoxDecoration(
-              gradient: AppColors.glassGradient,
-              borderRadius: AppSpacing.borderRadiusLg,
-              border: Border.all(color: AppColors.glassBorder),
-            ),
-            child: Stack(
-              children: [
-                // ─── Content Row ──────────────────────────────────
-                Padding(
-                  padding: AppSpacing.cardContentPadding,
-                  child: Row(
-                    children: [
-                      _buildThumbnail(),
-                      const SizedBox(width: 16),
-                      // Fixed-height card (it sits in a grid with a set
-                      // row height): episode and time share one line, and
-                      // text scaling is capped at 1.3x so nothing overflows.
-                      Expanded(
-                        child: MediaQuery.withClampedTextScaling(
-                          maxScaleFactor: 1.3,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                title,
-                                style: AppTextStyles.cardTitle.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+        child: Container(
+          width: double.infinity,
+          height: AppSpacing.continueWatchingHeight,
+          decoration: BoxDecoration(
+            gradient: AppColors.glassGradient,
+            borderRadius: AppSpacing.borderRadiusLg,
+            border: Border.all(color: AppColors.glassBorder),
+          ),
+          child: Stack(
+            children: [
+              // ─── Content Row ──────────────────────────────────
+              Padding(
+                padding: AppSpacing.cardContentPadding,
+                child: Row(
+                  children: [
+                    _buildThumbnail(),
+                    const SizedBox(width: 16),
+                    // Fixed-height card (it sits in a grid with a set
+                    // row height): episode and time share one line, and
+                    // text scaling is capped at 1.3x so nothing overflows.
+                    Expanded(
+                      child: MediaQuery.withClampedTextScaling(
+                        maxScaleFactor: 1.3,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              title,
+                              style: AppTextStyles.cardTitle.copyWith(
+                                fontWeight: FontWeight.w700,
                               ),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  if (episodeLabel != null) ...[
-                                    Flexible(
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                if (episodeLabel != null) ...[
+                                  Flexible(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primary.withValues(
+                                          alpha: 0.15,
                                         ),
-                                        decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(
                                           color: AppColors.primary.withValues(
-                                            alpha: 0.15,
+                                            alpha: 0.35,
                                           ),
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                          border: Border.all(
-                                            color: AppColors.primary.withValues(
-                                              alpha: 0.35,
-                                            ),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          episodeLabel!,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: AppTextStyles.cardSubtitle
-                                              .copyWith(
-                                                color: AppColors.primaryOnDark,
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600,
-                                              ),
                                         ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                  ],
-                                  Flexible(
-                                    child: Text(
-                                      remainingTime,
-                                      style: AppTextStyles.cardSubtitle,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                      child: Text(
+                                        episodeLabel!,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: AppTextStyles.cardSubtitle
+                                            .copyWith(
+                                              color: AppColors.primaryOnDark,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
                                     ),
                                   ),
+                                  const SizedBox(width: 8),
                                 ],
-                              ),
-                            ],
-                          ),
+                                Flexible(
+                                  child: Text(
+                                    remainingTime,
+                                    style: AppTextStyles.cardSubtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
-                      if (onContinueTap != null) ...[
-                        IconButton(
-                          onPressed: onContinueTap,
-                          icon: const Icon(
-                            Icons.play_circle_filled_rounded,
-                            color: AppColors.primaryOnDark,
-                            size: 36,
-                          ),
-                          style: IconButton.styleFrom(
-                            padding: const EdgeInsets.all(4),
-                            minimumSize: const Size(44, 44),
-                          ),
-                          tooltip: 'Continue',
+                    ),
+                    if (onContinueTap != null) ...[
+                      IconButton(
+                        onPressed: onContinueTap,
+                        icon: const Icon(
+                          Icons.play_circle_filled_rounded,
+                          color: AppColors.primaryOnDark,
+                          size: 36,
                         ),
-                        const SizedBox(width: 8),
-                      ],
+                        style: IconButton.styleFrom(
+                          padding: const EdgeInsets.all(4),
+                          minimumSize: const Size(44, 44),
+                        ),
+                        tooltip: 'Continue',
+                      ),
+                      const SizedBox(width: 8),
                     ],
-                  ),
+                  ],
                 ),
+              ),
 
-                // ─── Progress Bar ──────────────────────────────────
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: _buildProgressBar(),
-                ),
-              ],
-            ),
+              // ─── Progress Bar ──────────────────────────────────
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: _buildProgressBar(),
+              ),
+            ],
           ),
         ),
       ),

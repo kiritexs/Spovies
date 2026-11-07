@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/app_info_provider.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../domain/entities/media_item.dart';
@@ -72,9 +74,11 @@ final appRouter = GoRouter(
       parentNavigatorKey: _rootKey,
       builder: (context, state) => Theme(
         data: ThemeData.dark(),
-        child: const LicensePage(
-          applicationName: 'Spovies',
-          applicationVersion: '0.1.4',
+        child: Consumer(
+          builder: (context, ref, _) => LicensePage(
+            applicationName: 'Spovies',
+            applicationVersion: ref.watch(appVersionProvider).value ?? '',
+          ),
         ),
       ),
     ),
