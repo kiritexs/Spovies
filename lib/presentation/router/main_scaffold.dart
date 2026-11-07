@@ -11,7 +11,6 @@ import '../screens/home/home_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../screens/watchlist/watchlist_screen.dart';
 import '../widgets/desktop_side_nav.dart';
-import '../widgets/desktop_window_frame.dart';
 import '../widgets/glass_bottom_nav.dart';
 
 /// Top-level scaffold owning the four tabs and the global system-back
@@ -68,17 +67,12 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   Widget _buildDesktopShell(Widget body, int tab) {
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
-      body: DesktopWindowFrame(
-        child: Row(
-          children: [
-            DesktopSideNav(currentIndex: tab, onTap: _setTab),
-            Container(
-              width: 1,
-              color: Colors.white.withValues(alpha: 0.05),
-            ),
-            Expanded(child: body),
-          ],
-        ),
+      body: Row(
+        children: [
+          DesktopSideNav(currentIndex: tab, onTap: _setTab),
+          Container(width: 1, color: Colors.white.withValues(alpha: 0.05)),
+          Expanded(child: body),
+        ],
       ),
     );
   }

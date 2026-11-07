@@ -12,6 +12,7 @@ import 'core/utils/host_utils.dart';
 import 'data/datasources/local/hive_service.dart';
 import 'data/datasources/remote/tmdb_cache_interceptor.dart';
 import 'presentation/router/app_router.dart';
+import 'presentation/widgets/desktop_window_frame.dart';
 import 'presentation/screens/player/player_scripts.dart';
 
 void main() async {
@@ -102,6 +103,15 @@ class SpoviesApp extends StatelessWidget {
       themeMode: ThemeMode.dark,
       routerConfig: appRouter,
       scrollBehavior: AppScrollBehavior(),
+      builder: (context, child) => ListenableBuilder(
+        listenable: appRouter.routerDelegate,
+        builder: (context, _) => DesktopWindowFrame(
+          // The player draws its own window controls and can go fullscreen.
+          showTitleBar: !appRouter.routerDelegate.currentConfiguration.uri.path
+              .startsWith('/player'),
+          child: child ?? const SizedBox.shrink(),
+        ),
+      ),
     );
   }
 }

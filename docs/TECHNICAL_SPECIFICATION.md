@@ -858,8 +858,8 @@ final exportImportServiceProvider = Provider<ExportImportService>((ref) => ...);
 - **Border radius:** 2xl (32px)
 - **Background:** glass panel (blur, gradient)
 - **Shadow:** `shadow-2xl shadow-black/50`
-- **4 tabs:** Home, Explore, Browse (Tickets icon), Profile
-- **Active state:** `#6C2BEE` color + dot indicator below icon
+- **4 tabs:** Home, Discover, Library, Settings (defined once in `AppTab`)
+- **Active state:** `#A78BFA` (`primaryOnDark`) + dot indicator below icon
 - **Inactive state:** Slate-400, hover → white
 - **Icon scale on hover:** 1.10 with smooth transition
 

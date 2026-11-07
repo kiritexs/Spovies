@@ -12,6 +12,7 @@ import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/responsive_grid.dart';
 import '../../../core/utils/tmdb_image_url.dart';
 import '../../../domain/entities/media_item.dart';
+import '../../router/app_tabs.dart';
 import '../../providers/watchlist_providers.dart';
 import '../../widgets/shimmer_placeholder.dart';
 
@@ -50,7 +51,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.backgroundDark,
         surfaceTintColor: Colors.transparent,
-        title: Text('My Library', style: AppTextStyles.appTitle),
+        title: Text(AppTab.library.label, style: AppTextStyles.appTitle),
         centerTitle: false,
         actions: [
           if (allItems.isNotEmpty)

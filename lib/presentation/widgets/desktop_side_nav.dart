@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../router/app_tabs.dart';
 
 class DesktopSideNav extends StatelessWidget {
   final int currentIndex;
@@ -28,6 +29,7 @@ class DesktopSideNav extends StatelessWidget {
                 Image.asset(
                   'assets/Layer_8.png',
                   height: 32,
+                  semanticLabel: 'Spovies',
                   errorBuilder: (_, _, _) => const Text(
                     'SPOVIES',
                     style: TextStyle(
@@ -41,30 +43,12 @@ class DesktopSideNav extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.xxl),
-          _NavItem(
-            icon: Icons.home_rounded,
-            label: 'Home',
-            isSelected: currentIndex == 0,
-            onTap: () => onTap(0),
-          ),
-          _NavItem(
-            icon: Icons.explore_rounded,
-            label: 'Discover',
-            isSelected: currentIndex == 1,
-            onTap: () => onTap(1),
-          ),
-          _NavItem(
-            icon: Icons.bookmark_rounded,
-            label: 'Watchlist',
-            isSelected: currentIndex == 2,
-            onTap: () => onTap(2),
-          ),
-          _NavItem(
-            icon: Icons.settings_rounded,
-            label: 'Settings',
-            isSelected: currentIndex == 3,
-            onTap: () => onTap(3),
-          ),
+          for (final tab in AppTab.values)
+            _NavItem(
+              tab: tab,
+              isSelected: currentIndex == tab.index,
+              onTap: () => onTap(tab.index),
+            ),
         ],
       ),
     );
@@ -72,54 +56,77 @@ class DesktopSideNav extends StatelessWidget {
 }
 
 class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
+  final AppTab tab;
   final bool isSelected;
   final VoidCallback onTap;
 
   const _NavItem({
-    required this.icon,
-    required this.label,
+    required this.tab,
     required this.isSelected,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final color = isSelected ? AppColors.primaryOnDark : AppColors.textSecondary;
-    final bgColor = isSelected
-        ? AppColors.primary.withValues(alpha: 0.15)
-        : Colors.transparent;
+    final color = isSelected
+        ? AppColors.primaryOnDark
+        : AppColors.textSecondary;
+    final radius = BorderRadius.circular(12);
 
+    // InkWell gives hover, focus and Enter/Space activation; the left
+    // accent bar marks the selected tab without relying on colour alone.
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 12.0,
-            ),
-            child: Row(
-              children: [
-                Icon(icon, color: color, size: 24),
-                const SizedBox(width: 16),
-                Text(
-                  label,
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    color: color,
-                    fontWeight: isSelected
-                        ? FontWeight.bold
-                        : FontWeight.normal,
+      child: Semantics(
+        button: true,
+        selected: isSelected,
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: radius,
+            mouseCursor: SystemMouseCursors.click,
+            hoverColor: Colors.white.withValues(alpha: 0.05),
+            focusColor: AppColors.focus.withValues(alpha: 0.2),
+            child: Ink(
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? AppColors.primary.withValues(alpha: 0.15)
+                    : Colors.transparent,
+                borderRadius: radius,
+              ),
+              padding: const EdgeInsets.only(right: 16, top: 12, bottom: 12),
+              child: Row(
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: 3,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppColors.primaryOnDark
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 13),
+                  Icon(
+                    isSelected ? tab.selectedIcon : tab.icon,
+                    color: color,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 16),
+                  Text(
+                    tab.label,
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: color,
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

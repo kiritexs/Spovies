@@ -20,10 +20,7 @@ final appRouter = GoRouter(
   debugLogDiagnostics: false,
   routes: [
     // Main app — 4-tab IndexedStack.
-    GoRoute(
-      path: '/',
-      builder: (context, state) => const MainScaffold(),
-    ),
+    GoRoute(path: '/', builder: (context, state) => const MainScaffold()),
 
     // Full-screen routes, pushed above the tab scaffold.
     GoRoute(

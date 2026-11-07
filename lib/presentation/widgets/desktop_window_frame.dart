@@ -7,23 +7,42 @@ import 'package:window_manager/window_manager.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 
+/// Custom title bar (drag area + window buttons) above the whole app.
+///
+/// Wrapped around the Navigator in `MaterialApp.builder`, so every route
+/// gets it — pushed screens like Details included, and narrow windows
+/// that use the mobile layout. On non-desktop platforms it is a no-op.
 class DesktopWindowFrame extends StatelessWidget {
   final Widget child;
 
-  const DesktopWindowFrame({super.key, required this.child});
+  /// Hidden for routes that draw their own window controls (the player).
+  /// The bar collapses rather than leaving the tree, so [child] — the
+  /// Navigator — keeps its state when this flips.
+  final bool showTitleBar;
+
+  const DesktopWindowFrame({
+    super.key,
+    required this.child,
+    this.showTitleBar = true,
+  });
+
+  static final bool _isDesktop =
+      !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
 
   @override
   Widget build(BuildContext context) {
-    // Only apply custom frame on Desktop platforms (primarily Windows for now)
-    final isDesktop =
-        !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
-
-    if (!isDesktop) return child;
+    if (!_isDesktop) return child;
 
     return Column(
       children: [
-        const _CustomTitleBar(),
-        Expanded(child: child),
+        SizedBox(
+          height: showTitleBar ? _CustomTitleBar.height : 0,
+          child: showTitleBar ? const _CustomTitleBar() : null,
+        ),
+        // Its own semantics container: a route's BlockSemantics would
+        // otherwise hide the title bar (painted before it) from screen
+        // readers.
+        Expanded(child: Semantics(container: true, child: child)),
       ],
     );
   }
@@ -32,10 +51,13 @@ class DesktopWindowFrame extends StatelessWidget {
 class _CustomTitleBar extends StatelessWidget {
   const _CustomTitleBar();
 
+  static const double height = 32;
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 32,
+    // Material: this sits above the Navigator, outside any Scaffold, and
+    // the window buttons' InkWells need a Material ancestor.
+    return Material(
       color: AppColors.backgroundDark,
       child: Row(
         children: [
@@ -80,10 +102,12 @@ class _WindowButtons extends StatelessWidget {
       children: [
         _WindowButton(
           icon: Icons.minimize_rounded,
+          label: 'Minimize',
           onPressed: () => windowManager.minimize(),
         ),
         _WindowButton(
           icon: Icons.crop_square_rounded,
+          label: 'Maximize',
           onPressed: () async {
             if (await windowManager.isMaximized()) {
               unawaited(windowManager.unmaximize());
@@ -94,6 +118,7 @@ class _WindowButtons extends StatelessWidget {
         ),
         _WindowButton(
           icon: Icons.close_rounded,
+          label: 'Close',
           isClose: true,
           onPressed: () => windowManager.close(),
         ),
@@ -104,24 +129,35 @@ class _WindowButtons extends StatelessWidget {
 
 class _WindowButton extends StatelessWidget {
   final IconData icon;
+  final String label;
   final VoidCallback onPressed;
   final bool isClose;
 
   const _WindowButton({
     required this.icon,
+    required this.label,
     required this.onPressed,
     this.isClose = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onPressed,
-      hoverColor: isClose ? Colors.red.withValues(alpha: 0.8) : Colors.white10,
-      child: SizedBox(
-        width: 46,
-        height: 32,
-        child: Icon(icon, size: 16, color: AppColors.textSecondary),
+    // No Tooltip: the title bar is above the Navigator's Overlay.
+    return Semantics(
+      container: true,
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onPressed,
+        hoverColor: isClose
+            ? Colors.red.withValues(alpha: 0.8)
+            : Colors.white10,
+        child: SizedBox(
+          width: 46,
+          height: _CustomTitleBar.height,
+          child: Icon(icon, size: 16, color: AppColors.textSecondary),
+        ),
       ),
     );
   }

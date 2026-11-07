@@ -10,8 +10,10 @@
 
 ```
 MaterialApp.router
+│   builder: DesktopWindowFrame         ← title bar on every route (desktop),
+│                                         hidden on /player
 └── /  →  MainScaffold                  ← PopScope(canPop:false) lives here
-│         └── IndexedStack[ Home, Explore, Browse, Profile ]
+│         └── IndexedStack[ Home, Discover, Library, Settings ]  (AppTab)
 │             (each wrapped in _KeepAliveTab with a ValueKey)
 │
 ├── /details    ─┐
